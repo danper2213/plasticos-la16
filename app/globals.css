@@ -1,0 +1,160 @@
+/* app/globals.css – Zinc + Blue primary */
+@import "tailwindcss";
+
+/* Tailwind v4 theme: fonts (Geist) + Shadcn semantic colors */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  :root {
+    /* Light: off-white base, subtle zinc surfaces, blue primary */
+    --background: 0 0% 98.5%;
+    --foreground: 240 10% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 93%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 93%;
+    --muted-foreground: 240 4% 45%;
+    --accent: 240 4.8% 93%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.7% 88%;
+    --input: 240 5.7% 88%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%; /* Zinc 950 */
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 240 3.7% 15.9%; /* Zinc 800 */
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 217.2 91.2% 59.8%;
+  }
+}
+
+/* Sonner: brand success icon (blue) + centered content */
+[data-sonner-toast][data-type="success"] [data-icon] {
+  color: rgb(59 130 246);
+}
+[data-sonner-toast][data-type="success"] svg {
+  color: rgb(59 130 246);
+}
+[data-sonner-toast] [data-title] {
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: center;
+}
+[data-sonner-toast] [data-content] {
+  justify-content: center;
+  text-align: center;
+}
+
+/* Payables: horizontal scroll container – thin scrollbar on hover */
+.payables-cards-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.payables-cards-scroll:hover {
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+.payables-cards-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.payables-cards-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.payables-cards-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+.payables-cards-scroll:hover::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+}
+.payables-cards-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
+}
+
+/* Month label shimmer (payables) – gradient sweeps across text */
+@keyframes month-shimmer {
+  0%, 100% {
+    background-position: 200% 0;
+  }
+  50% {
+    background-position: 0 0;
+  }
+}
+.month-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgb(63 63 70) 0%,
+    rgb(63 63 70) 35%,
+    rgb(59 130 246) 50%,
+    rgb(63 63 70) 65%,
+    rgb(63 63 70) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: month-shimmer 4s ease-in-out infinite;
+}
+.dark .month-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgb(244 244 245) 0%,
+    rgb(244 244 245) 35%,
+    rgb(96 165 250) 50%,
+    rgb(244 244 245) 65%,
+    rgb(244 244 245) 100%
+  );
+}
+
+/* Comprobante: ya no se imprime desde la app; se abre en ventana nueva con HTML propio */
