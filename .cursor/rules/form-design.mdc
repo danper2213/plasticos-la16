@@ -1,0 +1,62 @@
+---
+description: Diseño de formularios tipo "Nueva factura" (Dialog + hero header + iconos)
+globs: **/*form*.tsx,**/payables/**/*.tsx,**/closures/**/*.tsx
+alwaysApply: false
+---
+
+# Diseño de formularios "crear algo nuevo"
+
+Usar este patrón para formularios de alta/edición en el dashboard. Referencia: **Nueva factura por pagar** (`components/payables/payable-form.tsx`).
+
+## Contenedor
+
+- **Dialog** centrado (no Sheet): `<Dialog open={open} onOpenChange={onOpenChange}>`.
+- **DialogContent**:
+  - `className="max-w-lg w-full p-0 gap-0 border border-border rounded-[24px] shadow-2xl bg-card overflow-hidden data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100 dark:bg-zinc-950/95 dark:border-zinc-800"`
+  - `overlayClassName="bg-black/50 backdrop-blur-md"`
+  - `showCloseButton={true}`
+- **DialogTitle** y **DialogDescription** con `className="sr-only"` (solo accesibilidad).
+- Opcional: envolver contenido en `<motion.div>` con `initial={{ scale: 0.95, opacity: 0 }}` y `animate={{ scale: 1, opacity: 1 }}` para entrada suave.
+
+## Cabecera (hero header)
+
+- Bloque **antes** del `<Form>`, dentro del modal:
+  - `className="relative bg-gradient-to-br from-primary/15 via-card to-card border-b border-border pl-6 pr-20 py-5 dark:from-blue-950/80 dark:via-zinc-900/90 dark:to-zinc-950 dark:border-zinc-800/80"`
+- Estructura:
+  - Icono en un cuadrado redondeado: `<div className="flex size-11 items-center justify-center rounded-xl bg-primary/20 text-primary dark:bg-blue-500/20 dark:text-blue-400"><IconLucide className="size-6" /></div>`
+  - Título: `<h2 className="text-xl font-black tracking-tight text-foreground">Título del formulario</h2>`
+  - Subtítulo: `<p className="text-sm text-muted-foreground mt-0.5">Descripción en una línea.</p>`
+- Layout: `flex items-center gap-3` para icono + texto.
+
+## Formulario
+
+- **react-hook-form** + **zod** (schema en `app/dashboard/<feature>/schema.ts`).
+- **Form** con `<form className="flex flex-col">`.
+- Área de campos: `<div className="p-6 space-y-5 overflow-y-auto max-h-[60vh]">` para scroll si hay muchos campos.
+
+## Campos (FormField)
+
+- **FormLabel** con icono: `className="text-muted-foreground flex items-center gap-2"` y dentro un icono de Lucide: `<IconName className="size-4 text-primary shrink-0" aria-hidden />` + texto del label.
+- **Input** común: `className="rounded-lg h-10 border-input bg-background focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary transition-colors"` (extraer a constante `inputClassName` si se repite).
+- **Textarea**: `className="rounded-lg border-input bg-background focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary resize-none transition-colors"`, `rows={3}`, `placeholder` descriptivo.
+- **Select**: mismo estilo en `SelectTrigger` con `inputClassName`.
+- **FormMessage**: `{fieldState.error?.message}`.
+- Campos relacionados (ej. dos fechas): envolver en `grid grid-cols-1 sm:grid-cols-2 gap-5`.
+
+## Pie del formulario (footer)
+
+- **Fuera** del scroll, con borde superior y fondo:
+  - `className="border-t border-border bg-muted/50 px-6 py-4 flex flex-wrap items-center justify-end gap-2 rounded-b-[24px]"`
+- Botones:
+  - Cancelar: `<Button type="button" variant="outline" className="rounded-lg border-border hover:bg-muted gap-2" onClick={() => onOpenChange(false)}><X className="size-4" />Cancelar</Button>`
+  - Envío: `<Button type="submit" disabled={form.formState.isSubmitting} className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground gap-2"><Save className="size-4" />{form.formState.isSubmitting ? "Guardando…" : "Guardar …"}</Button>`
+
+## Comportamiento
+
+- Al abrir (`open === true`), `form.reset(...)` en `useEffect` que dependa de `open` y `form`.
+- Submit exitoso: `toast.success(...)`, `onSuccess()`, `onOpenChange(false)`. Opcional: `triggerSuccess()` (confetti).
+- Error: `toast.error(result.error ?? "Mensaje por defecto")`.
+
+## Referencia de código
+
+- Implementación completa: `components/payables/payable-form.tsx`.
