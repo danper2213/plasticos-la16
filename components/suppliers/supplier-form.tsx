@@ -42,6 +42,7 @@ import {
 import { triggerSuccess } from "@/lib/confetti";
 import { supplierSchema, type SupplierFormValues, ACCOUNT_TYPES } from "@/app/dashboard/proveedores/schema";
 import { createSupplier, updateSupplier, type Supplier } from "@/app/dashboard/proveedores/actions";
+import { obtenerValorConDVSugerido } from "@/lib/dian-dv";
 import { motion } from "framer-motion";
 
 const modalSpring = { type: "spring" as const, stiffness: 300, damping: 30 };
@@ -185,11 +186,18 @@ export function SupplierForm({ open, onOpenChange, supplier, onSuccess }: Suppli
                       </FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Ej. 900.123.456-7"
+                          placeholder="Ej. 900123456 (DV se agrega al salir)"
                           className={inputClassName}
                           {...field}
                           value={(field.value as string) ?? ""}
                           aria-invalid={fieldState.invalid}
+                          onBlur={(e) => {
+                            field.onBlur(e);
+                            const conDV = obtenerValorConDVSugerido((field.value as string) ?? "");
+                            if (conDV !== (field.value as string)) {
+                              form.setValue("tax_id", conDV, { shouldValidate: true });
+                            }
+                          }}
                         />
                       </FormControl>
                       <FormMessage>{fieldState.error?.message}</FormMessage>

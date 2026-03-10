@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/utils/supabase/server";
+import { requireUser } from "@/utils/supabase/require-user";
 import type { PayableFormValues, PaymentFormValues } from "./schema";
 
 /** Supplier relation shape from Supabase join */
@@ -50,7 +50,7 @@ export async function getPayables(
   month: number,
   year: number
 ): Promise<PayableWithSupplier[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
@@ -117,7 +117,7 @@ export async function getPayables(
 }
 
 export async function getActiveSuppliers(): Promise<ActiveSupplierOption[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("suppliers")
     .select("id, name")
@@ -145,7 +145,7 @@ function toStorageDate(value: string | null | undefined): string | null {
 }
 
 export async function createPayable(data: PayableFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const receptionDate = toStorageDate(data.reception_date) ?? (data.reception_date?.trim().slice(0, 10) ? `${data.reception_date.trim().slice(0, 10)}T12:00:00.000Z` : "");
   const dueDate = toStorageDate(data.due_date);
 
@@ -167,7 +167,7 @@ export async function createPayable(data: PayableFormValues) {
 }
 
 export async function updatePayable(id: string, data: PayableFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const receptionDate = toStorageDate(data.reception_date) ?? (data.reception_date?.trim().slice(0, 10) ? `${data.reception_date.trim().slice(0, 10)}T12:00:00.000Z` : "");
   const dueDate = toStorageDate(data.due_date);
 
@@ -192,7 +192,7 @@ export async function updatePayable(id: string, data: PayableFormValues) {
 }
 
 export async function deleteInvoice(id: string) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error: paymentsError } = await supabase
     .from("payable_payments")
     .delete()
@@ -227,7 +227,7 @@ export interface PayablePaymentRow {
 export async function getPaymentsByPayable(
   payableId: string
 ): Promise<PayablePaymentRow[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("payable_payments")
     .select("id, payment_date, amount_paid, source_of_funds, receipt_url")
@@ -242,7 +242,7 @@ export async function getPaymentsByPayable(
 }
 
 export async function getBankAccounts(): Promise<BankAccountOption[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("bank_accounts")
     .select("id, name")
@@ -257,7 +257,7 @@ export async function getBankAccounts(): Promise<BankAccountOption[]> {
 }
 
 export async function createPayment(data: PaymentFormValues, payableId: string) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
 
   const { error: insertError } = await supabase.from("payable_payments").insert({
     account_payable_id: payableId,

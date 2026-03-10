@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/utils/supabase/server";
+import { requireUser } from "@/utils/supabase/require-user";
 import type { ReceivableFormValues, ReceivablePaymentFormValues } from "./schema";
 
 /** Supabase returns FK relation as object (many-to-one) or possibly array */
@@ -34,7 +34,7 @@ export interface BankAccountOption {
 }
 
 export async function getReceivables(): Promise<ReceivableWithCustomer[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("accounts_receivable")
     .select(
@@ -80,7 +80,7 @@ export async function getReceivables(): Promise<ReceivableWithCustomer[]> {
 }
 
 export async function getActiveCustomers(): Promise<ActiveCustomerOption[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("customers")
     .select("id, name")
@@ -95,7 +95,7 @@ export async function getActiveCustomers(): Promise<ActiveCustomerOption[]> {
 }
 
 export async function getBankAccounts(): Promise<BankAccountOption[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("bank_accounts")
     .select("id, name")
@@ -110,7 +110,7 @@ export async function getBankAccounts(): Promise<BankAccountOption[]> {
 }
 
 export async function createReceivable(data: ReceivableFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase.from("accounts_receivable").insert({
     customer_id: data.customer_id,
     concept: data.concept.trim(),
@@ -132,7 +132,7 @@ export async function createReceivablePayment(
   data: ReceivablePaymentFormValues,
   receivableId: string
 ) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
 
   const { error: insertError } = await supabase.from("receivable_payments").insert({
     account_receivable_id: receivableId,

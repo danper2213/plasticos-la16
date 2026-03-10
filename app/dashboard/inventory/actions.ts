@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/utils/supabase/server";
+import { requireUser } from "@/utils/supabase/require-user";
 import type { MovementFormValues } from "./schema";
 
 /** Raw row from Supabase with FK relation */
@@ -29,7 +29,7 @@ export interface ActiveProductOption {
 }
 
 export async function getInventoryMovements(): Promise<MovementWithProduct[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("inventory_movements")
     .select(
@@ -73,7 +73,7 @@ export async function getInventoryMovements(): Promise<MovementWithProduct[]> {
 }
 
 export async function getActiveProducts(): Promise<ActiveProductOption[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("products")
     .select("id, name, cost")
@@ -88,7 +88,7 @@ export async function getActiveProducts(): Promise<ActiveProductOption[]> {
 }
 
 export async function createMovement(data: MovementFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase.from("inventory_movements").insert({
     product_id: data.product_id,
     movement_type: data.movement_type,

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,6 +14,7 @@ import {
   CalendarCheck,
   Truck,
   CreditCard,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +37,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard/closures", label: "Cierres de Caja", icon: CalendarCheck, roles: ["admin"] },
   { href: "/dashboard/proveedores", label: "Proveedores", icon: Truck, roles: ["admin"] },
   { href: "/dashboard/payables", label: "Cuentas por Pagar", icon: CreditCard, roles: ["admin"] },
+  { href: "/dashboard/usuarios", label: "Usuarios", icon: UserCog, roles: ["admin"] },
 ];
 
 interface SidebarProps {
@@ -52,11 +55,16 @@ export function Sidebar({ userRole, className, variant = "default", onNavigateCl
 
   const content = (
     <nav className={cn("flex flex-col gap-1.5 p-4", variant === "mobile" && "pt-8")}>
-      <div className="mb-4 px-3 py-2 rounded-xl border border-border bg-card/80 dark:border-zinc-800/80 dark:bg-zinc-900/30">
+      <Link
+        href="/dashboard"
+        className="mb-4 flex items-center gap-2 rounded-xl border border-border bg-card/80 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/30"
+        aria-label="Ir al inicio"
+      >
+        <Image src="/logo.png" alt="" width={80} height={32} className="h-8 w-auto shrink-0 object-contain" />
         <span className="text-base font-black tracking-tight text-foreground dark:text-zinc-100">
           PLASTICOS <span className="text-primary">LA 16</span>
         </span>
-      </div>
+      </Link>
       {filteredItems.map((item) => {
         const isActive =
           item.href === "/dashboard"

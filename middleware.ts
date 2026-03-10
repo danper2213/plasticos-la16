@@ -5,10 +5,17 @@ export async function middleware(request: NextRequest) {
   const { response, user } = await updateSession(request);
 
   const pathname = request.nextUrl.pathname;
+
+  // Proteger dashboard: sin sesión → login (con redirectTo)
   if (pathname.startsWith("/dashboard") && !user) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirectTo", pathname);
     return Response.redirect(loginUrl);
+  }
+
+  // Si ya está autenticado y entra a /login, ir al dashboard
+  if (pathname === "/login" && user) {
+    return Response.redirect(new URL("/dashboard", request.url));
   }
 
   return response;

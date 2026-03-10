@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "supabase": "supabase",
+    "db:push": "supabase db push",
+    "db:reset": "supabase db reset"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -33,6 +36,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "supabase": "^2.19.0",
     "@tailwindcss/postcss": "^4",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20",

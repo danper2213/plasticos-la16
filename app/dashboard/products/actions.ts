@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/utils/supabase/server";
+import { requireUser } from "@/utils/supabase/require-user";
 import type { ProductFormValues } from "./schema";
 
 /** Raw row from Supabase with FK relations */
@@ -38,7 +38,7 @@ export interface CategoryOption {
 }
 
 export async function getProducts(): Promise<ProductWithRelations[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("products")
     .select(
@@ -93,7 +93,7 @@ export async function getProducts(): Promise<ProductWithRelations[]> {
 }
 
 export async function getActiveSuppliers(): Promise<ActiveSupplierOption[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("suppliers")
     .select("id, name")
@@ -108,7 +108,7 @@ export async function getActiveSuppliers(): Promise<ActiveSupplierOption[]> {
 }
 
 export async function getCategories(): Promise<CategoryOption[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("product_categories")
     .select("id, name")
@@ -126,7 +126,7 @@ export async function createCategory(name: string) {
   if (!trimmed) {
     return { success: false as const, error: "El nombre de la categoría es obligatorio", id: undefined };
   }
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("product_categories")
     .insert({ name: trimmed })
@@ -141,7 +141,7 @@ export async function createCategory(name: string) {
 }
 
 export async function createProduct(data: ProductFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase.from("products").insert({
     name: data.name.trim(),
     presentation: data.presentation.trim(),
@@ -162,7 +162,7 @@ export async function createProduct(data: ProductFormValues) {
 }
 
 export async function updateProduct(id: string, data: ProductFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase
     .from("products")
     .update({

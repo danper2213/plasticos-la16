@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/utils/supabase/server";
+import { requireUser } from "@/utils/supabase/require-user";
 import type { CustomerFormValues } from "./schema";
 
 export interface Customer {
@@ -16,7 +16,7 @@ export interface Customer {
 }
 
 export async function getCustomers(): Promise<Customer[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("customers")
     .select("id, name, tax_id, phone, address, is_active, created_at, updated_at")
@@ -31,7 +31,7 @@ export async function getCustomers(): Promise<Customer[]> {
 }
 
 export async function createCustomer(data: CustomerFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase.from("customers").insert({
     name: data.name.trim(),
     tax_id: data.tax_id.trim() || null,
@@ -48,7 +48,7 @@ export async function createCustomer(data: CustomerFormValues) {
 }
 
 export async function updateCustomer(id: string, data: CustomerFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase
     .from("customers")
     .update({
@@ -68,7 +68,7 @@ export async function updateCustomer(id: string, data: CustomerFormValues) {
 }
 
 export async function deleteCustomer(id: string) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase
     .from("customers")
     .update({ is_active: false, updated_at: new Date().toISOString() })

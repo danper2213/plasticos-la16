@@ -1,16 +1,18 @@
 import { z } from "zod";
+import { validarNitOCedulaConDV } from "@/lib/dian-dv";
 
 export const ACCOUNT_TYPES = ["Ahorros", "Corriente"] as const;
 
-export const supplierSchema = z.object({
-  name: z
-    .string()
-    .min(1, "El nombre del proveedor es obligatorio")
-    .max(200, "El nombre no puede superar 200 caracteres"),
-  tax_id: z
-    .string()
-    .min(1, "El NIT es obligatorio")
-    .max(20, "El NIT no puede superar 20 caracteres"),
+export const supplierSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1, "El nombre del proveedor es obligatorio")
+      .max(200, "El nombre no puede superar 200 caracteres"),
+    tax_id: z
+      .string()
+      .min(1, "El NIT es obligatorio")
+      .max(20, "El NIT no puede superar 20 caracteres"),
   bank_name: z
     .string()
     .max(100, "El nombre del banco no puede superar 100 caracteres")
@@ -28,6 +30,14 @@ export const supplierSchema = z.object({
     .max(20, "El teléfono no puede superar 20 caracteres")
     .optional()
     .or(z.literal("")),
-});
+  })
+  .refine(
+    (data) => {
+      const n = data.tax_id.replace(/\D/g, "");
+      if (n.length < 9) return true;
+      return validarNitOCedulaConDV(data.tax_id);
+    },
+    { message: "El NIT no es válido: el dígito de verificación no coincide (norma DIAN Colombia).", path: ["tax_id"] }
+  );
 
 export type SupplierFormValues = z.infer<typeof supplierSchema>;

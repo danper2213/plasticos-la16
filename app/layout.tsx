@@ -8,6 +8,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "PLASTICOS LA 16 | ERP",
   description: "Sistema de gestión y control financiero de PLASTICOS LA 16.",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

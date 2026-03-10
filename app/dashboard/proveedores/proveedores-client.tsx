@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { triggerSuccess } from "@/lib/confetti";
 import { cn } from "@/lib/utils";
+import { BankLogo } from "@/components/bank-logo";
 
 const listVariants = {
   visible: {
@@ -216,65 +217,94 @@ export function ProveedoresClient({ suppliers: initialSuppliers }: ProveedoresCl
                   key={supplier.id}
                   layout
                   variants={cardVariants}
-                  whileHover={{ zIndex: 50, y: -10 }}
-                  className="relative min-w-[350px] max-w-[400px] w-[350px] shrink-0 snap-start rounded-xl border-2 border-border bg-card shadow-md overflow-hidden flex flex-col cursor-pointer transition-shadow duration-300 hover:shadow-lg hover:shadow-primary/10 hover:border-primary/40"
+                  whileHover={{ zIndex: 50, y: -6, scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                  className="relative min-w-[350px] max-w-[400px] w-[350px] h-[320px] shrink-0 snap-start rounded-2xl border border-border bg-card shadow-lg overflow-hidden flex flex-col cursor-pointer transition-shadow duration-300 hover:shadow-xl hover:shadow-primary/10 hover:border-primary/40"
                 >
                   <div
                     role="button"
                     tabIndex={0}
                     onClick={() => handleCardClick(supplier)}
                     onKeyDown={(e) => e.key === "Enter" && handleCardClick(supplier)}
-                    className="flex-1 flex flex-col min-h-0"
+                    className="flex-1 flex flex-col min-h-0 overflow-hidden rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     aria-label={`Editar proveedor ${supplier.name}`}
                   >
-                    <header className="relative flex flex-col gap-1.5 p-4 pr-20 border-b border-border bg-muted/50 border-l-4 border-l-primary/50">
-                      <h3 className="text-2xl font-black text-foreground truncate leading-tight flex items-center gap-2">
-                        <Building2 className="size-6 shrink-0 text-primary/80" />
+                    <header className="relative flex flex-col gap-2 p-4 border-b border-border bg-gradient-to-br from-muted/60 to-muted/40 border-l-4 border-l-primary shrink-0">
+                      <h3 className="text-xl font-black text-foreground truncate leading-tight flex items-center gap-2">
+                        <Building2 className="size-5 shrink-0 text-primary" aria-hidden />
                         {supplier.name}
                       </h3>
-                      <span className="inline-flex w-fit items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
-                        <FileText className="size-3.5" />
+                      <span className="inline-flex w-fit items-center gap-1.5 rounded-md bg-background/80 px-2.5 py-1 text-xs font-semibold tabular-nums text-muted-foreground">
+                        <FileText className="size-3.5" aria-hidden />
                         NIT {supplier.tax_id?.trim() || "—"}
                       </span>
-                      {(supplier.bank_name || supplier.account_number) ? (
-                        <span className="absolute top-3 right-3 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
-                          Banco
-                        </span>
-                      ) : null}
                     </header>
 
-                    <div className="p-5 flex-1 flex flex-col gap-4">
+                    <div className="flex-1 min-h-0 overflow-y-auto">
+                      <div className="px-3 pt-2 pb-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">Contacto</span>
+                      </div>
+                      <div className="px-4 pb-5 flex flex-col gap-3">
                       {(supplier.bank_name || supplier.account_number) ? (
-                        <div className="rounded-lg border border-border bg-muted/30 p-3">
-                          <div className="flex items-start gap-2">
-                            <Landmark className="size-5 shrink-0 text-primary/70 mt-0.5" />
-                            <p className="text-sm text-foreground/90 leading-snug line-clamp-3">
-                              {formatSupplierAccount(supplier)}
-                            </p>
+                        <div className="rounded-xl border border-border bg-gradient-to-br from-muted/50 to-muted/30 p-4 shadow-sm">
+                          <div className="flex items-start gap-3">
+                            <BankLogo bankName={supplier.bank_name} size="md" transparent className="shrink-0 rounded-lg" />
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              {supplier.bank_name ? (
+                                <p className="text-sm font-bold text-foreground truncate">
+                                  {supplier.bank_name}
+                                </p>
+                              ) : null}
+                              {supplier.account_type ? (
+                                <p className="text-xs text-muted-foreground">
+                                  <span className="font-medium text-foreground/80">Tipo:</span>{" "}
+                                  <span className="font-semibold">{supplier.account_type}</span>
+                                </p>
+                              ) : null}
+                              {supplier.account_number?.trim() ? (
+                                <p className="text-xs text-muted-foreground">
+                                  <span className="font-medium text-foreground/80">Cuenta:</span>{" "}
+                                  <span className="font-bold tabular-nums tracking-wide">{supplier.account_number.trim()}</span>
+                                </p>
+                              ) : null}
+                              {supplier.bank_agreement?.trim() ? (
+                                <p className="text-xs text-muted-foreground pt-0.5">
+                                  <span className="font-medium text-foreground/80">Convenio:</span>{" "}
+                                  <span className="font-semibold">{supplier.bank_agreement.trim()}</span>
+                                </p>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       ) : (
-                        <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 flex items-center justify-center gap-2">
-                          <Landmark className="size-5 shrink-0 text-muted-foreground/60" />
+                        <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 flex items-center justify-center gap-2">
+                          <Landmark className="size-5 shrink-0 text-muted-foreground/60" aria-hidden />
                           <span className="text-xs font-medium text-muted-foreground">Sin datos bancarios</span>
                         </div>
                       )}
                       {supplier.phone ? (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Phone className="size-4 shrink-0 text-primary/60" />
-                          <span className="font-medium">{supplier.phone}</span>
+                        <div className="rounded-xl border border-border bg-gradient-to-br from-muted/50 to-muted/30 p-3 shadow-sm flex items-center gap-3">
+                          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                            <Phone className="size-4" aria-hidden />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Teléfono</p>
+                            <p className="text-sm font-bold tabular-nums tracking-wide truncate">{supplier.phone}</p>
+                          </div>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground/70">
-                          <Phone className="size-4 shrink-0" />
-                          <span className="text-xs">Sin teléfono</span>
+                        <div className="rounded-xl border border-dashed border-border bg-muted/20 p-3 flex items-center gap-2">
+                          <Phone className="size-4 shrink-0 text-muted-foreground/60" aria-hidden />
+                          <span className="text-xs font-medium text-muted-foreground">Sin teléfono</span>
                         </div>
                       )}
+                      </div>
                     </div>
                   </div>
 
                   <footer
-                    className="border-t border-border p-2.5 flex flex-wrap items-center justify-end gap-1.5 bg-muted/50"
+                    className="border-t border-border p-2.5 flex flex-wrap items-center justify-end gap-1.5 bg-muted/40 rounded-b-2xl shrink-0"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Button

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/utils/supabase/server";
+import { requireUser } from "@/utils/supabase/require-user";
 import type { ClosureFormValues, ExpenseCategory } from "./schema";
 
 export interface Closure {
@@ -25,7 +25,7 @@ export interface MonthlyExpenseByCategory {
 }
 
 export async function getClosures(): Promise<Closure[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("daily_closures")
     .select(
@@ -45,7 +45,7 @@ export async function getMonthlyPaymentsTotal(
   month: number,
   year: number
 ): Promise<number> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const end = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
@@ -68,7 +68,7 @@ export async function getMonthlyExpensesByCategory(
   month: number,
   year: number
 ): Promise<MonthlyExpenseByCategory[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const end = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
@@ -113,7 +113,7 @@ export async function getMonthlyExpensesByCategory(
 }
 
 export async function createClosure(data: ClosureFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const totalExpense = (data.expenses ?? []).reduce((s, e) => s + e.amount, 0);
   const system_expected_balance =
     (data.initial_balance ?? 0) + data.system_total_income - totalExpense;

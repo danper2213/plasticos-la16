@@ -1,4 +1,4 @@
-import { createClient } from "@/utils/supabase/server";
+import { requireUser } from "@/utils/supabase/require-user";
 import type { UserRole } from "@/components/layout/sidebar";
 
 export interface DashboardKpis {
@@ -21,20 +21,7 @@ function safeSum(values: (number | null | undefined)[]): number {
 }
 
 export async function getDashboardKpis(): Promise<DashboardKpis> {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return {
-      role: "employee",
-      bankBalanceTotal: 0,
-      accountsPayableTotal: 0,
-      accountsReceivableTotal: 0,
-      lowStockCount: 0,
-    };
-  }
+  const { supabase, user } = await requireUser();
 
   let role: UserRole = "employee";
   try {
@@ -103,7 +90,7 @@ export interface DashboardSummary {
 
 /** Summary for dashboard home: receivables, payables, out-of-stock, overdue. No bank/cash metrics. */
 export async function getDashboardSummary(): Promise<DashboardSummary> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
 
   const result: DashboardSummary = {
     pendingReceivables: 0,
@@ -162,7 +149,7 @@ export type RecentActivityItem = {
 
 /** Fetches latest payments and movements, merges and sorts by date desc, returns top 6. */
 export async function getRecentActivity(): Promise<RecentActivityItem[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
 
   try {
     const [payablePaymentsRes, receivablePaymentsRes, inventoryRes] = await Promise.all([

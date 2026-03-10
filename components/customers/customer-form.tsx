@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { customerSchema, type CustomerFormValues } from "@/app/dashboard/customers/schema";
 import { createCustomer, updateCustomer, type Customer } from "@/app/dashboard/customers/actions";
+import { obtenerValorConDVSugerido } from "@/lib/dian-dv";
 
 interface CustomerFormProps {
   open: boolean;
@@ -114,10 +115,17 @@ export function CustomerForm({ open, onOpenChange, customer, onSuccess }: Custom
                   <FormLabel>Identificación / NIT</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Cédula o NIT"
+                      placeholder="Ej. 900123456 o cédula (DV se agrega al salir)"
                       {...field}
                       value={(field.value as string) ?? ""}
                       aria-invalid={fieldState.invalid}
+                      onBlur={(e) => {
+                        field.onBlur(e);
+                        const conDV = obtenerValorConDVSugerido((field.value as string) ?? "");
+                        if (conDV !== (field.value as string)) {
+                          form.setValue("tax_id", conDV, { shouldValidate: true });
+                        }
+                      }}
                     />
                   </FormControl>
                   <FormMessage>{fieldState.error?.message}</FormMessage>

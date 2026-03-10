@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -48,9 +49,18 @@ export default async function DashboardLayout({
           <div className="flex-1">{children}</div>
           <footer className="mt-auto rounded-t-2xl border-t border-border bg-card/80 backdrop-blur-sm px-4 py-5 md:px-8 md:py-6 shadow-[0_-1px_0_0_hsl(var(--border))]">
             <div className="flex flex-col items-center justify-between gap-4 sm:flex-row sm:gap-6">
-              <span className="text-sm font-semibold tracking-tight text-muted-foreground">
-                PLASTICOS <span className="text-primary">LA 16</span>
-              </span>
+              <div className="flex items-center gap-2">
+                <Image
+                  src="/logo.png"
+                  alt=""
+                  width={64}
+                  height={26}
+                  className="h-6 w-auto object-contain opacity-90"
+                />
+                <span className="text-sm font-semibold tracking-tight text-muted-foreground">
+                  PLASTICOS <span className="text-primary">LA 16</span>
+                </span>
+              </div>
               <span className="text-xs text-muted-foreground/80">
                 © {new Date().getFullYear()} Todos los derechos reservados
               </span>

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/utils/supabase/server";
+import { requireUser } from "@/utils/supabase/require-user";
 import type { TransactionFormValues } from "./schema";
 
 export interface BankAccount {
@@ -36,7 +36,7 @@ export interface TransactionWithRelations extends Omit<TransactionRow, "bank_acc
 }
 
 export async function getBankAccounts(): Promise<BankAccount[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("bank_accounts")
     .select("id, name, current_balance, is_active")
@@ -50,7 +50,7 @@ export async function getBankAccounts(): Promise<BankAccount[]> {
 }
 
 export async function getFinancialCategories(): Promise<FinancialCategory[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("financial_categories")
     .select("id, name")
@@ -64,7 +64,7 @@ export async function getFinancialCategories(): Promise<FinancialCategory[]> {
 }
 
 export async function getDailyTransactions(): Promise<TransactionWithRelations[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("daily_transactions")
     .select(
@@ -110,7 +110,7 @@ export async function getDailyTransactions(): Promise<TransactionWithRelations[]
 }
 
 export async function createTransaction(data: TransactionFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase.from("daily_transactions").insert({
     bank_account_id: data.bank_account_id,
     category_id: data.category_id,

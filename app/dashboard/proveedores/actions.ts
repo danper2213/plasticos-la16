@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/utils/supabase/server";
+import { requireUser } from "@/utils/supabase/require-user";
 import type { SupplierFormValues } from "./schema";
 
 export interface Supplier {
@@ -26,7 +26,7 @@ export interface SupplierBankInfo {
 }
 
 export async function getSuppliers(): Promise<Supplier[]> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("suppliers")
     .select("id, name, tax_id, bank_name, account_type, account_number, bank_agreement, phone, is_active, created_at, updated_at")
@@ -41,7 +41,7 @@ export async function getSuppliers(): Promise<Supplier[]> {
 }
 
 export async function createSupplier(data: SupplierFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase.from("suppliers").insert({
     name: data.name.trim(),
     tax_id: data.tax_id.trim() || null,
@@ -61,7 +61,7 @@ export async function createSupplier(data: SupplierFormValues) {
 }
 
 export async function updateSupplier(id: string, data: SupplierFormValues) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase
     .from("suppliers")
     .update({
@@ -84,7 +84,7 @@ export async function updateSupplier(id: string, data: SupplierFormValues) {
 }
 
 export async function getSupplierBankInfo(supplierId: string): Promise<SupplierBankInfo | null> {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("suppliers")
     .select("bank_name, account_type, account_number, bank_agreement")
@@ -101,7 +101,7 @@ export async function getSupplierBankInfo(supplierId: string): Promise<SupplierB
 }
 
 export async function deleteSupplier(id: string) {
-  const supabase = await createClient();
+  const { supabase } = await requireUser();
   const { error } = await supabase
     .from("suppliers")
     .update({ is_active: false, updated_at: new Date().toISOString() })
