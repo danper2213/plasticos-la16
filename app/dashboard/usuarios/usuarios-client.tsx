@@ -288,6 +288,7 @@ export function UsuariosClient({ initialUsers, initialError, currentUserId }: Us
                           placeholder="usuario@empresa.com"
                           className={inputClassName}
                           {...field}
+                          value={String(field.value ?? "")}
                         />
                       </FormControl>
                       <FormMessage>{fieldState.error?.message}</FormMessage>
@@ -309,6 +310,7 @@ export function UsuariosClient({ initialUsers, initialError, currentUserId }: Us
                           placeholder="Mínimo 6 caracteres"
                           className={inputClassName}
                           {...field}
+                          value={String(field.value ?? "")}
                         />
                       </FormControl>
                       <FormMessage>{fieldState.error?.message}</FormMessage>
@@ -324,7 +326,7 @@ export function UsuariosClient({ initialUsers, initialError, currentUserId }: Us
                         <Shield className="size-4 shrink-0 text-primary" aria-hidden />
                         Rol
                       </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value as string | undefined}>
                         <FormControl>
                           <SelectTrigger className={inputClassName}>
                             <SelectValue placeholder="Seleccione rol" />

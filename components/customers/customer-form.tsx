@@ -119,8 +119,8 @@ export function CustomerForm({ open, onOpenChange, customer, onSuccess }: Custom
                       {...field}
                       value={(field.value as string) ?? ""}
                       aria-invalid={fieldState.invalid}
-                      onBlur={(e) => {
-                        field.onBlur(e);
+                      onBlur={() => {
+                        field.onBlur();
                         const conDV = obtenerValorConDVSugerido((field.value as string) ?? "");
                         if (conDV !== (field.value as string)) {
                           form.setValue("tax_id", conDV, { shouldValidate: true });
