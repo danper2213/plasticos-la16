@@ -8,11 +8,8 @@ import {
   Wallet,
   Calendar,
   TrendingUp,
-  Receipt,
   ArrowUpCircle,
   ArrowDownCircle,
-  Banknote,
-  StickyNote,
   X,
   Save,
   Plus,
@@ -33,7 +30,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -57,26 +53,43 @@ const modalSpring = { type: "spring" as const, stiffness: 300, damping: 30 };
 const inputClassName =
   "rounded-lg h-10 border-input bg-background focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary transition-colors";
 
+/** Formatea un número con punto cada 3 dígitos (ej. 1234567 → "1.234.567") y opcionalmente decimales con coma */
+function formatAmountDisplay(value: number | undefined | null): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return "";
+  const [intPart, decPart] = String(value).split(".");
+  const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return decPart !== undefined ? `${withDots},${decPart.slice(0, 2)}` : withDots;
+}
+
+/** Parsea el valor del input (quita puntos de miles, coma como decimal) a número */
+function parseAmountInput(input: string): number | undefined {
+  const trimmed = input.trim().replace(/\s/g, "");
+  if (trimmed === "") return undefined;
+  const withoutThousands = trimmed.replace(/\./g, "");
+  const withDecimalDot = withoutThousands.replace(",", ".");
+  const num = parseFloat(withDecimalDot);
+  return Number.isNaN(num) ? undefined : num;
+}
+
 interface ClosureFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  /** Saldo esperado caja del último cierre; se usa como Saldo inicial al abrir un registro nuevo */
+  suggestedInitialBalance?: number;
 }
 
 const defaultExpense = { amount: 0, category: "otros" as ExpenseCategory, description: "" };
 
-export function ClosureForm({ open, onOpenChange, onSuccess }: ClosureFormProps) {
+export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBalance = 0 }: ClosureFormProps) {
   const form = useForm<ClosureFormValues>({
     resolver: zodResolver(closureSchema) as Resolver<ClosureFormValues>,
     defaultValues: {
       closure_date: "",
-      sales_total: 0,
-      payments_total: 0,
       initial_balance: 0,
-      expenses: [],
+      sales_total: 0,
       system_total_income: undefined as unknown as number,
-      actual_physical_balance: undefined as unknown as number,
-      notes: "",
+      expenses: [],
     },
   });
 
@@ -90,16 +103,13 @@ export function ClosureForm({ open, onOpenChange, onSuccess }: ClosureFormProps)
       const today = new Date().toISOString().slice(0, 10);
       form.reset({
         closure_date: today,
+        initial_balance: suggestedInitialBalance,
         sales_total: 0,
-        payments_total: 0,
-        initial_balance: 0,
-        expenses: [],
         system_total_income: undefined as unknown as number,
-        actual_physical_balance: undefined as unknown as number,
-        notes: "",
+        expenses: [],
       });
     }
-  }, [open, form]);
+  }, [open, form, suggestedInitialBalance]);
 
   const totalGastos = form.watch("expenses").reduce((s, e) => s + (e?.amount ?? 0), 0);
 
@@ -123,7 +133,7 @@ export function ClosureForm({ open, onOpenChange, onSuccess }: ClosureFormProps)
       >
         <DialogTitle className="sr-only">Registrar cierre de caja</DialogTitle>
         <DialogDescription className="sr-only">
-          Ventas y pagos del sistema (Hoja A), gastos por categoría, entradas y efectivo (Hoja B).
+          Registro diario: venta en efectivo, entradas por transferencia y gastos por categoría. El saldo se arrastra.
         </DialogDescription>
 
         <motion.div
@@ -139,10 +149,10 @@ export function ClosureForm({ open, onOpenChange, onSuccess }: ClosureFormProps)
               </div>
               <div>
                 <h2 className="text-xl font-black tracking-tight text-foreground">
-                  Registrar cierre de caja
+                  Registrar cierre del día
                 </h2>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  Ventas/pagos del sistema (Hoja A) y caja con gastos por categoría (Hoja B).
+                  Venta en efectivo, entradas por transferencia y gastos por categoría. El saldo se arrastra al día siguiente.
                 </p>
               </div>
             </div>
@@ -151,12 +161,7 @@ export function ClosureForm({ open, onOpenChange, onSuccess }: ClosureFormProps)
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col">
               <div className="p-6 space-y-5 overflow-y-auto max-h-[65vh]">
-                {/* ——— Bloque 1: Ventas y pagos (Hoja A) ——— */}
                 <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-4">
-                  <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <Receipt className="size-4 text-primary" />
-                    Ventas y pagos del día (sistema / DIAN)
-                  </h3>
                   <FormField
                     control={form.control}
                     name="closure_date"
@@ -181,25 +186,53 @@ export function ClosureForm({ open, onOpenChange, onSuccess }: ClosureFormProps)
                   />
                   <FormField
                     control={form.control}
+                    name="initial_balance"
+                    render={({ field, fieldState }) => (
+                      <FormItem>
+                        <FormLabel className="text-muted-foreground">Saldo inicial (arrastrado del día anterior)</FormLabel>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Se rellena con el saldo esperado del último cierre. Puede editarlo si es necesario.
+                        </p>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0 o 0,00"
+                            className={inputClassName}
+                            value={formatAmountDisplay(field.value)}
+                            onChange={(e) => {
+                              const parsed = parseAmountInput(e.target.value);
+                              field.onChange(parsed === undefined ? 0 : parsed);
+                            }}
+                            onBlur={field.onBlur}
+                            aria-invalid={fieldState.invalid}
+                          />
+                        </FormControl>
+                        <FormMessage>{fieldState.error?.message}</FormMessage>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
                     name="sales_total"
                     render={({ field, fieldState }) => (
                       <FormItem>
                         <FormLabel className="text-muted-foreground flex items-center gap-2">
                           <TrendingUp className="size-4 text-primary shrink-0" aria-hidden />
-                          Total ventas del día (POS/sistema)
+                          Venta en efectivo
                         </FormLabel>
                         <FormControl>
                           <Input
-                            type="number"
-                            min={0}
-                            step={1}
-                            placeholder="0"
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0 o 0,00"
                             className={inputClassName}
-                            value={field.value === undefined || field.value === null ? "" : String(field.value)}
+                            value={formatAmountDisplay(field.value)}
                             onChange={(e) => {
-                              const v = e.target.value;
-                              field.onChange(v === "" ? 0 : Number(v));
+                              const parsed = parseAmountInput(e.target.value);
+                              field.onChange(parsed === undefined ? 0 : parsed);
                             }}
+                            onBlur={field.onBlur}
                             aria-invalid={fieldState.invalid}
                           />
                         </FormControl>
@@ -209,61 +242,28 @@ export function ClosureForm({ open, onOpenChange, onSuccess }: ClosureFormProps)
                   />
                   <FormField
                     control={form.control}
-                    name="payments_total"
+                    name="system_total_income"
                     render={({ field, fieldState }) => (
                       <FormItem>
                         <FormLabel className="text-muted-foreground flex items-center gap-2">
-                          <Receipt className="size-4 text-primary shrink-0" aria-hidden />
-                          Total pagos del día (facturas, transporte)
+                          <ArrowDownCircle className="size-4 text-primary shrink-0" aria-hidden />
+                          Entradas por transferencia
                         </FormLabel>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          Pagos registrables ante DIAN.
+                          Nequi, Bancolombia, Banco Bogotá, etc.
                         </p>
                         <FormControl>
                           <Input
-                            type="number"
-                            min={0}
-                            step={1}
-                            placeholder="0"
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0 o 0,00"
                             className={inputClassName}
-                            value={field.value === undefined || field.value === null ? "" : String(field.value)}
+                            value={formatAmountDisplay(field.value)}
                             onChange={(e) => {
-                              const v = e.target.value;
-                              field.onChange(v === "" ? 0 : Number(v));
+                              const parsed = parseAmountInput(e.target.value);
+                              field.onChange(parsed === undefined ? (undefined as unknown as number) : parsed);
                             }}
-                            aria-invalid={fieldState.invalid}
-                          />
-                        </FormControl>
-                        <FormMessage>{fieldState.error?.message}</FormMessage>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* ——— Bloque 2: Caja y gastos (Hoja B) ——— */}
-                <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-4">
-                  <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <Wallet className="size-4 text-primary" />
-                    Caja y gastos por categoría
-                  </h3>
-                  <FormField
-                    control={form.control}
-                    name="initial_balance"
-                    render={({ field, fieldState }) => (
-                      <FormItem>
-                        <FormLabel className="text-muted-foreground">Saldo inicial</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={1}
-                            placeholder="0"
-                            className={inputClassName}
-                            value={field.value === undefined || field.value === null ? "" : String(field.value)}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              field.onChange(v === "" ? 0 : Number(v));
-                            }}
+                            onBlur={field.onBlur}
                             aria-invalid={fieldState.invalid}
                           />
                         </FormControl>
@@ -308,16 +308,16 @@ export function ClosureForm({ open, onOpenChange, onSuccess }: ClosureFormProps)
                                   <FormLabel className="text-xs">Monto</FormLabel>
                                   <FormControl>
                                     <Input
-                                      type="number"
-                                      min={0}
-                                      step={1}
-                                      placeholder="0"
+                                      type="text"
+                                      inputMode="decimal"
+                                      placeholder="0 o 0,00"
                                       className="h-9 rounded-md"
-                                      value={f.value === undefined || f.value === null ? "" : String(f.value)}
+                                      value={formatAmountDisplay(f.value)}
                                       onChange={(e) => {
-                                        const v = e.target.value;
-                                        f.onChange(v === "" ? 0 : Number(v));
+                                        const parsed = parseAmountInput(e.target.value);
+                                        f.onChange(parsed === undefined ? 0 : parsed);
                                       }}
+                                      onBlur={f.onBlur}
                                       aria-invalid={fs.invalid}
                                     />
                                   </FormControl>
@@ -386,95 +386,7 @@ export function ClosureForm({ open, onOpenChange, onSuccess }: ClosureFormProps)
                       </p>
                     )}
                   </div>
-
-                  <FormField
-                    control={form.control}
-                    name="system_total_income"
-                    render={({ field, fieldState }) => (
-                      <FormItem>
-                        <FormLabel className="text-muted-foreground flex items-center gap-2">
-                          <ArrowDownCircle className="size-4 text-primary shrink-0" aria-hidden />
-                          Total entradas (transferencias)
-                        </FormLabel>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Nequi, Bancolombia, Banco Bogotá, etc.
-                        </p>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={1}
-                            placeholder="0"
-                            className={inputClassName}
-                            value={field.value === undefined || field.value === null ? "" : String(field.value)}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              field.onChange(v === "" ? undefined : Number(v));
-                            }}
-                            aria-invalid={fieldState.invalid}
-                          />
-                        </FormControl>
-                        <FormMessage>{fieldState.error?.message}</FormMessage>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="actual_physical_balance"
-                    render={({ field, fieldState }) => (
-                      <FormItem>
-                        <FormLabel className="text-muted-foreground flex items-center gap-2">
-                          <Banknote className="size-4 text-primary shrink-0" aria-hidden />
-                          Total efectivo en caja
-                        </FormLabel>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Efectivo contado físicamente al cierre.
-                        </p>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={1}
-                            placeholder="0"
-                            className={inputClassName}
-                            value={field.value === undefined || field.value === null ? "" : String(field.value)}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              field.onChange(v === "" ? undefined : Number(v));
-                            }}
-                            aria-invalid={fieldState.invalid}
-                          />
-                        </FormControl>
-                        <FormMessage>{fieldState.error?.message}</FormMessage>
-                      </FormItem>
-                    )}
-                  />
                 </div>
-
-                <FormField
-                  control={form.control}
-                  name="notes"
-                  render={({ field, fieldState }) => (
-                    <FormItem>
-                      <FormLabel className="text-muted-foreground flex items-center gap-2">
-                        <StickyNote className="size-4 text-primary shrink-0" aria-hidden />
-                        Observaciones (opcional)
-                      </FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Ej. Faltan 2 mil pesos del cambio"
-                          rows={2}
-                          className="rounded-lg border-input bg-background focus-visible:ring-2 focus-visible:ring-primary/20 resize-none transition-colors"
-                          value={(field.value as string) ?? ""}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          aria-invalid={fieldState.invalid}
-                        />
-                      </FormControl>
-                      <FormMessage>{fieldState.error?.message}</FormMessage>
-                    </FormItem>
-                  )}
-                />
               </div>
 
               <div className="border-t border-border bg-muted/50 px-6 py-4 flex flex-wrap items-center justify-end gap-2 rounded-b-[24px]">

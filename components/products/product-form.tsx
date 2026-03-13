@@ -103,6 +103,7 @@ export function ProductForm({
   const [categoryDialogOpen, setCategoryDialogOpen] = React.useState(false);
   const [newCategoryName, setNewCategoryName] = React.useState("");
   const [newlyAddedCategory, setNewlyAddedCategory] = React.useState<CategoryOption | null>(null);
+  const isCreatingCategoryRef = React.useRef(false);
 
   const form = useForm<ProductFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,22 +120,28 @@ export function ProductForm({
   }, [categories, newlyAddedCategory]);
 
   async function handleCreateCategory() {
+    if (isCreatingCategoryRef.current) return;
     const trimmed = newCategoryName.trim();
     if (!trimmed) {
       toast.error("Ingrese el nombre de la categoría");
       return;
     }
-    const result = await createCategory(trimmed);
-    if (result.success && result.id) {
-      triggerSuccess();
-      toast.success("🎉 ¡Excelente! La categoría fue creada con éxito");
-      setNewlyAddedCategory({ id: result.id, name: trimmed });
-      form.setValue("category_id", result.id);
-      setCategoryDialogOpen(false);
-      setNewCategoryName("");
-      startTransition(() => router.refresh());
-    } else {
-      toast.error(result.error ?? "Error al crear la categoría");
+    isCreatingCategoryRef.current = true;
+    try {
+      const result = await createCategory(trimmed);
+      if (result.success && result.id) {
+        triggerSuccess();
+        toast.success("🎉 ¡Excelente! La categoría fue creada con éxito");
+        setNewlyAddedCategory({ id: result.id, name: trimmed });
+        form.setValue("category_id", result.id);
+        setCategoryDialogOpen(false);
+        setNewCategoryName("");
+        startTransition(() => router.refresh());
+      } else {
+        toast.error(result.error ?? "Error al crear la categoría");
+      }
+    } finally {
+      isCreatingCategoryRef.current = false;
     }
   }
 
@@ -284,64 +291,34 @@ export function ProductForm({
                       </FormItem>
                     )}
                   />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                    <FormField
-                      control={form.control}
-                      name="cost"
-                      render={({ field, fieldState }) => (
-                        <FormItem>
-                          <FormLabel className="text-muted-foreground flex items-center gap-2">
-                            <CircleDollarSign className="size-4 text-primary shrink-0" aria-hidden />
-                            Costo
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              type="text"
-                              inputMode="decimal"
-                              placeholder="0 o 0,00"
-                              className={inputClassName}
-                              value={formatAmountDisplay(field.value as number | undefined)}
-                              onChange={(e) => {
-                                const parsed = parseAmountInput(e.target.value);
-                                field.onChange(parsed === undefined ? 0 : parsed);
-                              }}
-                              onBlur={field.onBlur}
-                              aria-invalid={fieldState.invalid}
-                            />
-                          </FormControl>
-                          <FormMessage>{fieldState.error?.message}</FormMessage>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="selling_price"
-                      render={({ field, fieldState }) => (
-                        <FormItem>
-                          <FormLabel className="text-muted-foreground flex items-center gap-2">
-                            <CircleDollarSign className="size-4 text-primary shrink-0" aria-hidden />
-                            Precio de venta
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              type="text"
-                              inputMode="decimal"
-                              placeholder="0 o 0,00"
-                              className={inputClassName}
-                              value={formatAmountDisplay(field.value as number | undefined)}
-                              onChange={(e) => {
-                                const parsed = parseAmountInput(e.target.value);
-                                field.onChange(parsed === undefined ? 0 : parsed);
-                              }}
-                              onBlur={field.onBlur}
-                              aria-invalid={fieldState.invalid}
-                            />
-                          </FormControl>
-                          <FormMessage>{fieldState.error?.message}</FormMessage>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                  <FormField
+                    control={form.control}
+                    name="cost"
+                    render={({ field, fieldState }) => (
+                      <FormItem>
+                        <FormLabel className="text-muted-foreground flex items-center gap-2">
+                          <CircleDollarSign className="size-4 text-primary shrink-0" aria-hidden />
+                          Costo
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0 o 0,00"
+                            className={inputClassName}
+                            value={formatAmountDisplay(field.value as number | undefined)}
+                            onChange={(e) => {
+                              const parsed = parseAmountInput(e.target.value);
+                              field.onChange(parsed === undefined ? 0 : parsed);
+                            }}
+                            onBlur={field.onBlur}
+                            aria-invalid={fieldState.invalid}
+                          />
+                        </FormControl>
+                        <FormMessage>{fieldState.error?.message}</FormMessage>
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="supplier_id"
@@ -464,7 +441,12 @@ export function ProductForm({
                 onChange={(e) => setNewCategoryName(e.target.value)}
                 placeholder="Ej. Insumos"
                 className="rounded-lg h-10 border-input focus-visible:ring-2 focus-visible:ring-primary/20"
-                onKeyDown={(e) => e.key === "Enter" && handleCreateCategory()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleCreateCategory();
+                  }
+                }}
               />
             </div>
             <Button

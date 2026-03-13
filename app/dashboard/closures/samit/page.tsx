@@ -1,13 +1,12 @@
 import {
-  getClosures,
-  getMonthlyExpensesByCategory,
-  getLatestClosureForSuggestion,
+  getSamitClosures,
+  getLatestSamitTotalForSuggestion,
 } from "./actions";
-import { ClosuresClient } from "./closures-client";
+import { SamitClient } from "./samit-client";
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
 
-export default async function ClosuresPage({
+export default async function SamitPage({
   searchParams,
 }: {
   searchParams: SearchParams;
@@ -25,18 +24,15 @@ export default async function ClosuresPage({
   const safeMonth = Math.min(12, Math.max(1, month));
   const safeYear = year > 0 ? year : now.getFullYear();
 
-  const [closures, monthlyExpensesByCategory, suggestedInitialBalance] =
-    await Promise.all([
-      getClosures(safeMonth, safeYear),
-      getMonthlyExpensesByCategory(safeMonth, safeYear),
-      getLatestClosureForSuggestion(),
-    ]);
+  const [closures, suggestedInitialBalance] = await Promise.all([
+    getSamitClosures(safeMonth, safeYear),
+    getLatestSamitTotalForSuggestion(),
+  ]);
 
   return (
     <div className="space-y-6">
-      <ClosuresClient
+      <SamitClient
         closures={closures}
-        monthlyExpensesByCategory={monthlyExpensesByCategory}
         reportMonth={safeMonth}
         reportYear={safeYear}
         suggestedInitialBalance={suggestedInitialBalance}

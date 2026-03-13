@@ -21,10 +21,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ClosureForm } from "@/components/closures/closure-form";
+import { SamitForm } from "@/components/samit/samit-form";
 import { formatCop } from "@/lib/format";
-import { expenseCategoryLabel, type ExpenseCategory } from "@/app/dashboard/closures/schema";
-import { deleteClosure, type Closure, type MonthlyExpenseByCategory } from "./actions";
+import { deleteSamitClosure, type SamitClosure } from "./actions";
 import { MonthPaginator } from "@/components/payables/month-paginator";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
@@ -43,37 +42,30 @@ function formatDate(value: string | null): string {
   }
 }
 
-interface ClosuresClientProps {
-  closures: Closure[];
-  monthlyExpensesByCategory: MonthlyExpenseByCategory[];
+interface SamitClientProps {
+  closures: SamitClosure[];
   reportMonth: number;
   reportYear: number;
   suggestedInitialBalance: number;
 }
 
-const MONTH_NAMES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
-
-export function ClosuresClient({
+export function SamitClient({
   closures,
-  monthlyExpensesByCategory,
   reportMonth,
   reportYear,
   suggestedInitialBalance,
-}: ClosuresClientProps) {
+}: SamitClientProps) {
   const router = useRouter();
   const [formOpen, setFormOpen] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
-  const [closureToDelete, setClosureToDelete] = React.useState<Closure | null>(null);
+  const [closureToDelete, setClosureToDelete] = React.useState<SamitClosure | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
 
   function handleFormSuccess() {
     router.refresh();
   }
 
-  function openDeleteDialog(row: Closure) {
+  function openDeleteDialog(row: SamitClosure) {
     setClosureToDelete(row);
     setDeleteDialogOpen(true);
   }
@@ -81,85 +73,52 @@ export function ClosuresClient({
   async function confirmDelete() {
     if (!closureToDelete) return;
     setIsDeleting(true);
-    const result = await deleteClosure(closureToDelete.id);
+    const result = await deleteSamitClosure(closureToDelete.id);
     setIsDeleting(false);
     setDeleteDialogOpen(false);
     setClosureToDelete(null);
     if (result.success) {
-      toast.success("Cierre eliminado correctamente");
+      toast.success("Registro eliminado correctamente");
       router.refresh();
     } else {
-      toast.error(result.error ?? "Error al eliminar el cierre");
+      toast.error(result.error ?? "Error al eliminar");
     }
   }
-
-  const monthName = MONTH_NAMES[reportMonth - 1];
 
   return (
     <>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Cierres de Caja</h1>
+          <h1 className="text-2xl font-semibold text-foreground">SAMIT</h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-            Registro diario: venta en efectivo, entradas por transferencia y gastos por categoría. El saldo se arrastra al día siguiente.
+            Registro diario: saldo inicial, venta sistema, pagos y total. El total se arrastra al día siguiente.
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <Suspense fallback={<div className="h-9 w-36 animate-pulse rounded-lg bg-muted" />}>
-            <MonthPaginator basePath="/dashboard/closures" />
+            <MonthPaginator basePath="/dashboard/closures/samit" />
           </Suspense>
           <Button onClick={() => setFormOpen(true)} className="w-fit">
-            + Registrar Cierre
+            + Registrar
           </Button>
         </div>
       </div>
 
-      {/* Fórmula y arrastre */}
       <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
         <p>
-          <strong className="text-foreground">Saldo a arrastrar</strong> = Saldo inicial + Venta en efectivo + Entradas por transferencia − Gastos del día. Ese valor se usa como <strong className="text-foreground">Saldo inicial</strong> del día siguiente.
+          <strong className="text-foreground">Total</strong> = Saldo inicial + Venta sistema − Pagos. Ese valor se usa como <strong className="text-foreground">Saldo inicial</strong> del día siguiente.
         </p>
       </div>
 
-      {/* Gastos del mes por categoría */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <h2 className="text-lg font-bold text-foreground mb-3">
-          Gastos del mes por categoría ({monthName} {reportYear})
-        </h2>
-        {monthlyExpensesByCategory.every((e) => e.total === 0) ? (
-          <p className="text-sm text-muted-foreground py-2">
-            No hay gastos registrados este mes.
-          </p>
-        ) : (
-          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {monthlyExpensesByCategory.map(({ category, total }) => (
-              <li
-                key={category}
-                className="rounded-lg border border-border bg-muted/50 p-3 flex flex-col"
-              >
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {expenseCategoryLabel[category as ExpenseCategory]}
-                </span>
-                <span className="text-lg font-black tabular-nums text-foreground mt-0.5">
-                  {formatCop(total)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Tabla: registro diario por mes */}
       <div className="rounded-md border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Fecha</TableHead>
               <TableHead className="text-right whitespace-nowrap">Saldo inicial</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Venta efectivo</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Entradas transferencia</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Gastos del día</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Saldo total</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Venta sistema</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Pagos</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Total</TableHead>
               <TableHead className="w-[60px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -167,7 +126,7 @@ export function ClosuresClient({
             {closures.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  No hay cierres este mes. Use &quot;+ Registrar Cierre&quot; para agregar el registro del día.
+                  No hay registros este mes. Use &quot;+ Registrar&quot; para agregar uno.
                 </TableCell>
               </TableRow>
             ) : (
@@ -178,23 +137,20 @@ export function ClosuresClient({
                     {formatCop(row.initial_balance)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCop(row.sales_total ?? 0)}
+                    {formatCop(row.sales_total)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCop(row.system_total_income)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCop(row.system_total_expense)}
+                    {formatCop(row.payments_total)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-medium">
-                    {formatCop(row.system_expected_balance)}
+                    {formatCop(row.total)}
                   </TableCell>
                   <TableCell className="w-[60px]">
                     <Button
                       variant="ghost"
                       size="icon"
                       className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      aria-label="Eliminar cierre"
+                      aria-label="Eliminar registro"
                       onClick={() => openDeleteDialog(row)}
                     >
                       <Trash2 className="size-4" />
@@ -207,7 +163,7 @@ export function ClosuresClient({
         </Table>
       </div>
 
-      <ClosureForm
+      <SamitForm
         open={formOpen}
         onOpenChange={setFormOpen}
         onSuccess={handleFormSuccess}
@@ -217,10 +173,9 @@ export function ClosuresClient({
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar cierre?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar registro?</AlertDialogTitle>
             <AlertDialogDescription>
-              ¿Estás seguro de eliminar el cierre del {closureToDelete ? formatDate(closureToDelete.closure_date) : ""}?
-              Se eliminarán también los gastos asociados. Esta acción no se puede deshacer.
+              ¿Estás seguro de eliminar el registro del {closureToDelete ? formatDate(closureToDelete.closure_date) : ""}? Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

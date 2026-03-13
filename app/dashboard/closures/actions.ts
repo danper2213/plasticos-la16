@@ -24,13 +24,23 @@ export interface MonthlyExpenseByCategory {
   total: number;
 }
 
-export async function getClosures(): Promise<Closure[]> {
+/** Cierres del mes indicado (filtro como cuentas por pagar). */
+export async function getClosures(
+  month: number,
+  year: number
+): Promise<Closure[]> {
   const { supabase } = await requireUser();
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const end = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
   const { data, error } = await supabase
     .from("daily_closures")
     .select(
       "id, closure_date, initial_balance, sales_total, payments_total, system_total_income, system_total_expense, system_expected_balance, actual_physical_balance, difference, notes, created_at"
     )
+    .gte("closure_date", start)
+    .lte("closure_date", end)
     .order("closure_date", { ascending: false });
 
   if (error) {
@@ -40,27 +50,18 @@ export async function getClosures(): Promise<Closure[]> {
   return (data ?? []) as Closure[];
 }
 
-/** Total pagado en el mes (pagos facturas/transporte - DIAN). Para el dashboard. */
-export async function getMonthlyPaymentsTotal(
-  month: number,
-  year: number
-): Promise<number> {
+/** Último cierre (por fecha) para sugerir saldo inicial en un registro nuevo. */
+export async function getLatestClosureForSuggestion(): Promise<number> {
   const { supabase } = await requireUser();
-  const start = `${year}-${String(month).padStart(2, "0")}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
-  const end = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-
   const { data, error } = await supabase
     .from("daily_closures")
-    .select("payments_total")
-    .gte("closure_date", start)
-    .lte("closure_date", end);
+    .select("system_expected_balance")
+    .order("closure_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (error) {
-    console.error("getMonthlyPaymentsTotal error:", error);
-    return 0;
-  }
-  return (data ?? []).reduce((sum, row) => sum + (Number(row.payments_total) || 0), 0);
+  if (error || !data) return 0;
+  return Number(data.system_expected_balance) || 0;
 }
 
 /** Gastos del mes agrupados por categoría (comida, transporte, compras, servicios, otros). */
@@ -115,21 +116,24 @@ export async function getMonthlyExpensesByCategory(
 export async function createClosure(data: ClosureFormValues) {
   const { supabase } = await requireUser();
   const totalExpense = (data.expenses ?? []).reduce((s, e) => s + e.amount, 0);
+  // Saldo esperado = Saldo inicial + Venta efectivo + Entradas transferencia - Gastos (se arrastra al día siguiente)
   const system_expected_balance =
-    (data.initial_balance ?? 0) + data.system_total_income - totalExpense;
-  const difference = data.actual_physical_balance - system_expected_balance;
+    (data.initial_balance ?? 0) +
+    (data.sales_total ?? 0) +
+    data.system_total_income -
+    totalExpense;
 
   const insertPayload = {
     closure_date: data.closure_date,
     initial_balance: data.initial_balance ?? 0,
     sales_total: data.sales_total ?? 0,
-    payments_total: data.payments_total ?? 0,
+    payments_total: 0,
     system_total_income: data.system_total_income,
     system_total_expense: totalExpense,
     system_expected_balance,
-    actual_physical_balance: data.actual_physical_balance,
-    difference,
-    notes: data.notes?.trim() || null,
+    actual_physical_balance: system_expected_balance,
+    difference: 0,
+    notes: null,
   };
 
   const { data: inserted, error: insertError } = await supabase
@@ -157,6 +161,30 @@ export async function createClosure(data: ClosureFormValues) {
     }
   }
 
+  revalidatePath("/dashboard/closures");
+  return { success: true as const };
+}
+
+export async function deleteClosure(id: string) {
+  const { supabase } = await requireUser();
+  const { error: expensesError } = await supabase
+    .from("daily_expenses")
+    .delete()
+    .eq("closure_id", id);
+
+  if (expensesError) {
+    console.error("deleteClosure daily_expenses error:", expensesError);
+    return { success: false as const, error: expensesError.message };
+  }
+
+  const { error: closureError } = await supabase
+    .from("daily_closures")
+    .delete()
+    .eq("id", id);
+
+  if (closureError) {
+    return { success: false as const, error: closureError.message };
+  }
   revalidatePath("/dashboard/closures");
   return { success: true as const };
 }

@@ -12,7 +12,8 @@ export interface ProductRow {
   packaging: string | null;
   cost: number;
   selling_price: number;
-  stock_quantity: number;
+  /** null = no en bodega; number = cantidad en bodega */
+  stock_quantity: number | null;
   is_active: boolean;
   supplier_id: string;
   category_id: string;
@@ -174,6 +175,20 @@ export async function updateProduct(id: string, data: ProductFormValues) {
       supplier_id: data.supplier_id,
       category_id: data.category_id,
     })
+    .eq("id", id);
+
+  if (error) {
+    return { success: false as const, error: error.message };
+  }
+  revalidatePath("/dashboard/products");
+  return { success: true as const };
+}
+
+export async function deleteProduct(id: string) {
+  const { supabase } = await requireUser();
+  const { error } = await supabase
+    .from("products")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("id", id);
 
   if (error) {

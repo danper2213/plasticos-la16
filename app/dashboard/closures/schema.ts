@@ -25,15 +25,10 @@ const expenseItemSchema = z.object({
 
 export const closureSchema = z.object({
   closure_date: z.string().min(1, "La fecha del cierre es obligatoria"),
-  // Bloque 1: Ventas y pagos (Hoja A)
-  sales_total: z.number().min(0, "No puede ser negativo").default(0),
-  payments_total: z.number().min(0, "No puede ser negativo").default(0),
-  // Bloque 2: Caja y gastos (Hoja B)
   initial_balance: z.number().min(0, "El saldo inicial no puede ser negativo").default(0),
-  expenses: z.array(expenseItemSchema).default([]),
+  sales_total: z.number().min(0, "No puede ser negativo").default(0),
   system_total_income: z.number().min(0, "Las entradas no pueden ser negativas"),
-  actual_physical_balance: z.number().min(0, "El efectivo en caja no puede ser negativo"),
-  notes: z.string().max(500).optional().or(z.literal("")),
+  expenses: z.array(expenseItemSchema).default([]),
 });
 
 export type ExpenseItemForm = z.infer<typeof expenseItemSchema>;

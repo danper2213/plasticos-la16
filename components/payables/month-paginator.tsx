@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { format, addMonths, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 
-export function MonthPaginator() {
+const DEFAULT_BASE_PATH = "/dashboard/payables";
+
+interface MonthPaginatorProps {
+  /** Ruta base para los query params (ej. /dashboard/closures). Por defecto /dashboard/payables */
+  basePath?: string;
+}
+
+export function MonthPaginator({ basePath = DEFAULT_BASE_PATH }: MonthPaginatorProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -29,14 +36,14 @@ export function MonthPaginator() {
     const params = new URLSearchParams(searchParams.toString());
     params.set("month", String(prevMonth.getMonth() + 1));
     params.set("year", String(prevMonth.getFullYear()));
-    router.push(`/dashboard/payables?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   }
 
   function goToNext() {
     const params = new URLSearchParams(searchParams.toString());
     params.set("month", String(nextMonth.getMonth() + 1));
     params.set("year", String(nextMonth.getFullYear()));
-    router.push(`/dashboard/payables?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   }
 
   return (

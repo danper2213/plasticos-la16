@@ -15,6 +15,8 @@ import {
   FileText,
   Building2,
   Pencil,
+  AlertTriangle,
+  Clock,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -110,6 +112,143 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant="warning">Pendiente</Badge>;
 }
 
+type DuePriority = "overdue" | "today" | "ok";
+
+function PayableCard({
+  row,
+  priority,
+  onOpenDetail,
+  onCardClick,
+  onPointerDown,
+  onEdit,
+  onRegisterPayment,
+  onDelete,
+  formatDate,
+  formatCop,
+}: {
+  row: PayableWithSupplier;
+  priority: DuePriority;
+  onOpenDetail: (row: PayableWithSupplier) => void;
+  onCardClick: (e: React.MouseEvent, row: PayableWithSupplier) => void;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onEdit: (e: React.MouseEvent) => void;
+  onRegisterPayment: () => void;
+  onDelete: () => void;
+  formatDate: (value: string | null) => string;
+  formatCop: (n: number) => string;
+}) {
+  const priorityStyles =
+    priority === "overdue"
+      ? "border-2 border-destructive/60 bg-destructive/5 dark:bg-destructive/10"
+      : priority === "today"
+        ? "border-2 border-amber-500/50 bg-amber-500/5 dark:bg-amber-500/10"
+        : "border-2 border-border";
+
+  const priorityLabel =
+    priority === "overdue" ? (
+      <span className="inline-flex items-center gap-1 rounded-md bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive dark:bg-destructive/20 dark:text-destructive">
+        <AlertTriangle className="size-3.5" />
+        Vencida
+      </span>
+    ) : priority === "today" ? (
+      <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-400/20 dark:text-amber-400">
+        <Clock className="size-3.5" />
+        Vence hoy
+      </span>
+    ) : null;
+
+  return (
+    <motion.div
+      layout
+      variants={cardVariants}
+      whileHover={{ zIndex: 50, y: -4 }}
+      className={cn(
+        "relative min-w-0 rounded-xl bg-card shadow-md overflow-hidden flex flex-col cursor-pointer transition-shadow duration-300 hover:shadow-lg hover:shadow-primary/10 hover:border-primary/40",
+        priorityStyles
+      )}
+    >
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={(e) => onCardClick(e, row)}
+        onPointerDown={onPointerDown}
+        onKeyDown={(e) => e.key === "Enter" && onOpenDetail(row)}
+        className="flex-1 flex flex-col min-h-0"
+        aria-label={`Ver detalle de factura ${row.invoice_number}`}
+      >
+        <header className="relative flex flex-row items-start justify-between gap-2 p-3 pr-16 border-b border-border/80 bg-muted/40">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-muted-foreground truncate flex items-center gap-1.5">
+              <Building2 className="size-3.5 shrink-0 text-primary/80" />
+              {row.supplier_name}
+            </p>
+            <p className="text-xs font-medium tabular-nums text-muted-foreground/90 mt-0.5 flex items-center gap-1">
+              <FileText className="size-3 shrink-0" />
+              #{row.invoice_number}
+            </p>
+          </div>
+          <div className="absolute top-2.5 right-2.5">
+            <StatusBadge status={row.status} />
+          </div>
+        </header>
+
+        <div className="p-4 flex flex-col gap-3">
+          <p className="text-2xl font-black tabular-nums text-foreground text-center leading-tight">
+            {formatCop(row.invoice_amount)}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 shrink-0" />
+              Vence: {formatDate(row.due_date)}
+            </span>
+            {priorityLabel}
+          </div>
+          {row.payment_note?.trim() ? (
+            <p className="text-xs text-muted-foreground border-t border-border/60 pt-2 mt-0.5 line-clamp-2" title={row.payment_note.trim()}>
+              <span className="font-semibold text-foreground/80">Nota:</span> {row.payment_note.trim()}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <footer
+        className="border-t border-border/80 p-2 flex flex-wrap items-center justify-end gap-1.5 bg-muted/40"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1 h-8 text-xs"
+          onClick={onEdit}
+        >
+          <Pencil className="size-3.5" />
+          Editar
+        </Button>
+        {row.status === "pending" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 h-8 text-xs"
+            onClick={onRegisterPayment}
+          >
+            <CreditCard className="size-3.5" />
+            Registrar Pago
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          aria-label="Eliminar factura"
+          onClick={onDelete}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      </footer>
+    </motion.div>
+  );
+}
+
 export function PayablesClient({
   payables,
   suppliers,
@@ -166,6 +305,31 @@ export function PayablesClient({
     return result;
   }, [payables, quickFilter, supplierFilter, searchQuery]);
 
+  const { pendingPayables, paidPayables } = useMemo(() => {
+    const pending = filteredPayables
+      .filter((p) => p.status === "pending")
+      .sort((a, b) => {
+        const da = (a.due_date ?? "").slice(0, 10);
+        const db = (b.due_date ?? "").slice(0, 10);
+        return da.localeCompare(db);
+      });
+    const paid = filteredPayables
+      .filter((p) => p.status === "paid")
+      .sort((a, b) => {
+        const da = (b.updated_at ?? b.due_date ?? "").slice(0, 10);
+        const db = (a.updated_at ?? a.due_date ?? "").slice(0, 10);
+        return da.localeCompare(db);
+      });
+    return { pendingPayables: pending, paidPayables: paid };
+  }, [filteredPayables]);
+
+  function getDuePriority(row: PayableWithSupplier): "overdue" | "today" | "ok" {
+    if (row.status !== "pending" || !row.due_date) return "ok";
+    const dueStr = row.due_date.slice(0, 10);
+    if (dueStr < todayStr) return "overdue";
+    if (dueStr === todayStr) return "today";
+    return "ok";
+  }
 
   function handleFormSuccess() {
     router.refresh();
@@ -419,98 +583,102 @@ export function PayablesClient({
             : "Ningún resultado coincide con la búsqueda."}
         </motion.div>
       ) : (
-        <div className="overflow-visible">
+        <div className="overflow-visible space-y-8 pt-6 pb-8">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={`payables-list-${month}-${year}-${searchQuery}-${quickFilter}-${supplierFilter}`}
-              variants={listVariants}
-              initial="hidden"
-              animate="visible"
-              className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 pt-6 pb-8 items-stretch"
-            >
-            {filteredPayables.map((row) => (
+            {pendingPayables.length > 0 && (
+              <motion.section
+                key="section-pending"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4"
+              >
+                <div className="flex items-center gap-2">
+                  <Clock className="size-5 text-amber-500 dark:text-amber-400" />
+                  <h2 className="text-lg font-bold text-foreground">
+                    Pendientes
+                    <span className="ml-2 text-sm font-normal text-muted-foreground">
+                      ({pendingPayables.length})
+                    </span>
+                  </h2>
+                </div>
                 <motion.div
-                  key={row.id}
-                  layout
-                  variants={cardVariants}
-                  whileHover={{ zIndex: 50, y: -4 }}
-                  className="relative min-w-0 rounded-xl border-2 border-border bg-card shadow-md overflow-hidden flex flex-col cursor-pointer transition-shadow duration-300 hover:shadow-lg hover:shadow-primary/10 hover:border-primary/40"
+                  key={`pending-${month}-${year}-${searchQuery}-${quickFilter}-${supplierFilter}`}
+                  variants={listVariants}
+                  initial="hidden"
+                  animate="visible"
+                  className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch"
                 >
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => handleCardClick(e, row)}
-                    onPointerDown={handleCardPointerDown}
-                    onKeyDown={(e) => e.key === "Enter" && openDetailModal(row)}
-                    className="flex-1 flex flex-col min-h-0"
-                    aria-label={`Ver detalle de factura ${row.invoice_number}`}
-                  >
-                    <header className="relative flex flex-col gap-1.5 p-4 pr-20 border-b border-border bg-muted/50">
-                      <h3 className="text-2xl font-black text-foreground truncate leading-tight flex items-center gap-2">
-                        <Building2 className="size-6 shrink-0 text-primary/80" />
-                        {row.supplier_name}
-                      </h3>
-                      <span className="inline-flex w-fit items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
-                        <FileText className="size-3.5" />
-                        #{row.invoice_number}
-                      </span>
-                      <div className="absolute top-3 right-3">
-                        <StatusBadge status={row.status} />
-                      </div>
-                    </header>
+                  {pendingPayables.map((row) => {
+                    const priority = getDuePriority(row);
+                    return (
+                      <PayableCard
+                        key={row.id}
+                        row={row}
+                        priority={priority}
+                        onOpenDetail={openDetailModal}
+                        onCardClick={handleCardClick}
+                        onPointerDown={handleCardPointerDown}
+                        onEdit={(e) => {
+                          e.stopPropagation();
+                          setPayableToEdit(row);
+                          setFormOpen(true);
+                        }}
+                        onRegisterPayment={() => openPaymentModal(row)}
+                        onDelete={() => openDeleteDialog(row)}
+                        formatDate={formatDate}
+                        formatCop={formatCop}
+                      />
+                    );
+                  })}
+                </motion.div>
+              </motion.section>
+            )}
 
-                    <div className="p-5 flex-1 flex flex-col gap-4">
-                      <p className="text-3xl font-black tabular-nums text-foreground text-center">
-                        {formatCop(row.invoice_amount)}
-                      </p>
-                      <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="w-4 h-4 shrink-0" />
-                        <span>Vence: {formatDate(row.due_date)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <footer
-                    className="border-t border-border p-2 flex flex-wrap items-center justify-end gap-1.5 bg-muted/50"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="gap-1 h-8 text-xs"
-                      onClick={(e) => {
+            {paidPayables.length > 0 && (
+              <motion.section
+                key="section-paid"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4"
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-5 text-emerald-500 dark:text-emerald-400" />
+                  <h2 className="text-lg font-bold text-foreground">
+                    Pagadas
+                    <span className="ml-2 text-sm font-normal text-muted-foreground">
+                      ({paidPayables.length})
+                    </span>
+                  </h2>
+                </div>
+                <motion.div
+                  key={`paid-${month}-${year}-${searchQuery}-${quickFilter}-${supplierFilter}`}
+                  variants={listVariants}
+                  initial="hidden"
+                  animate="visible"
+                  className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch"
+                >
+                  {paidPayables.map((row) => (
+                    <PayableCard
+                      key={row.id}
+                      row={row}
+                      priority="ok"
+                      onOpenDetail={openDetailModal}
+                      onCardClick={handleCardClick}
+                      onPointerDown={handleCardPointerDown}
+                      onEdit={(e) => {
                         e.stopPropagation();
                         setPayableToEdit(row);
                         setFormOpen(true);
                       }}
-                    >
-                      <Pencil className="size-3.5" />
-                      Editar
-                    </Button>
-                    {row.status === "pending" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1 h-8 text-xs"
-                        onClick={() => openPaymentModal(row)}
-                      >
-                        <CreditCard className="size-3.5" />
-                        Registrar Pago
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      aria-label="Eliminar factura"
-                      onClick={() => openDeleteDialog(row)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                </footer>
-              </motion.div>
-            ))}
-            </motion.div>
+                      onRegisterPayment={() => openPaymentModal(row)}
+                      onDelete={() => openDeleteDialog(row)}
+                      formatDate={formatDate}
+                      formatCop={formatCop}
+                    />
+                  ))}
+                </motion.div>
+              </motion.section>
+            )}
           </AnimatePresence>
         </div>
       )}

@@ -7,10 +7,12 @@ import {
   Boxes,
   Building2,
   Calculator,
+  Calendar,
   Layers,
   Package,
   Pencil,
   Search,
+  Trash2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -22,11 +24,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ProductForm } from "@/components/products/product-form";
 import { PriceSimulatorModal } from "@/components/products/price-simulator-modal";
+import { toast } from "sonner";
 import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { ProductWithRelations } from "./actions";
+import { deleteProduct, type ProductWithRelations } from "./actions";
 import type { ActiveSupplierOption, CategoryOption } from "./actions";
 
 type StockFilter = "all" | "no_stock" | "with_stock";
@@ -74,6 +87,9 @@ export function ProductsClient({
   const [searchQuery, setSearchQuery] = useState("");
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<ProductWithRelations | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const uniqueCategoryNames = useMemo(() => {
     const names = new Set(products.map((p) => p.category_name).filter(Boolean));
@@ -120,6 +136,26 @@ export function ProductsClient({
   function openEditProductForm(product: ProductWithRelations) {
     setProductToEdit(product);
     setFormOpen(true);
+  }
+
+  function openDeleteDialog(product: ProductWithRelations) {
+    setProductToDelete(product);
+    setDeleteDialogOpen(true);
+  }
+
+  async function confirmDelete() {
+    if (!productToDelete) return;
+    setIsDeleting(true);
+    const result = await deleteProduct(productToDelete.id);
+    setIsDeleting(false);
+    setDeleteDialogOpen(false);
+    setProductToDelete(null);
+    if (result.success) {
+      toast.success("Producto eliminado");
+      router.refresh();
+    } else {
+      toast.error(result.error ?? "Error al eliminar el producto");
+    }
   }
 
   const totalProducts = products.length;
@@ -244,6 +280,16 @@ export function ProductsClient({
                     {formatCop(product.cost)}
                   </span>
                 </div>
+                <div className="mt-3 px-5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Calendar className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {product.updated_at && product.updated_at !== product.created_at
+                      ? `Actualizado: ${new Date(product.updated_at).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })}`
+                      : product.created_at
+                        ? `Creado: ${new Date(product.created_at).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })}`
+                        : "—"}
+                  </span>
+                </div>
                 <footer className="flex justify-end gap-2 mt-4 pt-3 border-t border-border px-5 pb-4 bg-muted/30">
                   <Button
                     variant="ghost"
@@ -262,6 +308,15 @@ export function ProductsClient({
                     onClick={() => openSimulator(product)}
                   >
                     <Calculator className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Eliminar producto"
+                    onClick={() => openDeleteDialog(product)}
+                  >
+                    <Trash2 className="size-4" />
                   </Button>
                 </footer>
               </div>
@@ -287,6 +342,31 @@ export function ProductsClient({
         onOpenChange={setSimulatorOpen}
         product={productForSimulator}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar producto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de eliminar &quot;{productToDelete?.name}&quot;? El producto dejará de
+              mostrarse en la lista. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

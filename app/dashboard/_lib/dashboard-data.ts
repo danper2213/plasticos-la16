@@ -9,7 +9,7 @@ export interface DashboardKpis {
   accountsPayableTotal: number;
   /** Sum of total_amount from accounts_receivable where status = 'pending' (admin only) */
   accountsReceivableTotal: number;
-  /** Count of products where stock_quantity < 50 */
+  /** Count of products that have stock in warehouse and stock_quantity < 50 */
   lowStockCount: number;
 }
 
@@ -66,6 +66,7 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
     const { count } = await supabase
       .from("products")
       .select("id", { count: "exact", head: true })
+      .not("stock_quantity", "is", null)
       .lt("stock_quantity", 50);
     lowStockCount = count ?? 0;
   } catch {
@@ -114,6 +115,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       supabase
         .from("products")
         .select("id", { count: "exact", head: true })
+        .not("stock_quantity", "is", null)
         .eq("stock_quantity", 0)
         .eq("is_active", true),
       supabase

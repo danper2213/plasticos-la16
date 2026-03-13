@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useState } from "react";
 import {
   Search,
   Plus,
@@ -35,7 +35,7 @@ import { BankLogo } from "@/components/bank-logo";
 
 const listVariants = {
   visible: {
-    transition: { staggerChildren: 0.06 },
+    transition: { staggerChildren: 0.08 },
   },
 };
 
@@ -44,20 +44,111 @@ const cardVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.35 },
+    transition: { duration: 0.4 },
   },
 };
 
-function formatSupplierAccount(supplier: Supplier): string {
-  const parts: string[] = [];
-  if (supplier.bank_name) parts.push(supplier.bank_name);
-  if (supplier.account_type) parts.push(supplier.account_type);
-  const account = supplier.account_number?.trim() ?? "";
-  const main = parts.length ? `${parts.join(" ")}: ${account || "—"}` : (account || "—");
-  if (supplier.bank_agreement?.trim()) {
-    return `${main} (Convenio: ${supplier.bank_agreement.trim()})`;
-  }
-  return main;
+function SupplierCard({
+  supplier,
+  onOpen,
+  onEdit,
+  onDelete,
+}: {
+  supplier: Supplier;
+  onOpen: (s: Supplier) => void;
+  onEdit: (e: React.MouseEvent) => void;
+  onDelete: (e: React.MouseEvent) => void;
+}) {
+  const hasBank = !!(supplier.bank_name || supplier.account_number?.trim());
+  const hasPhone = !!supplier.phone?.trim();
+
+  return (
+    <motion.div
+      layout
+      variants={cardVariants}
+      whileHover={{ zIndex: 50, y: -4 }}
+      className="relative min-w-0 rounded-xl border-2 border-border bg-card shadow-md overflow-hidden flex flex-col cursor-pointer transition-shadow duration-300 hover:shadow-lg hover:shadow-primary/10 hover:border-primary/40"
+    >
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen(supplier)}
+        onKeyDown={(e) => e.key === "Enter" && onOpen(supplier)}
+        className="flex-1 flex flex-col min-h-0"
+        aria-label={`Ver proveedor ${supplier.name}`}
+      >
+        <header className="relative flex flex-row items-start justify-between gap-2 p-3 pr-4 border-b border-border/80 bg-muted/40">
+          <div className="min-w-0 flex-1">
+            <p className="text-base font-bold text-foreground truncate leading-tight flex items-center gap-2">
+              <Building2 className="size-4 shrink-0 text-primary/80" />
+              {supplier.name}
+            </p>
+            <p className="text-xs font-medium tabular-nums text-muted-foreground mt-0.5 flex items-center gap-1">
+              <FileText className="size-3 shrink-0" />
+              NIT {supplier.tax_id?.trim() || "—"}
+            </p>
+          </div>
+        </header>
+
+        <div className="p-4 flex flex-col gap-3">
+          {hasBank ? (
+            <div className="rounded-xl border border-border bg-muted/30 p-3 flex items-start gap-2.5">
+              <BankLogo bankName={supplier.bank_name} size="sm" transparent className="shrink-0 rounded-md" />
+              <div className="min-w-0 flex-1 space-y-0.5">
+                {supplier.bank_name && (
+                  <p className="text-sm font-semibold text-foreground truncate">{supplier.bank_name}</p>
+                )}
+                {supplier.account_number?.trim() && (
+                  <p className="text-xs text-muted-foreground font-medium tabular-nums">
+                    Cuenta: {supplier.account_number.trim()}
+                  </p>
+                )}
+                {supplier.bank_agreement?.trim() && (
+                  <p className="text-[10px] text-muted-foreground">Convenio: {supplier.bank_agreement.trim()}</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-muted/20 p-3 flex items-center justify-center gap-2">
+              <Landmark className="size-4 shrink-0 text-muted-foreground/60" />
+              <span className="text-xs font-medium text-muted-foreground">Sin datos bancarios</span>
+            </div>
+          )}
+
+          {hasPhone ? (
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 flex items-center gap-2">
+              <Phone className="size-3.5 shrink-0 text-primary/80" />
+              <span className="text-sm font-semibold tabular-nums truncate">{supplier.phone!.trim()}</span>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-2 flex items-center gap-2">
+              <Phone className="size-3.5 shrink-0 text-muted-foreground/60" />
+              <span className="text-xs text-muted-foreground">Sin teléfono</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <footer
+        className="border-t border-border/80 p-2 flex flex-wrap items-center justify-end gap-1.5 bg-muted/40"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Button variant="ghost" size="sm" className="gap-1 h-8 text-xs" onClick={onEdit}>
+          <Pencil className="size-3.5" />
+          Editar
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          aria-label="Eliminar proveedor"
+          onClick={onDelete}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      </footer>
+    </motion.div>
+  );
 }
 
 interface ProveedoresClientProps {
@@ -72,20 +163,6 @@ export function ProveedoresClient({ suppliers: initialSuppliers }: ProveedoresCl
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const el: HTMLDivElement = container;
-    function onWheel(e: WheelEvent) {
-      if (e.deltaY === 0) return;
-      e.preventDefault();
-      el.scrollLeft += e.deltaY;
-    }
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
 
   const filteredSuppliers = useMemo(() => {
     if (!searchQuery.trim()) return initialSuppliers;
@@ -203,130 +280,20 @@ export function ProveedoresClient({ suppliers: initialSuppliers }: ProveedoresCl
         <div className="overflow-visible">
           <AnimatePresence mode="wait">
             <motion.div
-              ref={scrollContainerRef}
               key={`suppliers-list-${searchQuery}`}
               variants={listVariants}
               initial="hidden"
               animate="visible"
-              className={cn(
-                "flex flex-nowrap overflow-x-auto overflow-y-visible gap-6 pt-6 pb-8 snap-x snap-mandatory payables-cards-scroll items-start"
-              )}
+              className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 pt-6 pb-8 items-stretch"
             >
               {filteredSuppliers.map((supplier) => (
-                <motion.div
+                <SupplierCard
                   key={supplier.id}
-                  layout
-                  variants={cardVariants}
-                  whileHover={{ zIndex: 50, y: -6, scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                  className="relative min-w-[350px] max-w-[400px] w-[350px] h-[320px] shrink-0 snap-start rounded-2xl border border-border bg-card shadow-lg overflow-hidden flex flex-col cursor-pointer transition-shadow duration-300 hover:shadow-xl hover:shadow-primary/10 hover:border-primary/40"
-                >
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleCardClick(supplier)}
-                    onKeyDown={(e) => e.key === "Enter" && handleCardClick(supplier)}
-                    className="flex-1 flex flex-col min-h-0 overflow-hidden rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                    aria-label={`Editar proveedor ${supplier.name}`}
-                  >
-                    <header className="relative flex flex-col gap-2 p-4 border-b border-border bg-gradient-to-br from-muted/60 to-muted/40 border-l-4 border-l-primary shrink-0">
-                      <h3 className="text-xl font-black text-foreground truncate leading-tight flex items-center gap-2">
-                        <Building2 className="size-5 shrink-0 text-primary" aria-hidden />
-                        {supplier.name}
-                      </h3>
-                      <span className="inline-flex w-fit items-center gap-1.5 rounded-md bg-background/80 px-2.5 py-1 text-xs font-semibold tabular-nums text-muted-foreground">
-                        <FileText className="size-3.5" aria-hidden />
-                        NIT {supplier.tax_id?.trim() || "—"}
-                      </span>
-                    </header>
-
-                    <div className="flex-1 min-h-0 overflow-y-auto">
-                      <div className="px-3 pt-2 pb-1">
-                        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">Contacto</span>
-                      </div>
-                      <div className="px-4 pb-5 flex flex-col gap-3">
-                      {(supplier.bank_name || supplier.account_number) ? (
-                        <div className="rounded-xl border border-border bg-gradient-to-br from-muted/50 to-muted/30 p-4 shadow-sm">
-                          <div className="flex items-start gap-3">
-                            <BankLogo bankName={supplier.bank_name} size="md" transparent className="shrink-0 rounded-lg" />
-                            <div className="min-w-0 flex-1 space-y-1.5">
-                              {supplier.bank_name ? (
-                                <p className="text-sm font-bold text-foreground truncate">
-                                  {supplier.bank_name}
-                                </p>
-                              ) : null}
-                              {supplier.account_type ? (
-                                <p className="text-xs text-muted-foreground">
-                                  <span className="font-medium text-foreground/80">Tipo:</span>{" "}
-                                  <span className="font-semibold">{supplier.account_type}</span>
-                                </p>
-                              ) : null}
-                              {supplier.account_number?.trim() ? (
-                                <p className="text-xs text-muted-foreground">
-                                  <span className="font-medium text-foreground/80">Cuenta:</span>{" "}
-                                  <span className="font-bold tabular-nums tracking-wide">{supplier.account_number.trim()}</span>
-                                </p>
-                              ) : null}
-                              {supplier.bank_agreement?.trim() ? (
-                                <p className="text-xs text-muted-foreground pt-0.5">
-                                  <span className="font-medium text-foreground/80">Convenio:</span>{" "}
-                                  <span className="font-semibold">{supplier.bank_agreement.trim()}</span>
-                                </p>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 flex items-center justify-center gap-2">
-                          <Landmark className="size-5 shrink-0 text-muted-foreground/60" aria-hidden />
-                          <span className="text-xs font-medium text-muted-foreground">Sin datos bancarios</span>
-                        </div>
-                      )}
-                      {supplier.phone ? (
-                        <div className="rounded-xl border border-border bg-gradient-to-br from-muted/50 to-muted/30 p-3 shadow-sm flex items-center gap-3">
-                          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                            <Phone className="size-4" aria-hidden />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Teléfono</p>
-                            <p className="text-sm font-bold tabular-nums tracking-wide truncate">{supplier.phone}</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-xl border border-dashed border-border bg-muted/20 p-3 flex items-center gap-2">
-                          <Phone className="size-4 shrink-0 text-muted-foreground/60" aria-hidden />
-                          <span className="text-xs font-medium text-muted-foreground">Sin teléfono</span>
-                        </div>
-                      )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <footer
-                    className="border-t border-border p-2.5 flex flex-wrap items-center justify-end gap-1.5 bg-muted/40 rounded-b-2xl shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="gap-1.5 h-8 text-xs font-semibold"
-                      onClick={(e) => handleEdit(supplier, e)}
-                    >
-                      <Pencil className="size-3.5" />
-                      Editar
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      aria-label="Eliminar proveedor"
-                      onClick={(e) => openDeleteDialog(supplier, e)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </footer>
-                </motion.div>
+                  supplier={supplier}
+                  onOpen={handleCardClick}
+                  onEdit={(e) => handleEdit(supplier, e)}
+                  onDelete={(e) => openDeleteDialog(supplier, e)}
+                />
               ))}
             </motion.div>
           </AnimatePresence>
