@@ -170,7 +170,7 @@ export function SamitForm({
                           inputMode="decimal"
                           placeholder="0 o 0,00"
                           className={inputClassName}
-                          value={formatAmountDisplay(field.value)}
+                          value={formatAmountDisplay(field.value as number | undefined)}
                           onChange={(e) => {
                             const parsed = parseAmountInput(e.target.value);
                             field.onChange(parsed === undefined ? 0 : parsed);
@@ -198,7 +198,7 @@ export function SamitForm({
                           inputMode="decimal"
                           placeholder="0 o 0,00"
                           className={inputClassName}
-                          value={formatAmountDisplay(field.value)}
+                          value={formatAmountDisplay(field.value as number | undefined)}
                           onChange={(e) => {
                             const parsed = parseAmountInput(e.target.value);
                             field.onChange(parsed === undefined ? 0 : parsed);
@@ -226,7 +226,7 @@ export function SamitForm({
                           inputMode="decimal"
                           placeholder="0 o 0,00"
                           className={inputClassName}
-                          value={formatAmountDisplay(field.value)}
+                          value={formatAmountDisplay(field.value as number | undefined)}
                           onChange={(e) => {
                             const parsed = parseAmountInput(e.target.value);
                             field.onChange(parsed === undefined ? 0 : parsed);

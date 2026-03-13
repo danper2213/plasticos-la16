@@ -199,7 +199,7 @@ export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBal
                             inputMode="decimal"
                             placeholder="0 o 0,00"
                             className={inputClassName}
-                            value={formatAmountDisplay(field.value)}
+                            value={formatAmountDisplay(field.value as number | undefined)}
                             onChange={(e) => {
                               const parsed = parseAmountInput(e.target.value);
                               field.onChange(parsed === undefined ? 0 : parsed);
@@ -227,7 +227,7 @@ export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBal
                             inputMode="decimal"
                             placeholder="0 o 0,00"
                             className={inputClassName}
-                            value={formatAmountDisplay(field.value)}
+                            value={formatAmountDisplay(field.value as number | undefined)}
                             onChange={(e) => {
                               const parsed = parseAmountInput(e.target.value);
                               field.onChange(parsed === undefined ? 0 : parsed);
@@ -258,7 +258,7 @@ export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBal
                             inputMode="decimal"
                             placeholder="0 o 0,00"
                             className={inputClassName}
-                            value={formatAmountDisplay(field.value)}
+                            value={formatAmountDisplay(field.value as number | undefined)}
                             onChange={(e) => {
                               const parsed = parseAmountInput(e.target.value);
                               field.onChange(parsed === undefined ? (undefined as unknown as number) : parsed);
@@ -312,7 +312,7 @@ export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBal
                                       inputMode="decimal"
                                       placeholder="0 o 0,00"
                                       className="h-9 rounded-md"
-                                      value={formatAmountDisplay(f.value)}
+                                      value={formatAmountDisplay(f.value as number | undefined)}
                                       onChange={(e) => {
                                         const parsed = parseAmountInput(e.target.value);
                                         f.onChange(parsed === undefined ? 0 : parsed);

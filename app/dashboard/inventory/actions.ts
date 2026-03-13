@@ -100,10 +100,13 @@ export async function getInventoryMovements(options?: {
       console.error("getInventoryMovements error:", resLegacy.error);
       return [];
     }
-    data = resLegacy.data as (MovementRow & { created_by_user_id?: null; created_by_email?: null })[];
+    data = resLegacy.data as unknown as (MovementRow & {
+      created_by_user_id?: null;
+      created_by_email?: null;
+    })[];
     withUserColumns = false;
   } else {
-    data = res.data as MovementRow[];
+    data = res.data as unknown as MovementRow[];
   }
 
   const rows = (data ?? []) as (MovementRow & { created_by_user_id?: string | null; created_by_email?: string | null })[];
