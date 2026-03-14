@@ -21,8 +21,6 @@ interface SearchComboboxProps {
   disabled?: boolean;
   /** Llamado al abrir (focus). Útil para resetear búsqueda desde el padre. */
   onOpen?: () => void;
-  /** Si true, al montar o cuando options cambian y value está vacío, resetea search. */
-  resetSearchWhenEmpty?: boolean;
 }
 
 export function SearchCombobox({
@@ -35,14 +33,19 @@ export function SearchCombobox({
   emptyMessage = "Ningún resultado coincide con la búsqueda.",
   disabled = false,
   onOpen,
-  resetSearchWhenEmpty = true,
 }: SearchComboboxProps) {
   const [search, setSearch] = React.useState("");
   const [listOpen, setListOpen] = React.useState(false);
   const closeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedOption = options.find((o) => o.value === value);
-  const displayValue = selectedOption ? selectedOption.label : search;
+  // Al escribir, mostrar siempre el texto de búsqueda para que no se "trague" lo que escribe el usuario
+  const displayValue =
+    search.length > 0 && (!selectedOption || search !== selectedOption.label)
+      ? search
+      : selectedOption
+        ? selectedOption.label
+        : search;
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -62,15 +65,12 @@ export function SearchCombobox({
     closeTimerRef.current = setTimeout(() => setListOpen(false), 200);
   };
 
-  React.useEffect(() => {
-    if (resetSearchWhenEmpty && !value && search) setSearch("");
-  }, [value, resetSearchWhenEmpty, search]);
-
   return (
     <div className={cn("relative", className)}>
       <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden />
       <Input
-        type="search"
+        type="text"
+        autoComplete="off"
         placeholder={placeholder}
         value={displayValue}
         disabled={disabled}
