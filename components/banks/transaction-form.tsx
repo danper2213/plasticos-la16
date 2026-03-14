@@ -21,13 +21,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchCombobox } from "@/components/ui/search-combobox";
 import {
   transactionSchema,
   type TransactionFormValues,
@@ -112,23 +106,16 @@ export function TransactionForm({
               render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Cuenta Bancaria</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value != null ? String(field.value) : ""}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione la cuenta" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {bankAccounts.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>
-                          {b.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <SearchCombobox
+                      key={open ? "open" : "closed"}
+                      options={bankAccounts.map((b) => ({ value: b.id, label: b.name }))}
+                      value={field.value != null ? String(field.value) : ""}
+                      onChange={field.onChange}
+                      placeholder="Buscar cuenta..."
+                      emptyMessage="Ninguna cuenta coincide con la búsqueda."
+                    />
+                  </FormControl>
                   <FormMessage>{fieldState.error?.message}</FormMessage>
                 </FormItem>
               )}
@@ -139,23 +126,16 @@ export function TransactionForm({
               render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Categoría</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value != null ? String(field.value) : ""}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione la categoría" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {categories.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <SearchCombobox
+                      key={open ? "open" : "closed"}
+                      options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                      value={field.value != null ? String(field.value) : ""}
+                      onChange={field.onChange}
+                      placeholder="Buscar categoría..."
+                      emptyMessage="Ninguna categoría coincide con la búsqueda."
+                    />
+                  </FormControl>
                   <FormMessage>{fieldState.error?.message}</FormMessage>
                 </FormItem>
               )}
@@ -166,23 +146,19 @@ export function TransactionForm({
               render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Tipo de Movimiento</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value != null ? String(field.value) : ""}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione el tipo" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {TRANSACTION_TYPES.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {TRANSACTION_TYPE_LABELS[type]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <SearchCombobox
+                      key={open ? "open" : "closed"}
+                      options={TRANSACTION_TYPES.map((type) => ({
+                        value: type,
+                        label: TRANSACTION_TYPE_LABELS[type],
+                      }))}
+                      value={field.value != null ? String(field.value) : ""}
+                      onChange={field.onChange}
+                      placeholder="Buscar tipo..."
+                      emptyMessage="Ningún tipo coincide."
+                    />
+                  </FormControl>
                   <FormMessage>{fieldState.error?.message}</FormMessage>
                 </FormItem>
               )}

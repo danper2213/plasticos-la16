@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Calculator, Percent, CircleDollarSign, TrendingUp } from "lucide-react";
+import { Calculator, Percent, CircleDollarSign, TrendingUp, Box } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { parsePackagingConversion } from "@/lib/parse-packaging";
 import { motion } from "framer-motion";
 import type { ProductWithRelations } from "@/app/dashboard/products/actions";
 
@@ -42,6 +43,10 @@ export function PriceSimulatorModal({
   const cost = Number(product.cost) || 0;
   const calculatedPrice = cost * (1 + markupPercentage / 100);
   const expectedProfit = calculatedPrice - cost;
+
+  const packagingParsed = parsePackagingConversion(product.packaging ?? null);
+  const pricePerCaja =
+    packagingParsed && packagingParsed.factor > 0 ? calculatedPrice * packagingParsed.factor : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,10 +132,10 @@ export function PriceSimulatorModal({
               </div>
             </div>
 
-            <div className="rounded-xl border border-border bg-muted/50 p-5 text-center">
+            <div className="rounded-xl border border-border bg-muted/50 p-5 text-center min-h-[132px] flex flex-col justify-center">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-center gap-1.5">
                 <TrendingUp className="size-3.5" />
-                Precio sugerido
+                Precio sugerido (unidad base)
               </p>
               <p className="mt-2 text-2xl font-black tabular-nums text-primary">
                 {formatCop(calculatedPrice)}
@@ -139,6 +144,21 @@ export function PriceSimulatorModal({
                 Utilidad proyectada: <span className="text-primary">{formatCop(expectedProfit)}</span>
               </p>
             </div>
+
+            {pricePerCaja != null && packagingParsed && (
+              <div className="rounded-xl border border-border bg-muted/30 p-5 text-center min-h-[132px] flex flex-col justify-center w-full">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-center gap-1.5">
+                  <Box className="size-3.5 text-primary" />
+                  Por {packagingParsed.unitName}
+                </p>
+                <p className="mt-2 text-lg font-black tabular-nums text-foreground">
+                  {formatCop(pricePerCaja)}
+                </p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {packagingParsed.factor} un. × {formatCop(calculatedPrice)}
+                </p>
+              </div>
+            )}
           </div>
         </motion.div>
       </DialogContent>

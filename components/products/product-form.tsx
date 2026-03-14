@@ -34,13 +34,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchCombobox } from "@/components/ui/search-combobox";
 import { triggerSuccess } from "@/lib/confetti";
 import { productSchema, type ProductFormValues } from "@/app/dashboard/products/schema";
 import { createProduct, createCategory, updateProduct } from "@/app/dashboard/products/actions";
@@ -328,23 +322,17 @@ export function ProductForm({
                           <Truck className="size-4 text-primary shrink-0" aria-hidden />
                           Proveedor
                         </FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value != null ? String(field.value) : ""}
-                        >
-                          <FormControl>
-                            <SelectTrigger className={inputClassName}>
-                              <SelectValue placeholder="Seleccione un proveedor" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {suppliers.map((s) => (
-                              <SelectItem key={s.id} value={s.id}>
-                                {s.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <SearchCombobox
+                            key={open ? "open" : "closed"}
+                            options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+                            value={field.value != null ? String(field.value) : ""}
+                            onChange={field.onChange}
+                            placeholder="Buscar proveedor..."
+                            inputClassName={inputClassName}
+                            emptyMessage="Ningún proveedor coincide con la búsqueda."
+                          />
+                        </FormControl>
                         <FormMessage>{fieldState.error?.message}</FormMessage>
                       </FormItem>
                     )}
@@ -370,23 +358,17 @@ export function ProductForm({
                             Nueva
                           </Button>
                         </div>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value != null ? String(field.value) : ""}
-                        >
-                          <FormControl>
-                            <SelectTrigger className={inputClassName}>
-                              <SelectValue placeholder="Seleccione una categoría" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {displayCategories.map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <SearchCombobox
+                            key={open ? "open" : "closed"}
+                            options={displayCategories.map((c) => ({ value: c.id, label: c.name }))}
+                            value={field.value != null ? String(field.value) : ""}
+                            onChange={field.onChange}
+                            placeholder="Buscar categoría..."
+                            inputClassName={inputClassName}
+                            emptyMessage="Ninguna categoría coincide con la búsqueda."
+                          />
+                        </FormControl>
                         <FormMessage>{fieldState.error?.message}</FormMessage>
                       </FormItem>
                     )}

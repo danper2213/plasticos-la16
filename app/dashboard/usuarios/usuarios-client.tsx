@@ -13,13 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchCombobox } from "@/components/ui/search-combobox";
 import {
   Dialog,
   DialogContent,
@@ -188,19 +182,18 @@ export function UsuariosClient({ initialUsers, initialError, currentUserId }: Us
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Select
+                    <SearchCombobox
+                      options={[
+                        { value: "admin", label: "Administrador" },
+                        { value: "employee", label: "Empleado" },
+                      ]}
                       value={u.role}
-                      onValueChange={(value) => handleRoleChange(u.id, value as AppRole)}
+                      onChange={(value) => handleRoleChange(u.id, value as AppRole)}
+                      placeholder="Rol"
+                      inputClassName={inputClassName}
+                      emptyMessage="Ningún rol coincide."
                       disabled={!!updatingId}
-                    >
-                      <SelectTrigger className={inputClassName}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Administrador</SelectItem>
-                        <SelectItem value="employee">Empleado</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    />
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -326,17 +319,20 @@ export function UsuariosClient({ initialUsers, initialError, currentUserId }: Us
                         <Shield className="size-4 shrink-0 text-primary" aria-hidden />
                         Rol
                       </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value as string | undefined}>
-                        <FormControl>
-                          <SelectTrigger className={inputClassName}>
-                            <SelectValue placeholder="Seleccione rol" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="admin">Administrador</SelectItem>
-                          <SelectItem value="employee">Empleado</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchCombobox
+                          key={createOpen ? "open" : "closed"}
+                          options={[
+                            { value: "admin", label: "Administrador" },
+                            { value: "employee", label: "Empleado" },
+                          ]}
+                          value={(field.value as string) ?? ""}
+                          onChange={field.onChange}
+                          placeholder="Buscar rol..."
+                          inputClassName={inputClassName}
+                          emptyMessage="Ningún rol coincide."
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

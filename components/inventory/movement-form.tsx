@@ -31,13 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchCombobox } from "@/components/ui/search-combobox";
 import {
   movementSchema,
   type MovementFormValues,
@@ -340,23 +334,20 @@ export function MovementForm({ open, onOpenChange, onSuccess }: MovementFormProp
                         <ArrowLeftRight className="size-4 text-primary shrink-0" aria-hidden />
                         Tipo de movimiento
                       </FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value != null ? String(field.value) : ""}
-                      >
-                        <FormControl>
-                          <SelectTrigger className={inputClassName}>
-                            <SelectValue placeholder="Seleccione el tipo" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {MOVEMENT_TYPES.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {MOVEMENT_TYPE_LABELS[type]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchCombobox
+                          key={open ? "open" : "closed"}
+                          options={MOVEMENT_TYPES.map((type) => ({
+                            value: type,
+                            label: MOVEMENT_TYPE_LABELS[type],
+                          }))}
+                          value={field.value != null ? String(field.value) : ""}
+                          onChange={field.onChange}
+                          placeholder="Buscar tipo..."
+                          inputClassName={inputClassName}
+                          emptyMessage="Ningún tipo coincide."
+                        />
+                      </FormControl>
                       <FormMessage>{fieldState.error?.message}</FormMessage>
                     </FormItem>
                   )}
@@ -398,29 +389,25 @@ export function MovementForm({ open, onOpenChange, onSuccess }: MovementFormProp
                                 aria-invalid={fieldState.invalid}
                               />
                             </FormControl>
-                            <Select
+                            <SearchCombobox
+                              key={open ? "open" : "closed"}
+                              options={units.map((u) => ({
+                                value: u.id,
+                                label:
+                                  u.name +
+                                  (u.factor_to_base !== 1
+                                    ? ` (1 = ${u.factor_to_base} ${baseUnitName})`
+                                    : ""),
+                              }))}
                               value={selectedUnit?.id ?? ""}
-                              onValueChange={(id) => {
+                              onChange={(id) => {
                                 const u = units.find((x) => x.id === id);
                                 if (u) setSelectedUnit(u);
                               }}
-                            >
-                              <SelectTrigger
-                                className={inputClassName + " min-w-[120px]"}
-                              >
-                                <SelectValue placeholder="Unidad" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {units.map((u) => (
-                                  <SelectItem key={u.id} value={u.id}>
-                                    {u.name}
-                                    {u.factor_to_base !== 1
-                                      ? ` (1 = ${u.factor_to_base} ${baseUnitName})`
-                                      : ""}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              placeholder="Buscar unidad..."
+                              inputClassName={inputClassName + " min-w-[120px]"}
+                              emptyMessage="Ninguna unidad coincide."
+                            />
                           </>
                         ) : (
                           <FormControl>

@@ -423,9 +423,9 @@ export function PayablesClient({
         </span>
       </div>
 
-      {/* Header: Title (left) | Date navigator + Nueva Factura (right) */}
-      <div className="flex justify-between items-start mb-6">
-        <h1 className="text-3xl font-black tracking-tight text-foreground">
+      {/* Header: en móvil columna (título arriba, acciones abajo); en desktop fila */}
+      <div className="flex flex-col gap-4 mb-6 md:flex-row md:justify-between md:items-start">
+        <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl">
           Cuentas por Pagar de{" "}
           <span className="inline-block min-w-[4ch]">
             <AnimatePresence mode="wait" initial={false}>
@@ -443,7 +443,7 @@ export function PayablesClient({
           </span>{" "}
           {year}
         </h1>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
           <Suspense fallback={<div className="h-9 w-44 animate-pulse rounded-lg bg-muted" />}>
             <MonthPaginator />
           </Suspense>
@@ -452,7 +452,7 @@ export function PayablesClient({
               setPayableToEdit(null);
               setFormOpen(true);
             }}
-            className="h-10 gap-2 px-5 bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/20"
+            className="h-10 gap-2 px-5 bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/20 w-full sm:w-auto"
           >
             <Plus className="size-4" />
             Nueva Factura

@@ -32,13 +32,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchCombobox } from "@/components/ui/search-combobox";
 import { triggerSuccess } from "@/lib/confetti";
 import { supplierSchema, type SupplierFormValues, ACCOUNT_TYPES } from "@/app/dashboard/proveedores/schema";
 import { createSupplier, updateSupplier, type Supplier } from "@/app/dashboard/proveedores/actions";
@@ -235,23 +229,17 @@ export function SupplierForm({ open, onOpenChange, supplier, onSuccess }: Suppli
                         <CreditCard className="size-4 text-primary shrink-0" aria-hidden />
                         Tipo de cuenta
                       </FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value != null ? String(field.value) : ""}
-                      >
-                        <FormControl>
-                          <SelectTrigger className={inputClassName}>
-                            <SelectValue placeholder="Seleccione el tipo" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {ACCOUNT_TYPES.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {type}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchCombobox
+                          key={open ? "open" : "closed"}
+                          options={ACCOUNT_TYPES.map((type) => ({ value: type, label: type }))}
+                          value={field.value != null ? String(field.value) : ""}
+                          onChange={field.onChange}
+                          placeholder="Buscar tipo de cuenta..."
+                          inputClassName={inputClassName}
+                          emptyMessage="Ningún tipo coincide."
+                        />
+                      </FormControl>
                       <FormMessage>{fieldState.error?.message}</FormMessage>
                     </FormItem>
                   )}

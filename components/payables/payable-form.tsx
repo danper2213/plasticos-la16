@@ -32,17 +32,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { triggerSuccess } from "@/lib/confetti";
 import { payableSchema, type PayableFormValues } from "@/app/dashboard/payables/schema";
 import { createPayable, updatePayable } from "@/app/dashboard/payables/actions";
 import type { ActiveSupplierOption, PayableWithSupplier } from "@/app/dashboard/payables/actions";
+import { SearchCombobox } from "@/components/ui/search-combobox";
 import { motion } from "framer-motion";
 
 const modalSpring = { type: "spring" as const, stiffness: 300, damping: 30 };
@@ -79,6 +73,11 @@ interface PayableFormProps {
 
 export function PayableForm({ open, onOpenChange, suppliers, onSuccess, payable }: PayableFormProps) {
   const isEditing = Boolean(payable?.id);
+  const supplierOptions = React.useMemo(
+    () => suppliers.map((s) => ({ value: s.id, label: s.name })),
+    [suppliers]
+  );
+
   const form = useForm<PayableFormValues>({
     resolver: zodResolver(payableSchema),
     defaultValues: {
@@ -187,23 +186,17 @@ export function PayableForm({ open, onOpenChange, suppliers, onSuccess, payable 
                         <Truck className="size-4 text-primary shrink-0" aria-hidden />
                         Proveedor
                       </FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value != null ? String(field.value) : ""}
-                      >
-                        <FormControl>
-                          <SelectTrigger className={inputClassName}>
-                            <SelectValue placeholder="Seleccione un proveedor" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {suppliers.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
-                              {s.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchCombobox
+                          key={open ? "open" : "closed"}
+                          options={supplierOptions}
+                          value={field.value != null ? String(field.value) : ""}
+                          onChange={field.onChange}
+                          placeholder="Buscar proveedor..."
+                          inputClassName={inputClassName}
+                          emptyMessage="Ningún proveedor coincide con la búsqueda."
+                        />
+                      </FormControl>
                       <FormMessage>{fieldState.error?.message}</FormMessage>
                     </FormItem>
                   )}

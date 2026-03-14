@@ -21,13 +21,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchCombobox } from "@/components/ui/search-combobox";
 import { receivableSchema, type ReceivableFormValues } from "@/app/dashboard/receivables/schema";
 import { createReceivable } from "@/app/dashboard/receivables/actions";
 import type { ActiveCustomerOption } from "@/app/dashboard/receivables/actions";
@@ -100,23 +94,16 @@ export function ReceivableForm({
               render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Cliente</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value != null ? String(field.value) : ""}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione un cliente" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {customers.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <SearchCombobox
+                      key={open ? "open" : "closed"}
+                      options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                      value={field.value != null ? String(field.value) : ""}
+                      onChange={field.onChange}
+                      placeholder="Buscar cliente..."
+                      emptyMessage="Ningún cliente coincide con la búsqueda."
+                    />
+                  </FormControl>
                   <FormMessage>{fieldState.error?.message}</FormMessage>
                 </FormItem>
               )}

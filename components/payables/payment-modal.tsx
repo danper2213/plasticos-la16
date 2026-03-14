@@ -21,13 +21,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchCombobox } from "@/components/ui/search-combobox";
 import { paymentSchema, type PaymentFormValues } from "@/app/dashboard/payables/schema";
 import { triggerSuccess } from "@/lib/confetti";
 import { createPayment } from "@/app/dashboard/payables/actions";
@@ -190,23 +184,16 @@ export function PaymentModal({
               render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Origen de Fondos</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value != null ? String(field.value) : ""}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione la cuenta" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {bankAccounts.map((bank) => (
-                        <SelectItem key={bank.id} value={bank.name}>
-                          {bank.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <SearchCombobox
+                      key={open ? "open" : "closed"}
+                      options={bankAccounts.map((b) => ({ value: b.name, label: b.name }))}
+                      value={field.value != null ? String(field.value) : ""}
+                      onChange={field.onChange}
+                      placeholder="Buscar cuenta..."
+                      emptyMessage="Ninguna cuenta coincide con la búsqueda."
+                    />
+                  </FormControl>
                   <FormMessage>{fieldState.error?.message}</FormMessage>
                 </FormItem>
               )}
