@@ -1,4 +1,4 @@
--- RLS para tablas del ERP PLASTICOS LA 16
+-- RLS para tablas operativas PLASTICOS LA 16
 -- Solo usuarios autenticados (Supabase Auth) pueden leer/escribir.
 -- Ejecutar en SQL Editor de Supabase cuando el esquema de tablas esté creado.
 

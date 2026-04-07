@@ -67,7 +67,7 @@ const HERO_SLOGAN =
   "LIDERES EN CALIDAD, EXPERTOS EN SERVICIO";
 /**
  * Landing pública en `/`.
- * El ERP queda en `/dashboard` (enlace «Acceso ERP»); no redirigir aquí aunque haya sesión,
+ * El panel queda en `/dashboard` (enlace «Ingresar»); no redirigir aquí aunque haya sesión,
  * para que el dominio principal siempre muestre el sitio público.
  */
 export default async function HomePage() {

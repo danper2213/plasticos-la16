@@ -6,7 +6,7 @@ import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PLASTICOS LA 16 | ERP",
+  title: "PLASTICOS LA 16",
   description: "Sistema de gestión y control financiero de PLASTICOS LA 16.",
   icons: {
     icon: [{ url: "/logo.png", type: "image/png" }],
