@@ -16,6 +16,9 @@ import {
   Plus,
   X,
   Save,
+  ImageIcon,
+  Star,
+  ListOrdered,
 } from "lucide-react";
 import {
   Dialog,
@@ -37,12 +40,18 @@ import { Button } from "@/components/ui/button";
 import { SearchCombobox } from "@/components/ui/search-combobox";
 import { triggerSuccess } from "@/lib/confetti";
 import { productSchema, type ProductFormValues } from "@/app/dashboard/products/schema";
-import { createProduct, createCategory, updateProduct } from "@/app/dashboard/products/actions";
+import {
+  createProduct,
+  createCategory,
+  updateProduct,
+  uploadProductImage,
+} from "@/app/dashboard/products/actions";
 import type {
   ActiveSupplierOption,
   CategoryOption,
   ProductWithRelations,
 } from "@/app/dashboard/products/actions";
+import { formatDateTimeEsCO } from "@/lib/calendar-date";
 import { motion } from "framer-motion";
 
 const inputClassName =
@@ -82,6 +91,9 @@ const defaultValues: ProductFormValues = {
   selling_price: 0,
   supplier_id: "",
   category_id: "",
+  image_url: "",
+  featured_on_landing: false,
+  featured_sort_order: 0,
 };
 
 export function ProductForm({
@@ -98,12 +110,22 @@ export function ProductForm({
   const [newCategoryName, setNewCategoryName] = React.useState("");
   const [newlyAddedCategory, setNewlyAddedCategory] = React.useState<CategoryOption | null>(null);
   const isCreatingCategoryRef = React.useRef(false);
+  const productImageInputRef = React.useRef<HTMLInputElement>(null);
+  const [productImageUploading, setProductImageUploading] = React.useState(false);
 
   const form = useForm<ProductFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(productSchema) as any,
     defaultValues,
   });
+
+  const imageUrlWatch = form.watch("image_url");
+
+  React.useEffect(() => {
+    if (!String(imageUrlWatch ?? "").trim()) {
+      form.setValue("featured_on_landing", false);
+    }
+  }, [imageUrlWatch, form]);
 
   const displayCategories = React.useMemo(() => {
     const byId = new Map(categories.map((c) => [c.id, c]));
@@ -154,12 +176,37 @@ export function ProductForm({
           selling_price: initialData.selling_price,
           supplier_id: initialData.supplier_id,
           category_id: initialData.category_id,
+          image_url: initialData.image_url ?? "",
+          featured_on_landing: initialData.featured_on_landing ?? false,
+          featured_sort_order: initialData.featured_sort_order ?? 0,
         });
       } else {
         form.reset(defaultValues);
       }
     }
   }, [open, initialData, form]);
+
+  async function handleProductImageFileChange(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setProductImageUploading(true);
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      const result = await uploadProductImage(fd);
+      if (result.success) {
+        form.setValue("image_url", result.url, { shouldValidate: true, shouldDirty: true });
+        toast.success("Imagen subida. Recordá guardar el producto.");
+      } else {
+        toast.error(result.error);
+      }
+    } finally {
+      setProductImageUploading(false);
+    }
+  }
 
   async function onSubmit(values: ProductFormValues) {
     const isEdit = Boolean(initialData?.id);
@@ -212,6 +259,16 @@ export function ProductForm({
                   <p className="text-sm text-muted-foreground mt-0.5">
                     Complete los datos del producto. El stock se gestiona desde inventario.
                   </p>
+                  {initialData ? (
+                    <p className="mt-2 text-xs text-muted-foreground/90">
+                      Última actualización en sistema:{" "}
+                      <span className="font-medium text-foreground/90">
+                        {formatDateTimeEsCO(
+                          initialData.updated_at ?? initialData.created_at ?? null,
+                        )}
+                      </span>
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -373,6 +430,147 @@ export function ProductForm({
                       </FormItem>
                     )}
                   />
+
+                  <div className="rounded-xl border border-border bg-muted/25 p-4 space-y-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Página web — carrusel de destacados
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      La imagen es opcional. Solo los productos con imagen pueden marcarse para
+                      el carrusel público.
+                    </p>
+
+                    <input
+                      ref={productImageInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="sr-only"
+                      onChange={handleProductImageFileChange}
+                      aria-hidden
+                    />
+
+                    {String(imageUrlWatch ?? "").trim() ? (
+                      <div className="relative overflow-hidden rounded-lg border border-border bg-background">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={String(imageUrlWatch)}
+                          alt="Vista previa del producto"
+                          className="mx-auto max-h-40 w-full object-contain"
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="absolute right-2 top-2 h-8 rounded-md text-xs"
+                          onClick={() => {
+                            form.setValue("image_url", "", {
+                              shouldValidate: true,
+                              shouldDirty: true,
+                            });
+                          }}
+                        >
+                          Quitar imagen
+                        </Button>
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-lg gap-2"
+                        disabled={productImageUploading}
+                        onClick={() => productImageInputRef.current?.click()}
+                      >
+                        <ImageIcon className="size-4 shrink-0" aria-hidden />
+                        {productImageUploading ? "Subiendo…" : "Subir imagen"}
+                      </Button>
+                      <span className="self-center text-[11px] text-muted-foreground">
+                        JPG, PNG, WebP o GIF · máx. 5 MB
+                      </span>
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="image_url"
+                      render={({ field, fieldState }) => (
+                        <FormItem>
+                          <FormLabel className="text-muted-foreground flex items-center gap-2">
+                            <ImageIcon className="size-4 text-primary shrink-0" aria-hidden />
+                            O pegar URL de imagen
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="https://… (opcional)"
+                              className={inputClassName}
+                              {...field}
+                              value={(field.value as string) ?? ""}
+                              aria-invalid={fieldState.invalid}
+                            />
+                          </FormControl>
+                          <FormMessage>{fieldState.error?.message}</FormMessage>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="featured_on_landing"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center gap-3 space-y-0 rounded-lg border border-input bg-background/50 px-3 py-2.5">
+                          <FormControl>
+                            <input
+                              type="checkbox"
+                              id="featured_on_landing"
+                              checked={Boolean(field.value)}
+                              disabled={!String(imageUrlWatch ?? "").trim()}
+                              onChange={(e) => field.onChange(e.target.checked)}
+                              className="size-4 accent-blue-600 disabled:opacity-40"
+                            />
+                          </FormControl>
+                          <div className="space-y-0.5 leading-none">
+                            <FormLabel
+                              htmlFor="featured_on_landing"
+                              className={`flex items-center gap-2 text-sm font-medium text-foreground ${!String(imageUrlWatch ?? "").trim() ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                            >
+                              <Star className="size-3.5 text-amber-500" aria-hidden />
+                              Mostrar en &quot;Productos destacados&quot;
+                            </FormLabel>
+                            <p className="text-xs text-muted-foreground">
+                              Opcional. Requiere imagen (subida o URL). Orden menor = aparece
+                              antes.
+                            </p>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="featured_sort_order"
+                      render={({ field, fieldState }) => (
+                        <FormItem>
+                          <FormLabel className="text-muted-foreground flex items-center gap-2">
+                            <ListOrdered className="size-4 text-primary shrink-0" aria-hidden />
+                            Orden en carrusel
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={0}
+                              className={inputClassName}
+                              {...field}
+                              value={(field.value as number | undefined) ?? 0}
+                              onChange={(e) => {
+                                const v = e.target.valueAsNumber;
+                                field.onChange(Number.isNaN(v) ? 0 : v);
+                              }}
+                              aria-invalid={fieldState.invalid}
+                            />
+                          </FormControl>
+                          <FormMessage>{fieldState.error?.message}</FormMessage>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
 
                 <div className="border-t border-border bg-muted/50 px-6 py-4 flex flex-wrap items-center justify-end gap-2 rounded-b-[24px]">

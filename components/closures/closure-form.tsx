@@ -46,6 +46,7 @@ import {
   type ExpenseCategory,
 } from "@/app/dashboard/closures/schema";
 import { createClosure } from "@/app/dashboard/closures/actions";
+import { localDateInputValue } from "@/lib/calendar-date";
 import { motion } from "framer-motion";
 
 const modalSpring = { type: "spring" as const, stiffness: 300, damping: 30 };
@@ -100,7 +101,7 @@ export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBal
 
   React.useEffect(() => {
     if (open) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDateInputValue();
       form.reset({
         closure_date: today,
         initial_balance: suggestedInitialBalance,

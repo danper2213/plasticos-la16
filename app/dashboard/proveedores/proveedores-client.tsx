@@ -12,6 +12,7 @@ import {
   FileText,
   Pencil,
   Trash2,
+  Globe,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { deleteSupplier, type Supplier } from "./actions";
+import { deleteSupplier } from "./actions";
+import type { Supplier } from "./types";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { triggerSuccess } from "@/lib/confetti";
@@ -88,6 +90,12 @@ function SupplierCard({
               NIT {supplier.tax_id?.trim() || "—"}
             </p>
           </div>
+          {supplier.show_on_website ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-500">
+              <Globe className="size-3" />
+              Web
+            </span>
+          ) : null}
         </header>
 
         <div className="p-4 flex flex-col gap-3">

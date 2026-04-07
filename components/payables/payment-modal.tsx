@@ -26,10 +26,10 @@ import { paymentSchema, type PaymentFormValues } from "@/app/dashboard/payables/
 import { triggerSuccess } from "@/lib/confetti";
 import { createPayment } from "@/app/dashboard/payables/actions";
 import { getSupplierBankInfo } from "@/app/dashboard/proveedores/actions";
+import type { SupplierBankInfo } from "@/app/dashboard/proveedores/types";
 import { createClient } from "@/utils/supabase/client";
 import type { PayableWithSupplier } from "@/app/dashboard/payables/actions";
 import type { BankAccountOption } from "@/app/dashboard/payables/actions";
-import type { SupplierBankInfo } from "@/app/dashboard/proveedores/actions";
 
 interface PaymentModalProps {
   open: boolean;

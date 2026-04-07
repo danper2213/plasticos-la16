@@ -30,6 +30,18 @@ export const supplierSchema = z
     .max(20, "El teléfono no puede superar 20 caracteres")
     .optional()
     .or(z.literal("")),
+  show_on_website: z.boolean().optional().default(false),
+  logo_url: z
+    .string()
+    .url("La URL del logo no es válida")
+    .optional()
+    .or(z.literal("")),
+  website_url: z
+    .string()
+    .url("La URL del sitio web no es válida")
+    .optional()
+    .or(z.literal("")),
+  sort_order: z.coerce.number().int().min(0, "El orden no puede ser negativo").default(0),
   })
   .refine(
     (data) => {
@@ -40,4 +52,4 @@ export const supplierSchema = z
     { message: "El NIT no es válido: el dígito de verificación no coincide (norma DIAN Colombia).", path: ["tax_id"] }
   );
 
-export type SupplierFormValues = z.infer<typeof supplierSchema>;
+export type SupplierFormValues = z.input<typeof supplierSchema>;

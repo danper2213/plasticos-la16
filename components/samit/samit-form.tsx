@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { samitClosureSchema, type SamitClosureFormValues } from "@/app/dashboard/closures/samit/schema";
 import { createSamitClosure } from "@/app/dashboard/closures/samit/actions";
 import { motion } from "framer-motion";
+import { localDateInputValue } from "@/lib/calendar-date";
 import { formatCop } from "@/lib/format";
 
 const inputClassName =
@@ -75,7 +76,7 @@ export function SamitForm({
 
   React.useEffect(() => {
     if (open) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDateInputValue();
       form.reset({
         closure_date: today,
         initial_balance: suggestedInitialBalance,

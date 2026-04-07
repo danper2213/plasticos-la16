@@ -3,46 +3,66 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/utils/supabase/require-user";
 import type { SupplierFormValues } from "./schema";
-
-export interface Supplier {
-  id: string;
-  name: string;
-  tax_id: string | null;
-  bank_name: string | null;
-  account_type: string | null;
-  account_number: string | null;
-  bank_agreement: string | null;
-  phone: string | null;
-  is_active: boolean;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface SupplierBankInfo {
-  bank_name: string | null;
-  account_type: string | null;
-  account_number: string | null;
-  bank_agreement: string | null;
-}
+import type { Supplier, SupplierBankInfo } from "./types";
 
 export async function getSuppliers(): Promise<Supplier[]> {
   const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("suppliers")
-    .select("id, name, tax_id, bank_name, account_type, account_number, bank_agreement, phone, is_active, created_at, updated_at")
+    .select("id, name, tax_id, bank_name, account_type, account_number, bank_agreement, phone, show_on_website, logo_url, website_url, sort_order, is_active, created_at, updated_at")
     .eq("is_active", true)
     .order("name", { ascending: true });
 
   if (error) {
-    console.error("getSuppliers error:", error);
-    return [];
+    const fallback = await supabase
+      .from("suppliers")
+      .select("id, name, tax_id, bank_name, account_type, account_number, bank_agreement, phone, is_active, created_at, updated_at")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+    if (fallback.error) {
+      console.error("getSuppliers error:", fallback.error);
+      return [];
+    }
+    return ((fallback.data ?? []) as Partial<Supplier>[]).map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+      tax_id: row.tax_id ?? null,
+      bank_name: row.bank_name ?? null,
+      account_type: row.account_type ?? null,
+      account_number: row.account_number ?? null,
+      bank_agreement: row.bank_agreement ?? null,
+      phone: row.phone ?? null,
+      show_on_website: false,
+      logo_url: null,
+      website_url: null,
+      sort_order: 0,
+      is_active: Boolean(row.is_active),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
   }
-  return (data ?? []) as Supplier[];
+  return ((data ?? []) as Partial<Supplier>[]).map((row) => ({
+    id: row.id as string,
+    name: row.name as string,
+    tax_id: row.tax_id ?? null,
+    bank_name: row.bank_name ?? null,
+    account_type: row.account_type ?? null,
+    account_number: row.account_number ?? null,
+    bank_agreement: row.bank_agreement ?? null,
+    phone: row.phone ?? null,
+    show_on_website: Boolean(row.show_on_website),
+    logo_url: row.logo_url ?? null,
+    website_url: row.website_url ?? null,
+    sort_order: Number(row.sort_order ?? 0),
+    is_active: Boolean(row.is_active),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
 }
 
 export async function createSupplier(data: SupplierFormValues) {
   const { supabase } = await requireUser();
-  const { error } = await supabase.from("suppliers").insert({
+  let { error } = await supabase.from("suppliers").insert({
     name: data.name.trim(),
     tax_id: data.tax_id.trim() || null,
     bank_name: data.bank_name?.trim() || null,
@@ -50,19 +70,37 @@ export async function createSupplier(data: SupplierFormValues) {
     account_number: data.account_number?.trim() || null,
     bank_agreement: data.bank_agreement?.trim() || null,
     phone: data.phone?.trim() || null,
+    show_on_website: data.show_on_website,
+    logo_url: data.logo_url?.trim() || null,
+    website_url: data.website_url?.trim() || null,
+    sort_order: data.sort_order ?? 0,
     is_active: true,
   });
+  if (error?.message?.toLowerCase().includes("column")) {
+    const fallback = await supabase.from("suppliers").insert({
+      name: data.name.trim(),
+      tax_id: data.tax_id.trim() || null,
+      bank_name: data.bank_name?.trim() || null,
+      account_type: data.account_type ?? null,
+      account_number: data.account_number?.trim() || null,
+      bank_agreement: data.bank_agreement?.trim() || null,
+      phone: data.phone?.trim() || null,
+      is_active: true,
+    });
+    error = fallback.error;
+  }
 
   if (error) {
     return { success: false as const, error: error.message };
   }
   revalidatePath("/dashboard/proveedores");
+  revalidatePath("/");
   return { success: true as const };
 }
 
 export async function updateSupplier(id: string, data: SupplierFormValues) {
   const { supabase } = await requireUser();
-  const { error } = await supabase
+  let { error } = await supabase
     .from("suppliers")
     .update({
       name: data.name.trim(),
@@ -72,14 +110,35 @@ export async function updateSupplier(id: string, data: SupplierFormValues) {
       account_number: data.account_number?.trim() || null,
       bank_agreement: data.bank_agreement?.trim() || null,
       phone: data.phone?.trim() || null,
+      show_on_website: data.show_on_website,
+      logo_url: data.logo_url?.trim() || null,
+      website_url: data.website_url?.trim() || null,
+      sort_order: data.sort_order ?? 0,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);
+  if (error?.message?.toLowerCase().includes("column")) {
+    const fallback = await supabase
+      .from("suppliers")
+      .update({
+        name: data.name.trim(),
+        tax_id: data.tax_id.trim() || null,
+        bank_name: data.bank_name?.trim() || null,
+        account_type: data.account_type ?? null,
+        account_number: data.account_number?.trim() || null,
+        bank_agreement: data.bank_agreement?.trim() || null,
+        phone: data.phone?.trim() || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    error = fallback.error;
+  }
 
   if (error) {
     return { success: false as const, error: error.message };
   }
   revalidatePath("/dashboard/proveedores");
+  revalidatePath("/");
   return { success: true as const };
 }
 
@@ -111,5 +170,6 @@ export async function deleteSupplier(id: string) {
     return { success: false as const, error: error.message };
   }
   revalidatePath("/dashboard/proveedores");
+  revalidatePath("/");
   return { success: true as const };
 }

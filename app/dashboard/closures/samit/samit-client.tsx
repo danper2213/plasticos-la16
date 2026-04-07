@@ -28,19 +28,7 @@ import { MonthPaginator } from "@/components/payables/month-paginator";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 import { Suspense } from "react";
-
-function formatDate(value: string | null): string {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleDateString("es-CO", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  } catch {
-    return value;
-  }
-}
+import { formatDateOnlyEsCO } from "@/lib/calendar-date";
 
 interface SamitClientProps {
   closures: SamitClosure[];
@@ -132,7 +120,7 @@ export function SamitClient({
             ) : (
               closures.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>{formatDate(row.closure_date)}</TableCell>
+                  <TableCell>{formatDateOnlyEsCO(row.closure_date)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatCop(row.initial_balance)}
                   </TableCell>
@@ -175,7 +163,7 @@ export function SamitClient({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar registro?</AlertDialogTitle>
             <AlertDialogDescription>
-              ¿Estás seguro de eliminar el registro del {closureToDelete ? formatDate(closureToDelete.closure_date) : ""}? Esta acción no se puede deshacer.
+              ¿Estás seguro de eliminar el registro del {closureToDelete ? formatDateOnlyEsCO(closureToDelete.closure_date) : ""}? Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

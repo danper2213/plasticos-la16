@@ -1,0 +1,31 @@
+---
+description: Normas para que el código pase el build de Vercel (Next.js + TypeScript)
+alwaysApply: true
+---
+
+# Vercel build – normas obligatorias
+
+El proyecto se despliega en Vercel. Cada push ejecuta `next build`, que incluye **verificación estricta de TypeScript**. Si el build falla, el deploy no se publica.
+
+## Reglas al escribir o modificar código
+
+1. **TypeScript**
+   - No dejar errores de tipo. Resolver con tipos correctos o aserciones seguras.
+   - Si hace falta un cast “forzado” (ej. datos de Supabase), usar **doble cast vía `unknown`** para satisfacer al compilador:
+     - `value as Type` → puede fallar en build.
+     - `value as unknown as Type` → aceptado cuando el origen es externo (API, DB).
+
+2. **Formularios (react-hook-form + zod)**
+   - Los `field.value` en `render` pueden inferirse como `unknown`. Al pasarlos a funciones que esperan `number | null | undefined`, tipar explícitamente:
+     - `formatAmountDisplay(field.value as number | undefined)` (o el tipo que corresponda).
+   - Asegurar que los schemas zod y `defaultValues` coincidan con los tipos usados en los inputs.
+
+3. **Antes de dar por terminado un cambio**
+   - Ejecutar **`npm run build`** en el proyecto y confirmar que termina sin errores.
+   - No hacer push si el build falla en local (evita fallos en Vercel).
+
+4. **Linter**
+   - No introducir errores o warnings que el proyecto trate como fallo de build (según configuración de ESLint/Next).
+
+5. **Resumen**
+   - Código listo para Vercel = `npm run build` exitoso en local, sin errores de TypeScript ni de lint configurados como bloqueantes.

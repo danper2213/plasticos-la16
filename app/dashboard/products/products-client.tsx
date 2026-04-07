@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatDateTimeEsCO } from "@/lib/calendar-date";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -280,15 +281,23 @@ export function ProductsClient({
                     {formatCop(product.cost)}
                   </span>
                 </div>
-                <div className="mt-3 px-5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Calendar className="w-3.5 h-3.5 shrink-0" />
-                  <span>
-                    {product.updated_at && product.updated_at !== product.created_at
-                      ? `Actualizado: ${new Date(product.updated_at).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })}`
-                      : product.created_at
-                        ? `Creado: ${new Date(product.created_at).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })}`
-                        : "—"}
-                  </span>
+                <div className="mt-3 space-y-0.5 px-5 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span>
+                      Última actualización:{" "}
+                      {formatDateTimeEsCO(
+                        product.updated_at ?? product.created_at ?? null,
+                      )}
+                    </span>
+                  </div>
+                  {product.created_at &&
+                  product.updated_at &&
+                  product.updated_at !== product.created_at ? (
+                    <p className="pl-5 text-[0.7rem] opacity-80">
+                      Registro inicial: {formatDateTimeEsCO(product.created_at)}
+                    </p>
+                  ) : null}
                 </div>
                 <footer className="flex justify-end gap-2 mt-4 pt-3 border-t border-border px-5 pb-4 bg-muted/30">
                   <Button

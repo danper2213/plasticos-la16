@@ -15,6 +15,10 @@ import {
   Phone,
   X,
   Save,
+  Globe,
+  ImageIcon,
+  ArrowUpDown,
+  Monitor,
 } from "lucide-react";
 import {
   Dialog,
@@ -35,7 +39,8 @@ import { Button } from "@/components/ui/button";
 import { SearchCombobox } from "@/components/ui/search-combobox";
 import { triggerSuccess } from "@/lib/confetti";
 import { supplierSchema, type SupplierFormValues, ACCOUNT_TYPES } from "@/app/dashboard/proveedores/schema";
-import { createSupplier, updateSupplier, type Supplier } from "@/app/dashboard/proveedores/actions";
+import { createSupplier, updateSupplier } from "@/app/dashboard/proveedores/actions";
+import type { Supplier } from "@/app/dashboard/proveedores/types";
 import { obtenerValorConDVSugerido } from "@/lib/dian-dv";
 import { motion } from "framer-motion";
 
@@ -64,6 +69,10 @@ export function SupplierForm({ open, onOpenChange, supplier, onSuccess }: Suppli
       account_number: "",
       bank_agreement: "",
       phone: "",
+      show_on_website: false,
+      logo_url: "",
+      website_url: "",
+      sort_order: 0,
     },
   });
 
@@ -77,6 +86,10 @@ export function SupplierForm({ open, onOpenChange, supplier, onSuccess }: Suppli
         account_number: supplier.account_number ?? "",
         bank_agreement: supplier.bank_agreement ?? "",
         phone: supplier.phone ?? "",
+        show_on_website: supplier.show_on_website ?? false,
+        logo_url: supplier.logo_url ?? "",
+        website_url: supplier.website_url ?? "",
+        sort_order: supplier.sort_order ?? 0,
       });
     } else if (open && !supplier) {
       form.reset({
@@ -87,6 +100,10 @@ export function SupplierForm({ open, onOpenChange, supplier, onSuccess }: Suppli
         account_number: "",
         bank_agreement: "",
         phone: "",
+        show_on_website: false,
+        logo_url: "",
+        website_url: "",
+        sort_order: 0,
       });
     }
   }, [open, supplier, form]);
@@ -310,6 +327,109 @@ export function SupplierForm({ open, onOpenChange, supplier, onSuccess }: Suppli
                     </FormItem>
                   )}
                 />
+                <div className="rounded-xl border border-border bg-muted/30 p-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Mostrar en Página Web
+                  </p>
+                  <FormField
+                    control={form.control}
+                    name="show_on_website"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel className="text-muted-foreground flex items-center gap-2">
+                          <Monitor className="size-4 text-primary shrink-0" aria-hidden />
+                          Proveedor visible en landing
+                        </FormLabel>
+                        <FormControl>
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-input bg-background px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(field.value)}
+                              onChange={(e) => field.onChange(e.target.checked)}
+                              className="size-4 accent-blue-600"
+                            />
+                            <span className="text-sm text-foreground">
+                              Mostrar en sección de aliados
+                            </span>
+                          </label>
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="logo_url"
+                      render={({ field, fieldState }) => (
+                        <FormItem>
+                          <FormLabel className="text-muted-foreground flex items-center gap-2">
+                            <ImageIcon className="size-4 text-primary shrink-0" aria-hidden />
+                            URL logo (opcional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="https://..."
+                              className={inputClassName}
+                              {...field}
+                              value={(field.value as string) ?? ""}
+                              aria-invalid={fieldState.invalid}
+                            />
+                          </FormControl>
+                          <FormMessage>{fieldState.error?.message}</FormMessage>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="website_url"
+                      render={({ field, fieldState }) => (
+                        <FormItem>
+                          <FormLabel className="text-muted-foreground flex items-center gap-2">
+                            <Globe className="size-4 text-primary shrink-0" aria-hidden />
+                            URL sitio (opcional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="https://..."
+                              className={inputClassName}
+                              {...field}
+                              value={(field.value as string) ?? ""}
+                              aria-invalid={fieldState.invalid}
+                            />
+                          </FormControl>
+                          <FormMessage>{fieldState.error?.message}</FormMessage>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="sort_order"
+                    render={({ field, fieldState }) => (
+                      <FormItem className="mt-4 max-w-[180px]">
+                        <FormLabel className="text-muted-foreground flex items-center gap-2">
+                          <ArrowUpDown className="size-4 text-primary shrink-0" aria-hidden />
+                          Orden en web
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={0}
+                            className={inputClassName}
+                            {...field}
+                            value={(field.value as number | undefined) ?? 0}
+                            onChange={(e) => {
+                              const value = e.target.valueAsNumber;
+                              field.onChange(Number.isNaN(value) ? 0 : value);
+                            }}
+                            aria-invalid={fieldState.invalid}
+                          />
+                        </FormControl>
+                        <FormMessage>{fieldState.error?.message}</FormMessage>
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
 
               <div className="border-t border-border bg-muted/50 px-6 py-4 flex flex-wrap items-center justify-end gap-2 rounded-b-[24px]">
