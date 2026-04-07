@@ -1,6 +1,15 @@
+import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import { Suspense } from "react";
+import { ArrowLeft } from "lucide-react";
 import { LoginForm } from "./login-form";
+
+export const metadata: Metadata = {
+  title: "Iniciar sesión | PLASTICOS LA 16",
+  description: "Acceso al panel de gestión.",
+  robots: { index: false, follow: true },
+};
 
 function LoginFormFallback() {
   return (
@@ -27,6 +36,16 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-10">
       <div className="flex w-full max-w-sm flex-col items-center gap-8">
+        <Link
+          href="/"
+          className="self-start text-sm font-medium text-muted-foreground transition hover:text-foreground"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <ArrowLeft className="size-4 shrink-0" aria-hidden />
+            Volver al inicio
+          </span>
+        </Link>
+
         <div className="flex flex-col items-center gap-3 text-center">
           <Image
             src="/logo.png"

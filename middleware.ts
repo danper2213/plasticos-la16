@@ -6,6 +6,11 @@ export async function middleware(request: NextRequest) {
     const { response, user } = await updateSession(request);
     const pathname = request.nextUrl.pathname;
 
+    // Landing y demás rutas públicas: solo refrescar cookies, sin redirecciones
+    if (pathname !== "/login" && !pathname.startsWith("/dashboard")) {
+      return response;
+    }
+
     // Proteger dashboard: sin sesión → login (con redirectTo)
     if (pathname.startsWith("/dashboard") && !user) {
       const loginUrl = new URL("/login", request.url);
@@ -26,10 +31,10 @@ export async function middleware(request: NextRequest) {
 }
 
 /**
- * Solo rutas que necesitan sesión Supabase o protección.
- * Evita ejecutar middleware en `/` (landing): el prefetch de `/dashboard` devolvía 302 al login
- * y en producción podía interferir con la carga de la página pública.
+ * Incluye `/` para refrescar sesión Supabase en la landing.
+ * La lógica de redirección solo aplica a `/login` y `/dashboard` (el prefetch de `/dashboard`
+ * ya no afecta a `/` porque cada petición a `/` resuelve solo con `updateSession`).
  */
 export const config = {
-  matcher: ["/login", "/dashboard", "/dashboard/:path*"],
+  matcher: ["/", "/login", "/dashboard", "/dashboard/:path*"],
 };
