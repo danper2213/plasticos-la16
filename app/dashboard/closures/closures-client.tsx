@@ -23,11 +23,21 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ClosureForm } from "@/components/closures/closure-form";
 import { formatCop } from "@/lib/format";
-import { expenseCategoryLabel, type ExpenseCategory } from "@/app/dashboard/closures/schema";
-import { deleteClosure, type Closure, type MonthlyExpenseByCategory } from "./actions";
+import {
+  closureSchema,
+  expenseCategoryLabel,
+  type ClosureFormValues,
+  type ExpenseCategory,
+} from "@/app/dashboard/closures/schema";
+import {
+  deleteClosure,
+  getClosureForEdit,
+  type Closure,
+  type MonthlyExpenseByCategory,
+} from "./actions";
 import { MonthPaginator } from "@/components/payables/month-paginator";
 import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { Suspense } from "react";
 import { formatDateOnlyEsCO } from "@/lib/calendar-date";
 
@@ -53,12 +63,49 @@ export function ClosuresClient({
 }: ClosuresClientProps) {
   const router = useRouter();
   const [formOpen, setFormOpen] = React.useState(false);
+  const [editingClosureId, setEditingClosureId] = React.useState<string | null>(null);
+  const [editingInitialValues, setEditingInitialValues] = React.useState<ClosureFormValues | null>(null);
+  const [isLoadingEdit, setIsLoadingEdit] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [closureToDelete, setClosureToDelete] = React.useState<Closure | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
 
   function handleFormSuccess() {
     router.refresh();
+    setEditingClosureId(null);
+    setEditingInitialValues(null);
+  }
+
+  function openCreateDialog() {
+    setEditingClosureId(null);
+    setEditingInitialValues(null);
+    setFormOpen(true);
+  }
+
+  async function openEditDialog(row: Closure) {
+    setIsLoadingEdit(true);
+    const result = await getClosureForEdit(row.id);
+    setIsLoadingEdit(false);
+    if (!result.success) {
+      toast.error(result.error ?? "No se pudo cargar el cierre para edición");
+      return;
+    }
+
+    const parsed = closureSchema.safeParse({
+      closure_date: result.data.closure_date,
+      initial_balance: result.data.initial_balance,
+      sales_total: result.data.sales_total,
+      system_total_income: result.data.system_total_income,
+      expenses: result.data.expenses,
+    });
+    if (!parsed.success) {
+      toast.error("El cierre tiene datos inválidos para edición.");
+      return;
+    }
+
+    setEditingClosureId(row.id);
+    setEditingInitialValues(parsed.data);
+    setFormOpen(true);
   }
 
   function openDeleteDialog(row: Closure) {
@@ -96,7 +143,7 @@ export function ClosuresClient({
           <Suspense fallback={<div className="h-9 w-36 animate-pulse rounded-lg bg-muted" />}>
             <MonthPaginator basePath="/dashboard/closures" />
           </Suspense>
-          <Button onClick={() => setFormOpen(true)} className="w-fit">
+          <Button onClick={openCreateDialog} className="w-fit">
             + Registrar Cierre
           </Button>
         </div>
@@ -148,7 +195,7 @@ export function ClosuresClient({
               <TableHead className="text-right whitespace-nowrap">Entradas transferencia</TableHead>
               <TableHead className="text-right whitespace-nowrap">Gastos del día</TableHead>
               <TableHead className="text-right whitespace-nowrap">Saldo total</TableHead>
-              <TableHead className="w-[60px]"></TableHead>
+              <TableHead className="w-[110px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -177,16 +224,28 @@ export function ClosuresClient({
                   <TableCell className="text-right tabular-nums font-medium">
                     {formatCop(row.system_expected_balance)}
                   </TableCell>
-                  <TableCell className="w-[60px]">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      aria-label="Eliminar cierre"
-                      onClick={() => openDeleteDialog(row)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+                  <TableCell className="w-[110px]">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                        aria-label="Editar cierre"
+                        onClick={() => openEditDialog(row)}
+                        disabled={isLoadingEdit}
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        aria-label="Eliminar cierre"
+                        onClick={() => openDeleteDialog(row)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -200,6 +259,8 @@ export function ClosuresClient({
         onOpenChange={setFormOpen}
         onSuccess={handleFormSuccess}
         suggestedInitialBalance={suggestedInitialBalance}
+        editingClosureId={editingClosureId}
+        initialValues={editingInitialValues}
       />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

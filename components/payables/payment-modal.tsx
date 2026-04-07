@@ -46,9 +46,10 @@ export function PaymentModal({
   bankAccounts,
   onSuccess,
 }: PaymentModalProps) {
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = React.useState(false);
   const [supplierBank, setSupplierBank] = React.useState<SupplierBankInfo | null>(null);
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = React.useState(0);
 
   const form = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
@@ -68,12 +69,12 @@ export function PaymentModal({
         payment_date: new Date().toISOString().slice(0, 10),
         receipt_url: "",
       });
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      setSelectedFile(null);
+      setFileInputKey((prev) => prev + 1);
       getSupplierBankInfo(payable.supplier_id).then(setSupplierBank);
     } else {
       setSupplierBank(null);
+      setSelectedFile(null);
     }
   }, [open, payable, form]);
 
@@ -94,13 +95,13 @@ export function PaymentModal({
 
     let receipt_url = values.receipt_url ?? "";
 
-    const file = fileInputRef.current?.files?.[0];
+    const file = selectedFile;
     if (file) {
       setIsUploading(true);
       try {
         const supabase = createClient();
-        const ext = file.name.split(".").pop() ?? "";
-        const path = `${Date.now()}-${file.name}`;
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+        const path = `${file.lastModified}-${file.size}-${safeName}`;
 
         const { error: uploadError } = await supabase.storage
           .from("comprobantes")
@@ -220,11 +221,12 @@ export function PaymentModal({
               <FormLabel>Comprobante de Pago (Opcional)</FormLabel>
               <FormControl>
                 <Input
-                  ref={fileInputRef}
+                  key={fileInputKey}
                   type="file"
                   accept="image/*,application/pdf"
                   className="cursor-pointer file:mr-2 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground"
                   aria-label="Comprobante de pago"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
                 />
               </FormControl>
             </FormItem>

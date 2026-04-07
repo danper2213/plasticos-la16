@@ -131,7 +131,6 @@ export function SocialFeed({ posts }: SocialFeedProps) {
                     <video
                       className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                       src={post.media_url}
-                      autoPlay
                       loop
                       muted
                       playsInline

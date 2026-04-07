@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import {
   Wallet,
+  Pencil,
   Calendar,
   TrendingUp,
   ArrowUpCircle,
@@ -45,7 +46,7 @@ import {
   expenseCategoryLabel,
   type ExpenseCategory,
 } from "@/app/dashboard/closures/schema";
-import { createClosure } from "@/app/dashboard/closures/actions";
+import { createClosure, updateClosure } from "@/app/dashboard/closures/actions";
 import { localDateInputValue } from "@/lib/calendar-date";
 import { motion } from "framer-motion";
 
@@ -78,11 +79,20 @@ interface ClosureFormProps {
   onSuccess: () => void;
   /** Saldo esperado caja del último cierre; se usa como Saldo inicial al abrir un registro nuevo */
   suggestedInitialBalance?: number;
+  editingClosureId?: string | null;
+  initialValues?: ClosureFormValues | null;
 }
 
 const defaultExpense = { amount: 0, category: "otros" as ExpenseCategory, description: "" };
 
-export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBalance = 0 }: ClosureFormProps) {
+export function ClosureForm({
+  open,
+  onOpenChange,
+  onSuccess,
+  suggestedInitialBalance = 0,
+  editingClosureId = null,
+  initialValues = null,
+}: ClosureFormProps) {
   const form = useForm<ClosureFormValues>({
     resolver: zodResolver(closureSchema) as Resolver<ClosureFormValues>,
     defaultValues: {
@@ -101,27 +111,33 @@ export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBal
 
   React.useEffect(() => {
     if (open) {
-      const today = localDateInputValue();
-      form.reset({
-        closure_date: today,
-        initial_balance: suggestedInitialBalance,
-        sales_total: 0,
-        system_total_income: undefined as unknown as number,
-        expenses: [],
-      });
+      if (editingClosureId && initialValues) {
+        form.reset(initialValues);
+      } else {
+        const today = localDateInputValue();
+        form.reset({
+          closure_date: today,
+          initial_balance: suggestedInitialBalance,
+          sales_total: 0,
+          system_total_income: undefined as unknown as number,
+          expenses: [],
+        });
+      }
     }
-  }, [open, form, suggestedInitialBalance]);
+  }, [open, form, suggestedInitialBalance, editingClosureId, initialValues]);
 
   const totalGastos = form.watch("expenses").reduce((s, e) => s + (e?.amount ?? 0), 0);
 
   async function onSubmit(values: ClosureFormValues) {
-    const result = await createClosure(values);
+    const result = editingClosureId
+      ? await updateClosure(editingClosureId, values)
+      : await createClosure(values);
     if (result.success) {
-      toast.success("Cierre registrado correctamente");
+      toast.success(editingClosureId ? "Cierre actualizado correctamente" : "Cierre registrado correctamente");
       onSuccess();
       onOpenChange(false);
     } else {
-      toast.error(result.error ?? "Error al registrar el cierre");
+      toast.error(result.error ?? (editingClosureId ? "Error al actualizar el cierre" : "Error al registrar el cierre"));
     }
   }
 
@@ -132,7 +148,9 @@ export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBal
         className="max-w-lg w-full p-0 gap-0 border border-border rounded-[24px] shadow-2xl bg-card overflow-hidden data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100 dark:bg-zinc-950/95 dark:border-zinc-800"
         showCloseButton={true}
       >
-        <DialogTitle className="sr-only">Registrar cierre de caja</DialogTitle>
+        <DialogTitle className="sr-only">
+          {editingClosureId ? "Editar cierre de caja" : "Registrar cierre de caja"}
+        </DialogTitle>
         <DialogDescription className="sr-only">
           Registro diario: venta en efectivo, entradas por transferencia y gastos por categoría. El saldo se arrastra.
         </DialogDescription>
@@ -146,11 +164,11 @@ export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBal
           <div className="relative bg-gradient-to-br from-primary/15 via-card to-card border-b border-border pl-6 pr-20 py-5 dark:from-blue-950/80 dark:via-zinc-900/90 dark:to-zinc-950 dark:border-zinc-800/80">
             <div className="flex items-center gap-3">
               <div className="flex size-11 items-center justify-center rounded-xl bg-primary/20 text-primary dark:bg-blue-500/20 dark:text-blue-400">
-                <Wallet className="size-6" />
+                  {editingClosureId ? <Pencil className="size-6" /> : <Wallet className="size-6" />}
               </div>
               <div>
                 <h2 className="text-xl font-black tracking-tight text-foreground">
-                  Registrar cierre del día
+                    {editingClosureId ? "Editar cierre del día" : "Registrar cierre del día"}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-0.5">
                   Venta en efectivo, entradas por transferencia y gastos por categoría. El saldo se arrastra al día siguiente.
@@ -406,7 +424,11 @@ export function ClosureForm({ open, onOpenChange, onSuccess, suggestedInitialBal
                   className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
                 >
                   <Save className="size-4" />
-                  {form.formState.isSubmitting ? "Guardando…" : "Registrar cierre"}
+                  {form.formState.isSubmitting
+                    ? "Guardando…"
+                    : editingClosureId
+                      ? "Actualizar cierre"
+                      : "Registrar cierre"}
                 </Button>
               </div>
             </form>

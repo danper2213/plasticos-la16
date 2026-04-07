@@ -24,6 +24,19 @@ export interface MonthlyExpenseByCategory {
   total: number;
 }
 
+export interface ClosureEditPayload {
+  id: string;
+  closure_date: string;
+  initial_balance: number;
+  sales_total: number;
+  system_total_income: number;
+  expenses: Array<{
+    amount: number;
+    category: ExpenseCategory;
+    description?: string;
+  }>;
+}
+
 /** Cierres del mes indicado (filtro como cuentas por pagar). */
 export async function getClosures(
   month: number,
@@ -158,6 +171,102 @@ export async function createClosure(data: ClosureFormValues) {
     if (expError) {
       console.error("daily_expenses insert error:", expError);
       return { success: false as const, error: expError.message };
+    }
+  }
+
+  revalidatePath("/dashboard/closures");
+  return { success: true as const };
+}
+
+export async function getClosureForEdit(id: string) {
+  const { supabase } = await requireUser();
+
+  const { data: closure, error: closureError } = await supabase
+    .from("daily_closures")
+    .select("id, closure_date, initial_balance, sales_total, system_total_income")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (closureError || !closure) {
+    return { success: false as const, error: closureError?.message ?? "Cierre no encontrado." };
+  }
+
+  const { data: expenses, error: expensesError } = await supabase
+    .from("daily_expenses")
+    .select("amount, category, description")
+    .eq("closure_id", id)
+    .order("created_at", { ascending: true });
+
+  if (expensesError) {
+    return { success: false as const, error: expensesError.message };
+  }
+
+  const payload: ClosureEditPayload = {
+    id: closure.id,
+    closure_date: closure.closure_date,
+    initial_balance: Number(closure.initial_balance) || 0,
+    sales_total: Number(closure.sales_total) || 0,
+    system_total_income: Number(closure.system_total_income) || 0,
+    expenses: (expenses ?? []).map((e) => ({
+      amount: Number(e.amount) || 0,
+      category: e.category as ExpenseCategory,
+      description: e.description ?? "",
+    })),
+  };
+
+  return { success: true as const, data: payload };
+}
+
+export async function updateClosure(id: string, data: ClosureFormValues) {
+  const { supabase } = await requireUser();
+
+  const totalExpense = (data.expenses ?? []).reduce((s, e) => s + e.amount, 0);
+  const system_expected_balance =
+    (data.initial_balance ?? 0) +
+    (data.sales_total ?? 0) +
+    data.system_total_income -
+    totalExpense;
+
+  const { error: updateError } = await supabase
+    .from("daily_closures")
+    .update({
+      closure_date: data.closure_date,
+      initial_balance: data.initial_balance ?? 0,
+      sales_total: data.sales_total ?? 0,
+      payments_total: 0,
+      system_total_income: data.system_total_income,
+      system_total_expense: totalExpense,
+      system_expected_balance,
+      actual_physical_balance: system_expected_balance,
+      difference: 0,
+      notes: null,
+    })
+    .eq("id", id);
+
+  if (updateError) {
+    return { success: false as const, error: updateError.message };
+  }
+
+  const { error: deleteExpensesError } = await supabase
+    .from("daily_expenses")
+    .delete()
+    .eq("closure_id", id);
+
+  if (deleteExpensesError) {
+    return { success: false as const, error: deleteExpensesError.message };
+  }
+
+  const expenses = data.expenses ?? [];
+  if (expenses.length > 0) {
+    const rows = expenses.map((e) => ({
+      closure_id: id,
+      amount: e.amount,
+      category: e.category,
+      description: e.description?.trim() || null,
+    }));
+    const { error: insertExpensesError } = await supabase.from("daily_expenses").insert(rows);
+    if (insertExpensesError) {
+      return { success: false as const, error: insertExpensesError.message };
     }
   }
 

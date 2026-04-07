@@ -68,7 +68,7 @@ export function Navbar({ socialSettings }: NavbarProps) {
               height={40}
               className="size-9 rounded-full object-contain"
             />
-            <span className="hidden text-sm font-semibold tracking-tight text-zinc-100 sm:inline">
+            <span className="text-[11px] font-semibold tracking-tight text-zinc-100 sm:text-sm">
               PLASTICOS <span className="text-[#2563eb]">LA 16</span>
             </span>
           </Link>

@@ -200,7 +200,7 @@ export function AboutSection({
                 id="about-section-title"
                 className="mt-3 text-2xl font-bold leading-[1.15] tracking-tight text-white sm:mt-4 sm:text-3xl sm:leading-[1.12] md:text-4xl md:leading-[1.1]"
               >
-                Pioneros con historia, familia con visión de futuro
+                Más de 30 años creciendo contigo
               </h2>
             </header>
 

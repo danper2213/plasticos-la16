@@ -99,13 +99,13 @@ export default async function HomePage() {
       )
       .eq("is_active", true)
       .order("name", { ascending: true })
-      // Catálogo por categoría: debe incluir todos los activos, no un subconjunto fijo.
-      .limit(5000),
+      // Reducir payload inicial para mejorar tiempo de carga en móvil.
+      .limit(1500),
     supabase
       .from("social_posts")
       .select("id, caption, media_url, media_type, created_at")
       .order("created_at", { ascending: false })
-      .limit(12),
+      .limit(8),
     supabase
       .from("suppliers")
       .select("id, name, logo_url, website_url")

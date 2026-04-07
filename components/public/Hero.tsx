@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Award, LayoutGrid, RefreshCw, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useReducedMotion } from "framer-motion";
 import {
   LANDING_PAGE_GUTTER,
   LANDING_SECTION_PANEL,
@@ -55,7 +56,7 @@ function HeroHighlightRail() {
         <div className="absolute inset-0 h-full w-full bg-gradient-to-r from-transparent via-cyan-300/25 to-transparent blur-[2px]" />
       </div>
 
-      <ul className="relative z-[1] flex flex-col gap-7 sm:flex-row sm:items-start sm:justify-between sm:gap-3 md:gap-6">
+      <ul className="relative z-[1] grid grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-4 md:gap-6">
         {HERO_HIGHLIGHTS.map(({ icon: Icon, stat, tag, headline, description }, index) => (
           <motion.li
             key={headline}
@@ -64,17 +65,17 @@ function HeroHighlightRail() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: "easeOut", delay: 0.08 * index }}
             className={cn(
-              "group relative flex gap-4 sm:w-[min(100%,11.5rem)] sm:flex-none sm:flex-col sm:items-center sm:gap-0 sm:text-center md:w-auto md:max-w-[13rem]",
-              "sm:pt-0",
+              "group relative flex min-w-0 flex-col items-start gap-0 sm:items-center sm:text-center",
+              index > 0 ? "hidden sm:flex" : "flex",
             )}
           >
             {/* Acento móvil: franja vertical en lugar de caja */}
             <span
-              className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-gradient-to-b from-blue-400 via-white/40 to-cyan-400/80 opacity-90 sm:hidden"
+              className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-gradient-to-b from-blue-400 via-white/40 to-cyan-400/80 opacity-90 sm:left-auto sm:top-auto sm:bottom-auto sm:hidden"
               aria-hidden
             />
 
-            <div className="relative flex min-w-0 flex-1 flex-col pl-3 sm:items-center sm:pl-0">
+            <div className="relative flex min-w-0 w-full flex-1 flex-col pl-3 sm:items-center sm:pl-0">
               {/* Nodo: anillo + brillo (no tarjeta) */}
               <div className="relative shrink-0 sm:mx-auto">
                 <div
@@ -131,6 +132,8 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
   const filteredWords = rotatingWords.filter((word) => word.trim().length > 0);
   const words = filteredWords.length > 0 ? filteredWords : [...FALLBACK_WORDS];
   const [wordIndex, setWordIndex] = useState(0);
+  const [shouldPlayVideo, setShouldPlayVideo] = useState(false);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     if (words.length <= 1) return;
@@ -144,10 +147,22 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
     };
   }, [words.length]);
 
+  useEffect(() => {
+    const sync = () => {
+      const nav = navigator as Navigator & {
+        connection?: { saveData?: boolean };
+      };
+      const saveData = Boolean(nav.connection?.saveData);
+      setShouldPlayVideo(!reduceMotion && !saveData);
+    };
+    sync();
+    return () => undefined;
+  }, [reduceMotion]);
+
   return (
     <ScrollFadeSection
       id="inicio"
-      className="relative scroll-mt-28 bg-transparent pt-6 pb-8 sm:pt-8 sm:pb-10"
+      className="relative scroll-mt-28 bg-transparent pt-5 pb-8 sm:pt-8 sm:pb-10"
       aria-labelledby="hero-heading"
     >
       <div className={LANDING_PAGE_GUTTER}>
@@ -158,15 +173,24 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
           )}
         >
           {/* Altura generosa; el bloque sigue bajo el navbar en el flujo (z-50 en header). */}
-          <div className="relative h-[min(72vh,640px)] min-h-[360px] w-full sm:h-[min(76vh,720px)] sm:min-h-[400px] md:h-[min(82vh,820px)] md:min-h-[440px] lg:h-[min(85vh,920px)]">
-            <video
-              className="absolute inset-0 z-0 h-full w-full object-cover"
-              src="/hero-video.mp4"
-              autoPlay
-              loop
-              muted
-              playsInline
-            />
+          <div className="relative h-[min(80vh,760px)] min-h-[500px] w-full sm:h-[min(76vh,720px)] sm:min-h-[400px] md:h-[min(82vh,820px)] md:min-h-[440px] lg:h-[min(85vh,920px)]">
+            {shouldPlayVideo ? (
+              <video
+                className="absolute inset-0 z-0 h-full w-full object-cover"
+                src="/hero-video.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+                poster="/landing-abstract-bg.png"
+              />
+            ) : (
+              <div
+                className="absolute inset-0 z-0 h-full w-full bg-cover bg-center"
+                style={{ backgroundImage: "url('/landing-abstract-bg.png')" }}
+              />
+            )}
 
             <div
               className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-b from-black/55 via-transparent to-black/40"
@@ -191,9 +215,9 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, ease: "easeOut" }}
-              className="relative z-10 flex h-full min-h-0 flex-col px-3 pb-4 pt-12 sm:px-5 sm:pb-5 sm:pt-12 md:px-6 md:pb-6 md:pt-10"
+              className="relative z-10 flex h-full min-h-0 flex-col px-3 pb-4 pt-10 sm:px-5 sm:pb-5 sm:pt-12 md:px-6 md:pb-6 md:pt-10"
             >
-              <div className="flex min-h-0 flex-1 flex-col justify-end md:justify-center md:pb-2">
+              <div className="flex min-h-0 flex-1 flex-col justify-center pb-1 sm:pb-2 md:pb-2">
               <div className="max-w-3xl">
                 {slogan?.trim() ? (
                   <motion.figure
@@ -201,7 +225,7 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
                     initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.55, ease: "easeOut", delay: 0.12 }}
-                    className="mb-4 max-w-2xl sm:mb-5"
+                    className="mb-3 max-w-2xl sm:mb-5"
                   >
                     <div className="flex gap-3 sm:gap-4">
                       <PublicSectionBar className="mt-1.5 h-[2.5rem] sm:h-[3rem]" />
@@ -240,10 +264,10 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
                   <h1
                     id="hero-heading"
                     aria-describedby={slogan?.trim() ? "hero-slogan" : undefined}
-                    className="min-w-0 flex-1 text-3xl font-bold uppercase leading-tight tracking-tight text-white sm:text-4xl md:text-5xl"
+                    className="min-w-0 flex-1 text-2xl font-bold uppercase leading-tight tracking-tight text-white sm:text-4xl md:text-5xl"
                   >
                     LA SOLUCIÓN INTEGRAL EN{" "}
-                    <span className="relative inline-flex min-w-[160px] align-baseline sm:min-w-[200px]">
+                    <span className="relative inline-flex min-w-[140px] align-baseline sm:min-w-[200px]">
                       <AnimatePresence mode="wait">
                         <motion.span
                           key={words[wordIndex]}
@@ -260,7 +284,7 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
                   </h1>
                 </div>
 
-                <p className="mt-4 max-w-2xl text-sm leading-relaxed text-zinc-200 sm:text-base">
+                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-200 sm:mt-4 sm:text-base">
                   DISTRIBUCION MAYORISTA Y DETALLADO CON INVENTARIO SINCRONIZADO EN
                   TIEMPO REAL DESDE FLORENCIA.
                 </p>
@@ -269,7 +293,7 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, ease: "easeOut", delay: 0.15 }}
-                  className="mt-5 flex flex-wrap gap-3 sm:mt-6"
+                  className="mt-4 flex flex-wrap gap-3 sm:mt-6"
                 >
                   <a
                     href="#catalogo"
@@ -291,7 +315,7 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.65, ease: "easeOut", delay: 0.2 }}
-                className="relative z-10 mt-5 shrink-0 sm:mt-6"
+                        className="relative z-10 mt-4 shrink-0 sm:mt-6"
               >
                 <HeroHighlightRail />
               </motion.div>

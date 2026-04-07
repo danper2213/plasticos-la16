@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * the response plus the current user (if any) for route protection.
  */
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  const supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

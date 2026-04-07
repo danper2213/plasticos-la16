@@ -5,11 +5,12 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 
 const STORAGE_KEY = "pl16-public-splash-v1";
 
-const MIN_VISIBLE_MS = 1450;
+const MIN_VISIBLE_MS = 650;
 const EXIT_DURATION = 0.55;
 
 export function PublicSplash() {
   const reduceMotion = useReducedMotion();
+  const [isMobile, setIsMobile] = React.useState(false);
   const [show, setShow] = React.useState(() => {
     try {
       return !sessionStorage.getItem(STORAGE_KEY);
@@ -18,7 +19,15 @@ export function PublicSplash() {
     }
   });
 
-  const minMs = reduceMotion ? 280 : MIN_VISIBLE_MS;
+  React.useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const sync = () => setIsMobile(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  const minMs = reduceMotion ? 180 : isMobile ? 320 : MIN_VISIBLE_MS;
   const skipMotion = Boolean(reduceMotion);
 
   React.useEffect(() => {
