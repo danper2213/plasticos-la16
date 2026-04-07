@@ -87,7 +87,7 @@ export function Navbar({ socialSettings }: NavbarProps) {
 
           <div className="hidden shrink-0 items-center gap-2 md:flex">
             <Link
-              href="/login"
+              href="/dashboard"
               className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800/50 px-4 py-2 text-sm font-medium text-zinc-100 transition hover:border-zinc-600 hover:bg-zinc-800"
             >
               <User className="size-4 shrink-0 text-zinc-300" aria-hidden />
@@ -136,7 +136,7 @@ export function Navbar({ socialSettings }: NavbarProps) {
           </div>
           <div className="mt-3 flex flex-col gap-2">
             <Link
-              href="/login"
+              href="/dashboard"
               className="inline-flex items-center justify-center gap-2 rounded-full border border-zinc-700 bg-zinc-800/50 px-4 py-3 text-sm font-medium text-zinc-100"
               onClick={closeMenu}
             >

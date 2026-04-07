@@ -9,8 +9,9 @@ export const metadata: Metadata = {
   title: "PLASTICOS LA 16 | ERP",
   description: "Sistema de gestión y control financiero de PLASTICOS LA 16.",
   icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
+    icon: [{ url: "/logo.png", type: "image/png" }],
+    shortcut: "/logo.png",
+    apple: [{ url: "/logo.png", type: "image/png" }],
   },
 };
 

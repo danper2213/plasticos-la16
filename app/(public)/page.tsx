@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { Hero } from "@/components/public/Hero";
 import { SocialFeed, type SocialPost } from "@/components/public/SocialFeed";
@@ -68,17 +67,11 @@ const HERO_SLOGAN =
   "LIDERES EN CALIDAD, EXPERTOS EN SERVICIO";
 /**
  * Landing pública en `/`.
- * Usuarios con sesión activa siguen yendo al dashboard.
+ * El ERP queda en `/dashboard` (enlace «Acceso ERP»); no redirigir aquí aunque haya sesión,
+ * para que el dominio principal siempre muestre el sitio público.
  */
 export default async function HomePage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (user) {
-    redirect("/dashboard");
-  }
 
   const [
     categoriesSettled,

@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "20mb",
     },
   },
+  async rewrites() {
+    return [{ source: "/favicon.ico", destination: "/logo.png" }];
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "www.google.com", pathname: "/s2/favicons/**" },
