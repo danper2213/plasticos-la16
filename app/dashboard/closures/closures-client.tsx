@@ -39,6 +39,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ClosureForm } from "@/components/closures/closure-form";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { formatCop } from "@/lib/format";
 import {
   closureSchema,
@@ -54,7 +55,7 @@ import {
 } from "./actions";
 import { MonthPaginator } from "@/components/payables/month-paginator";
 import { toast } from "sonner";
-import { Pencil, Trash2 } from "lucide-react";
+import { CircleDollarSign, Pencil, Trash2 } from "lucide-react";
 import { formatDateOnlyEsCO } from "@/lib/calendar-date";
 import { endOfMonth, getISODay, startOfMonth } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -292,26 +293,24 @@ export function ClosuresClient({
         "text-slate-100"
       )}
     >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">Cierres de Caja</h1>
-          <p className="mt-1 max-w-xl text-sm text-slate-400">
-            Saldo a arrastrar = Saldo inicial + Venta en efectivo + Entradas por transferencia − Gastos
-            del día. Ese valor es el saldo inicial del día siguiente.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Suspense fallback={<div className="h-9 w-40 animate-pulse rounded-lg bg-slate-800" />}>
-            <MonthPaginator basePath="/dashboard/closures" />
-          </Suspense>
-          <Button
-            onClick={openCreateDialog}
-            className="bg-blue-600 text-white hover:bg-blue-500 dark:bg-blue-600 dark:hover:bg-blue-500"
-          >
-            + Registrar Cierre
-          </Button>
-        </div>
-      </div>
+      <DashboardPageHeader
+        icon={CircleDollarSign}
+        title="Cierres de Caja"
+        description="Saldo a arrastrar = Saldo inicial + Venta en efectivo + Entradas por transferencia − Gastos del día. Ese valor es el saldo inicial del día siguiente."
+        actions={
+          <>
+            <Suspense fallback={<div className="h-11 w-40 animate-pulse rounded-xl bg-muted" />}>
+              <MonthPaginator basePath="/dashboard/closures" />
+            </Suspense>
+            <Button
+              onClick={openCreateDialog}
+              className="h-11 rounded-xl bg-blue-600 text-white hover:bg-blue-500 dark:bg-blue-600 dark:hover:bg-blue-500"
+            >
+              + Registrar Cierre
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="border-slate-800/80 bg-slate-900/70 shadow-lg">

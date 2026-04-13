@@ -4,6 +4,7 @@ import * as React from "react";
 import { ExternalLink, Facebook, Instagram, MessageCircle, Music2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { Input } from "@/components/ui/input";
 import { updateSocialSettings, type SocialSettingsForm } from "./actions";
 
@@ -35,30 +36,29 @@ export function ConfiguracionClient({ initialValues }: ConfiguracionClientProps)
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6 pt-8">
-      <section className="rounded-2xl border border-zinc-800 bg-gradient-to-br from-zinc-900/80 to-zinc-900/30 p-6 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-400">
-              <Settings2 className="size-3.5" />
+    <form onSubmit={onSubmit} className="space-y-6">
+      <DashboardPageHeader
+        icon={Settings2}
+        title={
+          <div className="flex min-w-0 flex-col gap-2">
+            <span className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-400 dark:text-blue-400">
+              <Settings2 className="size-3.5" aria-hidden />
               Página Web
-            </p>
-            <h1 className="mt-3 text-2xl font-bold tracking-tight text-zinc-100 sm:text-3xl">
-              Configuración de Redes
-            </h1>
-            <p className="mt-1 text-sm text-zinc-400">
-              Administra WhatsApp y redes visibles en Navbar y Footer.
-            </p>
+            </span>
+            <h1 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">Configuración de Redes</h1>
           </div>
+        }
+        description="Administra WhatsApp y redes visibles en Navbar y Footer."
+        actions={
           <Button
             type="submit"
             disabled={isSaving}
-            className="bg-blue-600 text-white hover:bg-blue-500"
+            className="h-11 rounded-xl bg-blue-600 text-white hover:bg-blue-500"
           >
             {isSaving ? "Guardando..." : "Guardar Cambios"}
           </Button>
-        </div>
-      </section>
+        }
+      />
 
       <section className="grid grid-cols-1 gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6 lg:grid-cols-2">
         <div className="space-y-2">

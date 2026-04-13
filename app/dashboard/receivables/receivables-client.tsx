@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ReceivableForm } from "@/components/receivables/receivable-form";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { CollectionModal } from "@/components/receivables/collection-modal";
 import { formatCop } from "@/lib/format";
 import type { ReceivableWithCustomer, BankAccountOption } from "./actions";
@@ -72,18 +73,17 @@ export function ReceivablesClient({
   }
 
   return (
-    <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Cuentas por Cobrar</h1>
-          <p className="text-sm text-muted-foreground">
-            Cuentas por cobrar a clientes.
-          </p>
-        </div>
-        <Button onClick={() => setFormOpen(true)} className="w-fit">
-          + Nueva Cuenta por Cobrar
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <DashboardPageHeader
+        icon={Banknote}
+        title="Cuentas por Cobrar"
+        description="Cuentas por cobrar a clientes."
+        actions={
+          <Button onClick={() => setFormOpen(true)} className="h-11 rounded-xl w-fit sm:w-auto">
+            + Nueva Cuenta por Cobrar
+          </Button>
+        }
+      />
 
       <div className="rounded-md border border-border bg-card">
         <Table>
@@ -158,6 +158,6 @@ export function ReceivablesClient({
         bankAccounts={bankAccounts}
         onSuccess={handleFormSuccess}
       />
-    </>
+    </div>
   );
 }

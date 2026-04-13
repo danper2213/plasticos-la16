@@ -40,6 +40,7 @@ import { PriceSimulatorModal } from "@/components/products/price-simulator-modal
 import { toast } from "sonner";
 import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { deleteProduct, type ProductWithRelations } from "./actions";
 import type { ActiveSupplierOption, CategoryOption } from "./actions";
 
@@ -51,19 +52,26 @@ const STOCK_FILTERS: { value: StockFilter; label: string }[] = [
 ];
 
 function StockBadge({ quantity }: { quantity: number }) {
-  const variant =
-    quantity === 0 ? "destructive" : quantity > 20 ? "secondary" : undefined;
-  const className = cn(
-    "px-2.5 py-0.5 tabular-nums",
-    quantity > 0 &&
-      quantity <= 20 &&
-      "bg-amber-500/10 text-amber-500 border border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20"
-  );
+  const isZero = quantity === 0;
+  const isLow = quantity > 0 && quantity <= 20;
+  const isPlenty = quantity > 20;
+
   return (
-    <Badge variant={variant} className={className}>
-      <div className="flex items-center gap-1.5 font-medium">
-        <Package className="w-3 h-3 shrink-0" />
-        <span>Stock: {quantity}</span>
+    <Badge
+      variant="outline"
+      className={cn(
+        "shrink-0 px-2.5 py-0.5 tabular-nums border font-medium shadow-none",
+        isZero &&
+          "border-border/70 bg-muted/35 text-muted-foreground dark:border-zinc-700/70 dark:bg-zinc-900/65 dark:text-zinc-400",
+        isLow &&
+          "border-amber-500/25 bg-amber-500/[0.08] text-amber-800 dark:border-amber-500/22 dark:bg-amber-500/[0.07] dark:text-amber-400/95",
+        isPlenty &&
+          "border-border/60 bg-muted/45 text-foreground/90 dark:border-zinc-700/55 dark:bg-zinc-800/55 dark:text-zinc-200",
+      )}
+    >
+      <div className="flex items-center gap-1.5">
+        <Package className="w-3 h-3 shrink-0 opacity-80" />
+        <span>{isZero ? "Sin stock" : `Stock: ${quantity}`}</span>
       </div>
     </Badge>
   );
@@ -163,26 +171,23 @@ export function ProductsClient({
 
   return (
     <>
-      <div className="pt-8 px-4 md:px-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-          <div>
-            <h1 className="text-3xl font-black tracking-tight text-foreground">
-              Lista de Precios
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Productos activos con proveedor y categoría.
-            </p>
-          </div>
-          <Button
-            onClick={openNewProductForm}
-            className="w-fit shrink-0 h-10 gap-2 px-5 bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/20"
-          >
-            <Package className="size-4" />
-            Nuevo Producto
-          </Button>
-        </div>
+      <div className="space-y-6">
+        <DashboardPageHeader
+          icon={Layers}
+          title="Lista de Precios"
+          description="Productos activos con proveedor y categoría."
+          actions={
+            <Button
+              onClick={openNewProductForm}
+              className="h-11 gap-2 px-5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/25"
+            >
+              <Package className="size-4" />
+              Nuevo Producto
+            </Button>
+          }
+        />
 
-        <div className="flex flex-col lg:flex-row items-center gap-4 bg-muted/50 p-3 rounded-xl border border-border mb-6">
+        <div className="flex flex-col lg:flex-row items-center gap-4 bg-muted/50 p-3 rounded-xl border border-border">
           <div className="relative w-full min-w-0 flex-1 rounded-lg bg-background border-2 border-input shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
             <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
             <Input

@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import {
   Table,
   TableBody,
@@ -57,18 +58,17 @@ export function CustomersClient({ customers: initialCustomers }: CustomersClient
   }
 
   return (
-    <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Clientes</h1>
-          <p className="text-sm text-muted-foreground">
-            Gestión de clientes y datos de contacto.
-          </p>
-        </div>
-        <Button onClick={handleNewCustomer} className="w-fit">
-          + Nuevo Cliente
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <DashboardPageHeader
+        icon={UserRound}
+        title="Clientes"
+        description="Gestión de clientes y datos de contacto."
+        actions={
+          <Button onClick={handleNewCustomer} className="h-11 rounded-xl w-fit sm:w-auto">
+            + Nuevo Cliente
+          </Button>
+        }
+      />
 
       <div className="rounded-md border border-border bg-card">
         <Table>
@@ -132,6 +132,6 @@ export function CustomersClient({ customers: initialCustomers }: CustomersClient
         customer={selectedCustomer}
         onSuccess={handleFormSuccess}
       />
-    </>
+    </div>
   );
 }

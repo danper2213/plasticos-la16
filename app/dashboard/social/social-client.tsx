@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Trash2, Upload } from "lucide-react";
+import { Loader2, Newspaper, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { deleteSocialPost, type SocialPost, uploadSocialPost } from "./actions";
@@ -65,30 +66,30 @@ export function SocialClient({ posts }: SocialClientProps) {
   }
 
   return (
-    <div className="space-y-8 pt-8">
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-100 sm:text-3xl">
-              Gestión de Novedades
-            </h1>
-            <p className="mt-1 text-sm text-zinc-400">
-              Sube imágenes o videos al bucket{" "}
-              <span className="font-semibold text-zinc-200">social-content</span>.
-            </p>
-          </div>
+    <div className="space-y-6">
+      <DashboardPageHeader
+        icon={Newspaper}
+        title="Gestión de Novedades"
+        description={
+          <>
+            Sube imágenes o videos al bucket <span className="font-semibold text-foreground">social-content</span>.
+          </>
+        }
+        actions={
           <Button
             type="button"
-            className="bg-blue-600 text-white hover:bg-blue-500"
+            className="h-11 rounded-xl bg-blue-600 text-white hover:bg-blue-500"
             onClick={() => setShowForm((prev) => !prev)}
           >
             <Upload className="size-4" />
             {showForm ? "Ocultar formulario" : "Subir Nuevo Contenido"}
           </Button>
-        </div>
+        }
+      />
 
-        {showForm ? (
-          <form onSubmit={handleUpload} className="mt-5 space-y-4">
+      {showForm ? (
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 shadow-sm sm:p-6">
+          <form onSubmit={handleUpload} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-zinc-200" htmlFor="social-file">
                 Archivo (imagen o video)
@@ -134,8 +135,8 @@ export function SocialClient({ posts }: SocialClientProps) {
               )}
             </Button>
           </form>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
 
       <section>
         <h2 className="text-xl font-semibold text-zinc-100">Contenido publicado</h2>

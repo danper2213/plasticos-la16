@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Package,
   Receipt,
+  LayoutDashboard,
 } from "lucide-react";
 import { getDashboardSummary, getRecentActivity } from "./_lib/dashboard-data";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
@@ -16,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 
 export default async function DashboardPage() {
   const [summary, recentActivity] = await Promise.all([
@@ -32,14 +34,11 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-          Resumen Operativo - PLASTICOS LA 16
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {dateLabelCapitalized}
-        </p>
-      </div>
+      <DashboardPageHeader
+        icon={LayoutDashboard}
+        title="Resumen Operativo - PLASTICOS LA 16"
+        description={dateLabelCapitalized}
+      />
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>

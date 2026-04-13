@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, Mail, Lock, Shield, Trash2 } from "lucide-react";
+import { UserPlus, Mail, Lock, Shield, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -40,6 +40,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { listUsersWithRoles, createUser, updateUserRole, deleteUser } from "./actions";
 import type { UserWithRole } from "./actions";
 import type { AppRole } from "@/utils/supabase/require-user";
@@ -131,19 +132,18 @@ export function UsuariosClient({ initialUsers, initialError, currentUserId }: Us
   }
 
   return (
-    <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Usuarios</h1>
-          <p className="text-sm text-muted-foreground">
-            Cree usuarios y asigne rol de administrador o empleado.
-          </p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)} className="w-fit gap-2">
-          <UserPlus className="size-4" />
-          Crear usuario
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <DashboardPageHeader
+        icon={Users}
+        title="Usuarios"
+        description="Cree usuarios y asigne rol de administrador o empleado."
+        actions={
+          <Button onClick={() => setCreateOpen(true)} className="h-11 rounded-xl w-fit gap-2 sm:w-auto">
+            <UserPlus className="size-4" />
+            Crear usuario
+          </Button>
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
@@ -359,6 +359,6 @@ export function UsuariosClient({ initialUsers, initialError, currentUserId }: Us
           </Form>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   Mail,
   Settings,
   Globe,
+  FileText,
   ShieldCheck,
   ChevronDown,
   ChevronRight,
@@ -52,6 +53,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Inicio", icon: LayoutDashboard, roles: ["admin", "employee"] },
   { href: "/dashboard/customers", label: "Clientes", icon: Users, roles: ["admin", "employee"] },
   { href: "/dashboard/products", label: "Productos", icon: Package, roles: ["admin", "employee"] },
+  { href: "/dashboard/cotizaciones", label: "Cotizaciones", icon: FileText, roles: ["admin", "employee"] },
   { href: "/dashboard/inventory", label: "Inventario", icon: Warehouse, roles: ["admin", "employee"] },
   { href: "/dashboard/receivables", label: "Cuentas por Cobrar", icon: Receipt, roles: ["admin", "employee"] },
   {

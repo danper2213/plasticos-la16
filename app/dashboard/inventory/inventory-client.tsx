@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { MovementForm } from "@/components/inventory/movement-form";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { triggerSuccess } from "@/lib/confetti";
 import { toast } from "sonner";
 import {
@@ -265,18 +266,17 @@ export function InventoryClient({
   const hasProductFilter = Boolean(filterProductId);
 
   return (
-    <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Kardex / Inventario</h1>
-          <p className="text-sm text-muted-foreground">
-            Movimientos de inventario (entradas, salidas y ajustes).
-          </p>
-        </div>
-        <Button onClick={() => setFormOpen(true)} className="w-fit">
-          + Registrar Movimiento
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <DashboardPageHeader
+        icon={Package}
+        title="Kardex / Inventario"
+        description="Movimientos de inventario (entradas, salidas y ajustes)."
+        actions={
+          <Button onClick={() => setFormOpen(true)} className="h-11 rounded-xl w-fit sm:w-auto">
+            + Registrar Movimiento
+          </Button>
+        }
+      />
 
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4">
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -497,6 +497,6 @@ export function InventoryClient({
         onOpenChange={setFormOpen}
         onSuccess={handleFormSuccess}
       />
-    </>
+    </div>
   );
 }

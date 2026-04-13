@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { Landmark } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -19,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TransactionForm } from "@/components/banks/transaction-form";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { formatCop } from "@/lib/format";
 import type { BankAccount, TransactionWithRelations, FinancialCategory } from "./actions";
 
@@ -66,18 +68,17 @@ export function BanksClient({
   }
 
   return (
-    <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Flujo de Caja</h1>
-          <p className="text-sm text-muted-foreground">
-            Cuentas bancarias y movimientos diarios.
-          </p>
-        </div>
-        <Button onClick={() => setFormOpen(true)} className="w-fit">
-          + Registrar Movimiento
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <DashboardPageHeader
+        icon={Landmark}
+        title="Flujo de Caja"
+        description="Cuentas bancarias y movimientos diarios."
+        actions={
+          <Button onClick={() => setFormOpen(true)} className="h-11 rounded-xl w-fit sm:w-auto">
+            + Registrar Movimiento
+          </Button>
+        }
+      />
 
       {/* Balances */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -144,6 +145,6 @@ export function BanksClient({
         categories={categories}
         onSuccess={handleFormSuccess}
       />
-    </>
+    </div>
   );
 }

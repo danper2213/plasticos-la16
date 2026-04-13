@@ -49,6 +49,7 @@ import { formatCop } from "@/lib/format";
 import { triggerSuccess } from "@/lib/confetti";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -411,9 +412,9 @@ export function PayablesClient({
   const titleSpring = { type: "spring" as const, stiffness: 300, damping: 30 };
 
   return (
-    <div className="pt-8 px-4 md:px-8">
+    <div className="space-y-6">
       {/* Recordatorio: día actual + facturas por pagar hoy + facturas pendientes del mes */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-muted-foreground flex items-center gap-2">
           <Calendar className="size-4 text-primary/80" />
           Hoy es <strong className="text-foreground">{todayLabelCapitalized}</strong>
@@ -423,45 +424,49 @@ export function PayablesClient({
         </span>
       </div>
 
-      {/* Header: en móvil columna (título arriba, acciones abajo); en desktop fila */}
-      <div className="flex flex-col gap-4 mb-6 md:flex-row md:justify-between md:items-start">
-        <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl">
-          Cuentas por Pagar de{" "}
-          <span className="inline-block min-w-[4ch]">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={monthKey}
-                initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                exit={{ opacity: 0, y: -10, filter: "blur(4px)" }}
-                transition={titleSpring}
-                className="text-primary underline decoration-primary/30 underline-offset-8"
-              >
-                {monthName}
-              </motion.span>
-            </AnimatePresence>
-          </span>{" "}
-          {year}
-        </h1>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
-          <Suspense fallback={<div className="h-9 w-44 animate-pulse rounded-lg bg-muted" />}>
-            <MonthPaginator />
-          </Suspense>
-          <Button
-            onClick={() => {
-              setPayableToEdit(null);
-              setFormOpen(true);
-            }}
-            className="h-10 gap-2 px-5 bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/20 w-full sm:w-auto"
-          >
-            <Plus className="size-4" />
-            Nueva Factura
-          </Button>
-        </div>
-      </div>
+      <DashboardPageHeader
+        icon={Wallet}
+        title={
+          <h1 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">
+            Cuentas por Pagar de{" "}
+            <span className="inline-block min-w-[4ch]">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={monthKey}
+                  initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
+                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                  exit={{ opacity: 0, y: -10, filter: "blur(4px)" }}
+                  transition={titleSpring}
+                  className="text-primary underline decoration-primary/30 underline-offset-8"
+                >
+                  {monthName}
+                </motion.span>
+              </AnimatePresence>
+            </span>{" "}
+            {year}
+          </h1>
+        }
+        actions={
+          <>
+            <Suspense fallback={<div className="h-11 w-44 animate-pulse rounded-xl bg-muted" />}>
+              <MonthPaginator />
+            </Suspense>
+            <Button
+              onClick={() => {
+                setPayableToEdit(null);
+                setFormOpen(true);
+              }}
+              className="h-11 gap-2 px-5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/25 w-full sm:w-auto"
+            >
+              <Plus className="size-4" />
+              Nueva Factura
+            </Button>
+          </>
+        }
+      />
 
       {/* Dashboard KPI cards — left-aligned with title */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md p-4 shadow-sm">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5 flex items-center gap-1.5">
             <Wallet className="size-3.5 text-amber-500 dark:text-amber-400/80" />

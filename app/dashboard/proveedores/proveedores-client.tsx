@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SupplierForm } from "@/components/suppliers/supplier-form";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -227,28 +228,23 @@ export function ProveedoresClient({ suppliers: initialSuppliers }: ProveedoresCl
   }
 
   return (
-    <div className="pt-8 px-4 md:px-8">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-foreground">
-            Proveedores
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Gestión de proveedores y datos bancarios.
-          </p>
-        </div>
-        <Button
-          onClick={handleNewSupplier}
-          className="h-10 gap-2 px-5 bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/20 w-fit"
-        >
-          <Plus className="size-4" />
-          Nuevo Proveedor
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <DashboardPageHeader
+        icon={Building2}
+        title="Proveedores"
+        description="Gestión de proveedores y datos bancarios."
+        actions={
+          <Button
+            onClick={handleNewSupplier}
+            className="h-11 gap-2 px-5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/25 w-fit sm:w-auto"
+          >
+            <Plus className="size-4" />
+            Nuevo Proveedor
+          </Button>
+        }
+      />
 
-      {/* Search bar + count card */}
-      <div className="flex flex-wrap items-center gap-4 bg-muted/50 p-3 rounded-xl border border-border mb-6">
+      <div className="flex flex-wrap items-center gap-4 bg-muted/50 p-3 rounded-xl border border-border">
         <div className="relative flex-1 w-full min-w-[200px]">
           <div className="rounded-lg bg-background border-2 border-input shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
             <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />

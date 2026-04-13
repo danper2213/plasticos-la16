@@ -39,11 +39,12 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SamitForm } from "@/components/samit/samit-form";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { formatCop } from "@/lib/format";
 import { deleteSamitClosure, type SamitClosure } from "./actions";
 import { MonthPaginator } from "@/components/payables/month-paginator";
 import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { CircleDollarSign, Trash2 } from "lucide-react";
 import { formatDateOnlyEsCO } from "@/lib/calendar-date";
 import { endOfMonth, getISODay, startOfMonth } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -216,25 +217,24 @@ export function SamitClient({
         "text-slate-100"
       )}
     >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">SAMIT</h1>
-          <p className="mt-1 max-w-xl text-sm text-slate-400">
-            Total = Saldo inicial + Venta sistema − Pagos. El total arrastra al día siguiente.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Suspense fallback={<div className="h-9 w-40 animate-pulse rounded-lg bg-slate-800" />}>
-            <MonthPaginator basePath="/dashboard/closures/samit" />
-          </Suspense>
-          <Button
-            onClick={() => setFormOpen(true)}
-            className="bg-blue-600 text-white hover:bg-blue-500 dark:bg-blue-600 dark:hover:bg-blue-500"
-          >
-            + Registrar
-          </Button>
-        </div>
-      </div>
+      <DashboardPageHeader
+        icon={CircleDollarSign}
+        title="SAMIT"
+        description="Total = Saldo inicial + Venta sistema − Pagos. El total arrastra al día siguiente."
+        actions={
+          <>
+            <Suspense fallback={<div className="h-11 w-40 animate-pulse rounded-xl bg-muted" />}>
+              <MonthPaginator basePath="/dashboard/closures/samit" />
+            </Suspense>
+            <Button
+              onClick={() => setFormOpen(true)}
+              className="h-11 rounded-xl bg-blue-600 text-white hover:bg-blue-500 dark:bg-blue-600 dark:hover:bg-blue-500"
+            >
+              + Registrar
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="border-slate-800/80 bg-slate-900/70 shadow-lg">
