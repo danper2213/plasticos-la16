@@ -20,3 +20,20 @@ export const movementSchema = z.object({
 });
 
 export type MovementFormValues = z.infer<typeof movementSchema>;
+
+/** Una línea del registro masivo (sin notas; las notas van a nivel del lote). */
+export const movementLineSchema = movementSchema.omit({ notes: true });
+export type MovementLineFormValues = z.infer<typeof movementLineSchema>;
+
+export const batchInventoryMovementSchema = z.object({
+  global_notes: z
+    .string()
+    .max(500, "Las observaciones no pueden superar 500 caracteres")
+    .optional()
+    .or(z.literal("")),
+  lines: z
+    .array(movementLineSchema)
+    .min(1, "Agregá al menos un producto"),
+});
+
+export type BatchInventoryMovementFormValues = z.infer<typeof batchInventoryMovementSchema>;

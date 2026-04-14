@@ -1,4 +1,8 @@
-import { getInventoryMovements, getProductNameById } from "./actions";
+import {
+  getInventoryBatches,
+  getInventoryLegacyMovements,
+  getProductNameById,
+} from "./actions";
 import { InventoryClient } from "./inventory-client";
 
 type Props = { searchParams: Promise<{ from?: string; to?: string; product?: string }> };
@@ -9,22 +13,26 @@ export default async function InventoryPage({ searchParams }: Props) {
   const dateTo = typeof params.to === "string" && params.to ? params.to : undefined;
   const productId = typeof params.product === "string" && params.product ? params.product : undefined;
 
-  const [movements, filterProductName] = await Promise.all([
-    getInventoryMovements(
-      dateFrom || dateTo || productId
-        ? { dateFrom, dateTo, productId }
-        : undefined
-    ),
+  const filterOpts =
+    dateFrom || dateTo || productId ? { dateFrom, dateTo, productId } : undefined;
+
+  const [batches, legacyMovements, filterProductName] = await Promise.all([
+    getInventoryBatches(filterOpts),
+    getInventoryLegacyMovements(filterOpts),
     productId ? getProductNameById(productId) : Promise.resolve(null),
   ]);
 
   const productName =
-    filterProductName ?? (movements.length > 0 ? movements[0].product_name : null);
+    filterProductName ??
+    batches[0]?.lines[0]?.product_name ??
+    legacyMovements[0]?.product_name ??
+    null;
 
   return (
     <div className="space-y-6">
       <InventoryClient
-        movements={movements}
+        batches={batches}
+        legacyMovements={legacyMovements}
         filterFrom={dateFrom}
         filterTo={dateTo}
         filterProductId={productId}
