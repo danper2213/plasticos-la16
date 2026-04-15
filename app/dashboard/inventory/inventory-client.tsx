@@ -33,6 +33,7 @@ import {
   X,
 } from "lucide-react";
 import { parsePackagingConversion } from "@/lib/parse-packaging";
+import { formatInventoryQuantity } from "@/lib/inventory-quantity";
 import type { InventoryBatchWithLines, MovementWithProduct } from "./actions";
 import { deleteInventoryBatch, deleteMovement, searchProductsForMovement } from "./actions";
 import type { ProductSearchHit } from "./actions";
@@ -137,7 +138,7 @@ function MovementRowNequi({
       <div className="text-right">
         <p className="text-xl font-bold tabular-nums text-foreground">
           {row.movement_type === "out" ? "-" : "+"}
-          {row.quantity}
+          {formatInventoryQuantity(row.quantity)}
         </p>
         {cajas ? (
           <p className="text-xs text-muted-foreground">{cajas}</p>
@@ -753,7 +754,8 @@ export function InventoryClient({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar movimiento?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará el movimiento de {movementToDelete?.product_name ?? ""} ({movementToDelete?.quantity} un.) del día{" "}
+              Se eliminará el movimiento de {movementToDelete?.product_name ?? ""} (
+              {movementToDelete ? formatInventoryQuantity(movementToDelete.quantity) : ""} un.) del día{" "}
               {movementToDelete?.movement_date ? formatDate(movementToDelete.movement_date) : ""}. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>

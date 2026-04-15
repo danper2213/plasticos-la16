@@ -40,6 +40,7 @@ import { PriceSimulatorModal } from "@/components/products/price-simulator-modal
 import { toast } from "sonner";
 import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { formatInventoryQuantity } from "@/lib/inventory-quantity";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { deleteProduct, type ProductWithRelations } from "./actions";
 import type { ActiveSupplierOption, CategoryOption } from "./actions";
@@ -71,7 +72,9 @@ function StockBadge({ quantity }: { quantity: number }) {
     >
       <div className="flex items-center gap-1.5">
         <Package className="w-3 h-3 shrink-0 opacity-80" />
-        <span>{isZero ? "Sin stock" : `Stock: ${quantity}`}</span>
+        <span>
+          {isZero ? "Sin stock" : `Stock: ${formatInventoryQuantity(quantity)}`}
+        </span>
       </div>
     </Badge>
   );

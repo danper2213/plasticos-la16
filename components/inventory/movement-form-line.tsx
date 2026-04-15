@@ -36,6 +36,10 @@ import {
 import { searchProductsForMovement } from "@/app/dashboard/inventory/actions";
 import type { ProductSearchHit } from "@/app/dashboard/inventory/actions";
 import { parsePackagingConversion } from "@/lib/parse-packaging";
+import {
+  formatInventoryQuantity,
+  normalizeInventoryQuantity,
+} from "@/lib/inventory-quantity";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
@@ -149,7 +153,7 @@ export function MovementFormLine({
       setUnits(fromPackaging);
       setSelectedUnit(fromPackaging[1]);
       setQuantityEntered(1);
-      setValue(`lines.${index}.quantity`, Math.round(1 * parsed.factor), {
+      setValue(`lines.${index}.quantity`, normalizeInventoryQuantity(1 * parsed.factor), {
         shouldValidate: true,
       });
       setParsedBaseLabel(parsed.baseLabel ?? null);
@@ -168,7 +172,7 @@ export function MovementFormLine({
     if (!selectedProduct?.id) return;
     const factor = selectedUnit?.factor_to_base ?? 1;
     const q = Number.isFinite(quantityEntered) && quantityEntered > 0 ? quantityEntered : 0;
-    const finalQty = Math.max(1, Math.round(q * factor));
+    const finalQty = q <= 0 ? 0 : normalizeInventoryQuantity(q * factor);
     const path = `lines.${index}.quantity` as const;
     const curr = getValues(path);
     if (curr === finalQty) return;
@@ -211,9 +215,9 @@ export function MovementFormLine({
 
   function adjustQuantityStep(deltaEntered: number) {
     const factor = selectedUnit?.factor_to_base ?? 1;
-    let nextEntered = Math.max(1, quantityEntered + deltaEntered);
-    if (movementType === "out" && maxOutBase >= 0) {
-      const maxEntered = Math.max(1, Math.floor(maxOutBase / Math.max(1, factor)));
+    let nextEntered = Math.max(0, quantityEntered + deltaEntered);
+    if (movementType === "out" && Number.isFinite(maxOutBase) && maxOutBase >= 0) {
+      const maxEntered = maxOutBase / Math.max(factor, 1e-12);
       nextEntered = Math.min(nextEntered, maxEntered);
     }
     setQuantityEntered(nextEntered);
@@ -222,7 +226,7 @@ export function MovementFormLine({
   const stockLabel =
     selectedProduct?.stock_quantity === null || selectedProduct?.stock_quantity === undefined
       ? "Sin saldo cargado (salidas usan 0 hasta la primera entrada)"
-      : `En bodega: ${selectedProduct.stock_quantity.toLocaleString("es-CO")} u.`;
+      : `En bodega: ${formatInventoryQuantity(selectedProduct.stock_quantity)} u.`;
 
   return (
     <div
@@ -256,7 +260,7 @@ export function MovementFormLine({
               </p>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 {MOVEMENT_TYPE_LABELS[movementType as MovementType] ?? movementType} ·{" "}
-                {(typeof lineQuantity === "number" ? lineQuantity : 0).toLocaleString("es-CO")}{" "}
+                {formatInventoryQuantity(typeof lineQuantity === "number" ? lineQuantity : 0)}{" "}
                 u. base
                 {linePreview.violates ? " · saldo negativo" : ""}
               </p>
@@ -485,14 +489,17 @@ export function MovementFormLine({
                     <Input
                       type="number"
                       min={0}
-                      step={1}
+                      step="any"
                       className={inputClassName}
                       value={quantityEntered === 0 ? "" : String(quantityEntered)}
                       onChange={(e) => {
-                        const v = e.target.value;
-                        setQuantityEntered(
-                          v === "" ? 0 : Math.max(0, Math.floor(Number(v)))
-                        );
+                        const v = e.target.value.trim().replace(",", ".");
+                        if (v === "" || v === "-" || v === "." || v === "-.") {
+                          setQuantityEntered(0);
+                          return;
+                        }
+                        const n = Number(v);
+                        setQuantityEntered(Number.isFinite(n) ? Math.max(0, n) : 0);
                       }}
                       placeholder="0"
                       aria-invalid={fieldState.invalid}
@@ -522,14 +529,18 @@ export function MovementFormLine({
                 <FormControl>
                   <Input
                     type="number"
-                    min={1}
-                    step={1}
+                    min={0}
+                    step="any"
                     className={inputClassName}
                     value={quantityEntered === 0 ? "" : String(quantityEntered)}
                     onChange={(e) => {
-                      const v = e.target.value;
-                      const n = v === "" ? 0 : Math.max(0, Math.floor(Number(v)));
-                      setQuantityEntered(n);
+                      const v = e.target.value.trim().replace(",", ".");
+                      if (v === "" || v === "-" || v === "." || v === "-.") {
+                        setQuantityEntered(0);
+                        return;
+                      }
+                      const n = Number(v);
+                      setQuantityEntered(Number.isFinite(n) ? Math.max(0, n) : 0);
                     }}
                     aria-invalid={fieldState.invalid}
                   />
@@ -539,8 +550,7 @@ export function MovementFormLine({
             </div>
             {showEquivalent ? (
               <p className="text-sm text-primary font-medium">
-                Equivale a {Math.round(computedQuantity).toLocaleString("es-CO")}{" "}
-                {baseUnitName} en bodega
+                Equivale a {formatInventoryQuantity(computedQuantity)} {baseUnitName} en bodega
               </p>
             ) : null}
             {selectedProduct && productId ? (
@@ -553,7 +563,7 @@ export function MovementFormLine({
                       linePreview.violates ? "text-destructive" : "text-foreground"
                     )}
                   >
-                    {linePreview.balanceAfter.toLocaleString("es-CO")} u.
+                    {formatInventoryQuantity(linePreview.balanceAfter)} u.
                   </span>
                 </div>
                 {movementType === "out" && linePreview.balanceBefore > 0 ? (

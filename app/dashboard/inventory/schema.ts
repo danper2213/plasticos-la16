@@ -7,8 +7,9 @@ export const movementSchema = z.object({
   product_id: z.string().uuid("Debe seleccionar un producto válido"),
   movement_type: z.enum(MOVEMENT_TYPES, { message: "Debe seleccionar el tipo de movimiento" }),
   quantity: z
-    .number()
-    .min(1, "La cantidad debe ser al menos 1"),
+    .number({ message: "Indicá una cantidad válida" })
+    .finite()
+    .positive("La cantidad debe ser mayor que 0"),
   historical_unit_cost: z
     .number()
     .min(0, "El costo unitario no puede ser negativo"),
