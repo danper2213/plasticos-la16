@@ -1,8 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Award, LayoutGrid, RefreshCw, type LucideIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Award, LayoutGrid, Truck, type LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "framer-motion";
 import {
   LANDING_PAGE_GUTTER,
@@ -13,6 +13,33 @@ import { ScrollFadeSection } from "@/components/public/ScrollFadeSection";
 import { cn } from "@/lib/utils";
 
 const FALLBACK_WORDS = ["Plásticos", "Vasos", "Empaques", "Bolsas"] as const;
+
+/** Ruta del video del hero; si añades `public/hero-video.webm` (misma toma, menor peso), ponlo primero en `<source>`. */
+const HERO_VIDEO_MP4 = "/hero-video.mp4";
+const HERO_POSTER = "/landing-abstract-bg.png";
+
+type NetworkInformation = {
+  saveData?: boolean;
+  effectiveType?: string;
+};
+
+function isSlowConnection(nav: Navigator): boolean {
+  const c = (nav as Navigator & { connection?: NetworkInformation }).connection;
+  if (!c) return false;
+  if (c.saveData) return true;
+  const t = c.effectiveType;
+  return t === "slow-2g" || t === "2g";
+}
+
+function requestIdle(cb: () => void, timeoutMs: number): () => void {
+  const ric = window.requestIdleCallback;
+  if (typeof ric === "function") {
+    const id = ric(cb, { timeout: timeoutMs });
+    return () => window.cancelIdleCallback(id);
+  }
+  const t = window.setTimeout(cb, Math.min(480, timeoutMs));
+  return () => window.clearTimeout(t);
+}
 
 const HERO_HIGHLIGHTS: {
   icon: LucideIcon;
@@ -37,10 +64,11 @@ const HERO_HIGHLIGHTS: {
     description: "Empaques, vasos, bolsas y soluciones para tu negocio.",
   },
   {
-    icon: RefreshCw,
-    tag: "Operación",
-    headline: "Stock en tiempo real",
-    description: "Inventario sincronizado para mayoristas y detallistas.",
+    icon: Truck,
+    tag: "Logística",
+    headline: "Cobertura regional y nacional",
+    description:
+      "Salimos desde Florencia para cubrir el departamento y coordinar despachos al resto del país.",
   },
 ];
 
@@ -133,6 +161,12 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
   const words = filteredWords.length > 0 ? filteredWords : [...FALLBACK_WORDS];
   const [wordIndex, setWordIndex] = useState(0);
   const [shouldPlayVideo, setShouldPlayVideo] = useState(false);
+  /** El hero entró al viewport (una vez true, no se revierte). */
+  const [heroInView, setHeroInView] = useState(false);
+  /** Tras idle (o interacción): montar `<video>` para no competir con el primer paint. */
+  const [videoUnlocked, setVideoUnlocked] = useState(false);
+  const heroMediaRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -149,15 +183,54 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
 
   useEffect(() => {
     const sync = () => {
-      const nav = navigator as Navigator & {
-        connection?: { saveData?: boolean };
-      };
-      const saveData = Boolean(nav.connection?.saveData);
-      setShouldPlayVideo(!reduceMotion && !saveData);
+      const saveData = Boolean(
+        (navigator as Navigator & { connection?: NetworkInformation }).connection?.saveData,
+      );
+      setShouldPlayVideo(!reduceMotion && !saveData && !isSlowConnection(navigator));
     };
     sync();
+    const nav = navigator as Navigator & { connection?: NetworkInformation };
+    const conn = nav.connection as (NetworkInformation & EventTarget) | undefined;
+    if (conn && typeof conn.addEventListener === "function") {
+      conn.addEventListener("change", sync);
+      return () => conn.removeEventListener("change", sync);
+    }
     return () => undefined;
   }, [reduceMotion]);
+
+  useEffect(() => {
+    const root = heroMediaRef.current;
+    if (!root) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setHeroInView(true);
+      },
+      { rootMargin: "120px 0px", threshold: 0 },
+    );
+    obs.observe(root);
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!shouldPlayVideo) return;
+    const cancelIdle = requestIdle(() => setVideoUnlocked(true), 2200);
+    const onFirstPointer = () => setVideoUnlocked(true);
+    window.addEventListener("pointerdown", onFirstPointer, { passive: true, capture: true });
+    return () => {
+      cancelIdle();
+      window.removeEventListener("pointerdown", onFirstPointer, true);
+    };
+  }, [shouldPlayVideo]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !shouldPlayVideo || !videoUnlocked || !heroInView) return;
+    el.setAttribute("fetchpriority", "low");
+    const p = el.play();
+    if (p !== undefined) {
+      p.catch(() => undefined);
+    }
+  }, [shouldPlayVideo, videoUnlocked, heroInView]);
 
   return (
     <ScrollFadeSection
@@ -173,22 +246,26 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
           )}
         >
           {/* Altura generosa; el bloque sigue bajo el navbar en el flujo (z-50 en header). */}
-          <div className="relative h-[min(80vh,760px)] min-h-[500px] w-full sm:h-[min(76vh,720px)] sm:min-h-[400px] md:h-[min(82vh,820px)] md:min-h-[440px] lg:h-[min(85vh,920px)]">
-            {shouldPlayVideo ? (
+          <div
+            ref={heroMediaRef}
+            className="relative h-[min(80vh,760px)] min-h-[500px] w-full sm:h-[min(76vh,720px)] sm:min-h-[400px] md:h-[min(82vh,820px)] md:min-h-[440px] lg:h-[min(85vh,920px)]"
+          >
+            {shouldPlayVideo && videoUnlocked && heroInView ? (
               <video
-                className="absolute inset-0 z-0 h-full w-full object-cover"
-                src="/hero-video.mp4"
+                ref={videoRef}
+                className="absolute inset-0 z-0 h-full w-full object-cover [transform:translateZ(0)]"
+                src={HERO_VIDEO_MP4}
                 autoPlay
                 loop
                 muted
                 playsInline
                 preload="metadata"
-                poster="/landing-abstract-bg.png"
+                poster={HERO_POSTER}
               />
             ) : (
               <div
                 className="absolute inset-0 z-0 h-full w-full bg-cover bg-center"
-                style={{ backgroundImage: "url('/landing-abstract-bg.png')" }}
+                style={{ backgroundImage: `url('${HERO_POSTER}')` }}
               />
             )}
 
@@ -283,11 +360,6 @@ export function Hero({ rotatingWords = [], slogan }: HeroProps) {
                     </span>
                   </h1>
                 </div>
-
-                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-200 sm:mt-4 sm:text-base">
-                  DISTRIBUCION MAYORISTA Y DETALLADO CON INVENTARIO SINCRONIZADO EN
-                  TIEMPO REAL DESDE FLORENCIA.
-                </p>
 
                 <motion.div
                   initial={{ opacity: 0, y: 16 }}

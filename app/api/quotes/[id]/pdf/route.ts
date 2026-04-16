@@ -36,16 +36,15 @@ export async function GET(
   });
 
   const doc = React.createElement(QuotePdfDocument, {
+    quoteRef: detail.id.slice(0, 8).toUpperCase(),
     customerName: detail.customer_name,
     notes: detail.notes,
     validUntil: detail.valid_until,
     createdAtLabel,
-    defaultUtilityPercent: detail.default_utility_percent,
     lines: detail.lines.map((l) => ({
       product_name: l.product_name,
       presentation: l.presentation,
       quantity: l.quantity,
-      unit_cost: l.unit_cost,
       list_unit_price: l.list_unit_price,
     })),
   });
