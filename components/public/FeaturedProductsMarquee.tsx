@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import type { CSSProperties } from "react";
 import {
   LANDING_PAGE_GUTTER,
@@ -38,20 +39,41 @@ function FeaturedCard({
   product,
   whatsappUrl,
   themeIndex,
+  cardKey,
+  expanded,
+  onToggle,
 }: {
   product: LandingFeaturedProduct;
   whatsappUrl: string;
   themeIndex: number;
+  cardKey: string;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const href = buildWhatsAppHref(whatsappUrl, product.name);
   const theme = FEATURED_CARD_THEMES[themeIndex % FEATURED_CARD_THEMES.length];
 
+  function handleCardClick(e: React.MouseEvent<HTMLElement>) {
+    if (typeof window === "undefined" || !window.matchMedia("(hover: none)").matches) {
+      return;
+    }
+    const target = e.target as HTMLElement;
+    if (target.closest("a[href]")) return;
+    e.preventDefault();
+    onToggle();
+  }
+
   return (
     <article
+      data-featured-card={cardKey}
+      aria-expanded={expanded}
+      aria-label={`${product.name}. Tocá para ver detalle y cotizar.`}
       className={cn(
         "group relative h-[22rem] w-[13rem] shrink-0 overflow-hidden rounded-[2rem] border border-zinc-800 bg-zinc-950/85 sm:h-[26rem] sm:w-[15rem] md:w-[16rem]",
-        "transition duration-300 hover:-translate-y-1 hover:border-blue-400/60",
+        "transition duration-300 [@media(hover:hover)]:hover:-translate-y-1 [@media(hover:hover)]:hover:border-blue-400/60 [@media(hover:none)]:cursor-pointer active:scale-[0.99]",
+        expanded && "[@media(hover:none)]:border-blue-400/50",
       )}
+      onClick={handleCardClick}
     >
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <div
@@ -74,7 +96,7 @@ function FeaturedCard({
             <img
               src={product.image_url}
               alt={product.name}
-              className="h-full w-full min-h-0 object-contain object-center drop-shadow-[0_12px_28px_rgba(0,0,0,0.45)] transition duration-500 ease-out group-hover:scale-[1.04]"
+              className="h-full w-full min-h-0 object-contain object-center drop-shadow-[0_12px_28px_rgba(0,0,0,0.45)] transition duration-500 ease-out [@media(hover:hover)]:group-hover:scale-[1.04]"
               loading="lazy"
               decoding="async"
             />
@@ -83,11 +105,26 @@ function FeaturedCard({
       </div>
 
       <div
-        className="pointer-events-none absolute inset-0 z-[2] bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 transition duration-300 group-hover:opacity-100"
+        className={cn(
+          "pointer-events-none absolute inset-0 z-[2] bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 transition duration-300 [@media(hover:hover)]:group-hover:opacity-100",
+          "[@media(hover:none)]:opacity-0",
+          expanded && "[@media(hover:none)]:opacity-100",
+        )}
         aria-hidden
       />
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] translate-y-full bg-gradient-to-t from-black via-black/92 to-transparent px-4 pb-5 pt-20 transition duration-300 ease-out group-hover:pointer-events-auto group-hover:translate-y-0">
+      {/*
+        Escritorio (hover): panel inferior al pasar el cursor.
+        Táctil: panel oculto hasta tocar la tarjeta; otro toque en la misma la cierra.
+      */}
+      <div
+        className={cn(
+          "absolute inset-x-0 bottom-0 z-[5] bg-gradient-to-t from-black via-black/92 to-transparent px-4 pb-5 pt-16 transition duration-300 ease-out sm:pt-20",
+          "[@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:translate-y-full [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:translate-y-0",
+          "[@media(hover:none)]:translate-y-full [@media(hover:none)]:pointer-events-none",
+          expanded && "[@media(hover:none)]:translate-y-0 [@media(hover:none)]:pointer-events-auto",
+        )}
+      >
         {product.category_name ? (
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400">
             {product.category_name}
@@ -116,6 +153,20 @@ export function FeaturedProductsMarquee({
   products,
   whatsappUrl,
 }: FeaturedProductsMarqueeProps) {
+  const [openCardKey, setOpenCardKey] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (openCardKey === null) return;
+    const closeIfOutside = (e: PointerEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (!el?.closest("[data-featured-card]")) {
+        setOpenCardKey(null);
+      }
+    };
+    document.addEventListener("pointerdown", closeIfOutside, true);
+    return () => document.removeEventListener("pointerdown", closeIfOutside, true);
+  }, [openCardKey]);
+
   if (products.length === 0) return null;
 
   const minSlots = 10;
@@ -136,8 +187,9 @@ export function FeaturedProductsMarquee({
           <div className={cn(LANDING_SECTION_PANEL_PAD, "pb-4")}>
             <PublicSectionHeading>Productos destacados</PublicSectionHeading>
             <p className="mt-3 max-w-2xl text-zinc-300/95 [text-shadow:0_1px_18px_rgba(0,0,0,0.65)]">
-              Referencias seleccionadas. Pasa el cursor para ver detalle y cotizar por
-              WhatsApp.
+              Referencias seleccionadas. En el celular tocá una tarjeta para ver el detalle y
+              cotizar por WhatsApp; tocá de nuevo o fuera para cerrar. En computadora, pasá el
+              cursor sobre la tarjeta.
             </p>
           </div>
 
@@ -156,14 +208,22 @@ export function FeaturedProductsMarquee({
                 { "--supplier-marquee-duration": `${durationSec}s` } as CSSProperties
               }
             >
-              {loop.map((product, index) => (
-                <FeaturedCard
-                  key={`${product.id}-${index}`}
-                  product={product}
-                  whatsappUrl={whatsappUrl}
-                  themeIndex={index}
-                />
-              ))}
+              {loop.map((product, index) => {
+                const cardKey = `${product.id}-${index}`;
+                return (
+                  <FeaturedCard
+                    key={cardKey}
+                    cardKey={cardKey}
+                    expanded={openCardKey === cardKey}
+                    onToggle={() =>
+                      setOpenCardKey((k) => (k === cardKey ? null : cardKey))
+                    }
+                    product={product}
+                    whatsappUrl={whatsappUrl}
+                    themeIndex={index}
+                  />
+                );
+              })}
             </div>
           </div>
         </div>
