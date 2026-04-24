@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
@@ -13,6 +14,7 @@ import {
   Pencil,
   Search,
   Trash2,
+  QrCode,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +44,11 @@ import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { formatInventoryQuantity } from "@/lib/inventory-quantity";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
+import {
+  DashboardToolbar,
+  DashboardToolbarSearchShell,
+  DashboardToolbarStat,
+} from "@/components/layout/dashboard-toolbar";
 import { deleteProduct, type ProductWithRelations } from "./actions";
 import type { ActiveSupplierOption, CategoryOption } from "./actions";
 
@@ -123,8 +130,11 @@ export function ProductsClient({
 
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
-      result = result.filter((row) =>
-        row.name.toLowerCase().includes(q)
+      result = result.filter(
+        (row) =>
+          row.name.toLowerCase().includes(q) ||
+          row.presentation.toLowerCase().includes(q) ||
+          (row.scan_code && row.scan_code.toLowerCase().includes(q)),
       );
     }
 
@@ -182,7 +192,7 @@ export function ProductsClient({
           actions={
             <Button
               onClick={openNewProductForm}
-              className="h-11 gap-2 px-5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/25"
+              className="h-11 gap-2 rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25"
             >
               <Package className="size-4" />
               Nuevo Producto
@@ -190,17 +200,17 @@ export function ProductsClient({
           }
         />
 
-        <div className="flex flex-col lg:flex-row items-center gap-4 bg-muted/50 p-3 rounded-xl border border-border">
-          <div className="relative w-full min-w-0 flex-1 rounded-lg bg-background border-2 border-input shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-            <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
+        <DashboardToolbar className="flex flex-col items-center gap-4 lg:flex-row">
+          <DashboardToolbarSearchShell>
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-primary/90" />
             <Input
               placeholder="Buscar por nombre, código o descripción..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 pl-12 pr-4 text-base w-full rounded-lg border-0 bg-transparent focus-visible:ring-0"
-              aria-label="Buscar por nombre, código o descripción"
+              className="h-10 w-full rounded-lg border-0 bg-transparent pl-11 pr-4 text-base focus-visible:ring-0"
+              aria-label="Buscar por nombre, presentación o código de escaneo"
             />
-          </div>
+          </DashboardToolbarSearchShell>
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
               <SelectTrigger className="h-10 w-full rounded-lg border-input bg-background md:w-[200px] focus:ring-2 focus:ring-primary/20 focus:border-primary">
@@ -232,21 +242,21 @@ export function ProductsClient({
               ))}
             </div>
           </div>
-          <div className="w-px h-8 bg-border shrink-0 hidden lg:block" aria-hidden />
-          <div className="flex items-center gap-3 px-4 py-2 rounded-xl border border-border bg-card/80 shrink-0 shadow-sm">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/15 text-primary">
-              <Layers className="w-4 h-4" />
+          <div className="hidden h-8 w-px shrink-0 bg-border lg:block" aria-hidden />
+          <DashboardToolbarStat>
+            <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary dark:bg-primary/15">
+              <Layers className="h-4 w-4" />
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase leading-none">
+              <span className="text-[10px] font-bold uppercase leading-none tracking-wider text-muted-foreground">
                 Total Registrados
               </span>
-              <span className="text-xl font-black text-foreground leading-tight tabular-nums">
+              <span className="text-xl font-black tabular-nums leading-tight text-foreground">
                 {totalProducts}
               </span>
             </div>
-          </div>
-        </div>
+          </DashboardToolbarStat>
+        </DashboardToolbar>
 
         {filteredProducts.length === 0 ? (
           <div className="rounded-xl border border-border bg-card p-12 text-center text-muted-foreground shadow-sm">
@@ -259,7 +269,7 @@ export function ProductsClient({
             {filteredProducts.map((product) => (
               <div
                 key={product.id}
-                className="group relative overflow-hidden rounded-2xl border-2 border-border bg-card shadow-md flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 hover:border-primary/40"
+                className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/90 bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md hover:shadow-slate-900/5 dark:hover:shadow-primary/10"
               >
                 <header className="flex flex-row items-start justify-between gap-2 p-5 pb-2">
                   <h3 className="text-lg font-bold tracking-tight text-foreground leading-tight">
@@ -267,22 +277,28 @@ export function ProductsClient({
                   </h3>
                   <StockBadge quantity={product.stock_quantity ?? 0} />
                 </header>
-                <div className="flex flex-wrap gap-2 mt-3 mb-2 px-5">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted/60 border border-border text-xs font-medium text-foreground">
-                    <Package className="w-3.5 h-3.5 text-primary shrink-0" />
+                <div className="mb-2 mt-3 flex flex-wrap gap-2 px-5">
+                  <div className="flex items-center gap-1.5 rounded-md border border-border/80 bg-slate-100/90 px-2.5 py-1.5 text-xs font-medium text-foreground dark:bg-muted/60">
+                    <Package className="size-3.5 shrink-0 text-primary" />
                     <span>{product.presentation}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted/60 border border-border text-xs font-medium text-foreground">
-                    <Boxes className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <div className="flex items-center gap-1.5 rounded-md border border-border/80 bg-slate-100/90 px-2.5 py-1.5 text-xs font-medium text-foreground dark:bg-muted/60">
+                    <Boxes className="size-3.5 shrink-0 text-primary" />
                     <span>{product.packaging ?? "—"}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted/60 border border-border text-xs font-medium text-foreground">
-                    <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <div className="flex items-center gap-1.5 rounded-md border border-border/80 bg-slate-100/90 px-2.5 py-1.5 text-xs font-medium text-foreground dark:bg-muted/60">
+                    <Building2 className="size-3.5 shrink-0 text-primary" />
                     <span>{product.supplier_name}</span>
                   </div>
+                  {product.scan_code ? (
+                    <div className="flex items-center gap-1.5 rounded-md border border-border/80 bg-slate-100/90 px-2.5 py-1.5 font-mono text-xs text-foreground dark:bg-muted/60">
+                      <QrCode className="size-3.5 shrink-0 text-primary" aria-hidden />
+                      <span>{product.scan_code}</span>
+                    </div>
+                  ) : null}
                 </div>
-                <div className="mt-4 mx-5 flex items-center justify-between rounded-xl border border-border bg-muted/30 p-4">
-                  <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                <div className="mx-5 mt-4 flex items-center justify-between rounded-xl border border-border/80 bg-slate-50/90 p-4 dark:bg-muted/30">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Costo Base
                   </span>
                   <span className="text-xl font-black tabular-nums text-primary">
@@ -307,7 +323,7 @@ export function ProductsClient({
                     </p>
                   ) : null}
                 </div>
-                <footer className="flex justify-end gap-2 mt-4 pt-3 border-t border-border px-5 pb-4 bg-muted/30">
+                <footer className="mt-4 flex justify-end gap-2 border-t border-border/70 bg-slate-50/50 px-5 pb-4 pt-3 dark:bg-muted/30">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -325,6 +341,17 @@ export function ProductsClient({
                     onClick={() => openSimulator(product)}
                   >
                     <Calculator className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Etiqueta QR para imprimir"
+                    asChild
+                  >
+                    <Link href={`/dashboard/products/etiqueta?id=${encodeURIComponent(product.id)}`}>
+                      <QrCode className="size-4" />
+                    </Link>
                   </Button>
                   <Button
                     variant="ghost"

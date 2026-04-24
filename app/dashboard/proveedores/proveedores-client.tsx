@@ -19,6 +19,11 @@ import { Button } from "@/components/ui/button";
 import { SupplierForm } from "@/components/suppliers/supplier-form";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import {
+  DashboardToolbar,
+  DashboardToolbarSearchShell,
+  DashboardToolbarStat,
+} from "@/components/layout/dashboard-toolbar";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -236,7 +241,7 @@ export function ProveedoresClient({ suppliers: initialSuppliers }: ProveedoresCl
         actions={
           <Button
             onClick={handleNewSupplier}
-            className="h-11 gap-2 px-5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/25 w-fit sm:w-auto"
+            className="h-11 w-fit gap-2 rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25 sm:w-auto"
           >
             <Plus className="size-4" />
             Nuevo Proveedor
@@ -244,29 +249,27 @@ export function ProveedoresClient({ suppliers: initialSuppliers }: ProveedoresCl
         }
       />
 
-      <div className="flex flex-wrap items-center gap-4 bg-muted/50 p-3 rounded-xl border border-border">
-        <div className="relative flex-1 w-full min-w-[200px]">
-          <div className="rounded-lg bg-background border-2 border-input shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-            <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
+      <DashboardToolbar className="flex flex-wrap items-center gap-4">
+        <div className="relative min-w-[200px] w-full flex-1">
+          <DashboardToolbarSearchShell>
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-primary/90" />
             <Input
               placeholder="Buscar por nombre, NIT, banco o teléfono..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 pl-11 pr-4 text-base w-full rounded-lg border-0 bg-transparent focus-visible:ring-0"
+              className="h-10 w-full rounded-lg border-0 bg-transparent pl-11 pr-4 text-base focus-visible:ring-0"
               aria-label="Buscar proveedor"
             />
-          </div>
+          </DashboardToolbarSearchShell>
         </div>
-        <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md px-4 py-3 shadow-sm shrink-0 min-w-[120px]">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5 flex items-center gap-1.5">
-            <Building2 className="size-3.5 text-primary/80" />
+        <DashboardToolbarStat className="min-w-[120px] flex-col items-stretch gap-1 py-3">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Building2 className="size-3.5 shrink-0 text-primary/80" />
             {searchQuery.trim() ? "Resultados" : "Proveedores"}
           </p>
-          <p className="text-xl font-black tabular-nums text-foreground">
-            {filteredSuppliers.length}
-          </p>
-        </div>
-      </div>
+          <p className="text-xl font-black tabular-nums text-foreground">{filteredSuppliers.length}</p>
+        </DashboardToolbarStat>
+      </DashboardToolbar>
 
       {/* Cards */}
       {filteredSuppliers.length === 0 ? (

@@ -50,6 +50,10 @@ import { triggerSuccess } from "@/lib/confetti";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
+import {
+  DashboardToolbar,
+  DashboardToolbarSearchShell,
+} from "@/components/layout/dashboard-toolbar";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -415,19 +419,22 @@ export function PayablesClient({
     <div className="space-y-6">
       {/* Recordatorio: día actual + facturas por pagar hoy + facturas pendientes del mes */}
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-muted-foreground flex items-center gap-2">
+        <span className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="size-4 text-primary/80" />
-          Hoy es <strong className="text-foreground">{todayLabelCapitalized}</strong>
+          Hoy es{" "}
+          <strong className="font-semibold text-slate-800 dark:text-zinc-100">{todayLabelCapitalized}</strong>
         </span>
         <span className="text-sm text-muted-foreground">
-          · Hoy vencen <strong className="text-foreground">{pendingDueToday}</strong> factura{pendingDueToday !== 1 ? "s" : ""}
+          · Hoy vencen{" "}
+          <strong className="font-semibold text-slate-800 dark:text-zinc-100">{pendingDueToday}</strong> factura
+          {pendingDueToday !== 1 ? "s" : ""}
         </span>
       </div>
 
       <DashboardPageHeader
         icon={Wallet}
         title={
-          <h1 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-zinc-50 sm:text-4xl">
             Cuentas por Pagar de{" "}
             <span className="inline-block min-w-[4ch]">
               <AnimatePresence mode="wait" initial={false}>
@@ -456,7 +463,7 @@ export function PayablesClient({
                 setPayableToEdit(null);
                 setFormOpen(true);
               }}
-              className="h-11 gap-2 px-5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/25 w-full sm:w-auto"
+              className="h-11 w-full gap-2 rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25 sm:w-auto"
             >
               <Plus className="size-4" />
               Nueva Factura
@@ -467,30 +474,30 @@ export function PayablesClient({
 
       {/* Dashboard KPI cards — left-aligned with title */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md p-4 shadow-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5 flex items-center gap-1.5">
+        <div className="rounded-xl border border-border/80 bg-card/70 p-4 shadow-sm backdrop-blur-sm dark:border-border">
+          <p className="mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             <Wallet className="size-3.5 text-amber-500 dark:text-amber-400/80" />
             Total por Pagar ($)
           </p>
-          <p className="text-xl font-black tabular-nums text-amber-600 dark:text-amber-400 mt-1">
+          <p className="mt-1 text-xl font-black tabular-nums text-amber-600 dark:text-amber-400">
             {formatCop(totalPorPagar)}
           </p>
         </div>
-        <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md p-4 shadow-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5 flex items-center gap-1.5">
+        <div className="rounded-xl border border-border/80 bg-card/70 p-4 shadow-sm backdrop-blur-sm dark:border-border">
+          <p className="mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             <CheckCircle2 className="size-3.5 text-emerald-500 dark:text-emerald-400" />
             Total Pagado ($)
           </p>
-          <p className="text-xl font-black tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
+          <p className="mt-1 text-xl font-black tabular-nums text-emerald-600 dark:text-emerald-400">
             {formatCop(totalPagado)}
           </p>
         </div>
-        <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md p-4 shadow-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5 flex items-center gap-1.5">
+        <div className="rounded-xl border border-border/80 bg-card/70 p-4 shadow-sm backdrop-blur-sm dark:border-border">
+          <p className="mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             <Target className="size-3.5 text-emerald-500 dark:text-emerald-400" />
             Estado de Meta
           </p>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="mt-1 flex items-center gap-2">
             <Progress
               value={paidInMonth}
               max={totalInMonth || 1}
@@ -501,32 +508,32 @@ export function PayablesClient({
             </span>
           </div>
         </div>
-        <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md p-4 shadow-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5 flex items-center gap-1.5">
+        <div className="rounded-xl border border-border/80 bg-card/70 p-4 shadow-sm backdrop-blur-sm dark:border-border">
+          <p className="mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             <FileText className="size-3.5 text-muted-foreground" />
             Resumen Cantidad
           </p>
-          <p className="text-xl font-black tabular-nums text-foreground mt-0.5">
+          <p className="mt-0.5 text-xl font-black tabular-nums text-foreground">
             {totalInMonth} Registradas / {pendingInMonth} Pendientes
           </p>
         </div>
       </div>
 
       {/* Action bar — search & filters, left-aligned */}
-      <div className="flex flex-wrap items-center gap-4 bg-muted/50 p-3 rounded-xl border border-border mb-6">
-        <div className="relative flex-1 w-full min-w-[200px]">
-          <div className="rounded-lg bg-background border-2 border-input shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-            <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
+      <DashboardToolbar className="mb-6 flex flex-wrap items-center gap-4">
+        <div className="relative min-w-[200px] w-full flex-1">
+          <DashboardToolbarSearchShell>
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-primary/90" />
             <Input
               placeholder="Buscar factura o proveedor..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 pl-11 pr-4 text-base w-full rounded-lg border-0 bg-transparent focus-visible:ring-0"
+              className="h-10 w-full rounded-lg border-0 bg-transparent pl-11 pr-4 text-base focus-visible:ring-0"
               aria-label="Buscar factura o proveedor"
             />
-          </div>
+          </DashboardToolbarSearchShell>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant={quickFilter === "all" ? "secondary" : "ghost"}
             size="sm"
@@ -562,7 +569,7 @@ export function PayablesClient({
           </Button>
         </div>
         <Select value={supplierFilter} onValueChange={setSupplierFilter}>
-          <SelectTrigger className="w-full rounded-lg border-input bg-background md:w-[220px] h-10 focus:ring-2 focus:ring-primary/20 focus:border-primary">
+          <SelectTrigger className="h-10 w-full rounded-lg border-input bg-background md:w-[220px] focus:border-primary focus:ring-2 focus:ring-primary/20">
             <SelectValue placeholder="Todos los proveedores" />
           </SelectTrigger>
           <SelectContent>
@@ -574,7 +581,7 @@ export function PayablesClient({
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </DashboardToolbar>
 
       {filteredPayables.length === 0 ? (
         <motion.div

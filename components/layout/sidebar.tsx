@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronRight,
+  ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +54,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Inicio", icon: LayoutDashboard, roles: ["admin", "employee"] },
   { href: "/dashboard/customers", label: "Clientes", icon: Users, roles: ["admin", "employee"] },
   { href: "/dashboard/products", label: "Productos", icon: Package, roles: ["admin", "employee"] },
+  { href: "/dashboard/escaneo", label: "Escaneo", icon: ScanLine, roles: ["admin", "employee"] },
   { href: "/dashboard/cotizaciones", label: "Cotizaciones", icon: FileText, roles: ["admin", "employee"] },
   { href: "/dashboard/inventory", label: "Inventario", icon: Warehouse, roles: ["admin", "employee"] },
   { href: "/dashboard/receivables", label: "Cuentas por Cobrar", icon: Receipt, roles: ["admin", "employee"] },
@@ -88,9 +90,17 @@ interface SidebarProps {
   variant?: "default" | "mobile";
   /** Optional callback when a nav link is clicked (e.g. close mobile sheet). */
   onNavigateClick?: () => void;
+  /** Escritorio: menú lateral visible (animación al colapsar). Ignorado en variant mobile. */
+  desktopExpanded?: boolean;
 }
 
-export function Sidebar({ userRole, className, variant = "default", onNavigateClick }: SidebarProps) {
+export function Sidebar({
+  userRole,
+  className,
+  variant = "default",
+  onNavigateClick,
+  desktopExpanded = true,
+}: SidebarProps) {
   const pathname = usePathname();
   const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({});
 
@@ -118,8 +128,10 @@ export function Sidebar({ userRole, className, variant = "default", onNavigateCl
           <button
             type="button"
             className={cn(
-              "flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-wider border border-transparent",
-              isGroupActive ? "text-primary dark:text-blue-400" : "text-muted-foreground dark:text-zinc-500"
+              "flex w-full items-center justify-between rounded-xl border border-transparent px-3 py-2 text-xs font-semibold uppercase tracking-wider",
+              isGroupActive
+                ? "text-primary dark:text-blue-400"
+                : "text-slate-500 hover:bg-slate-100/80 hover:text-slate-800 dark:text-zinc-500 dark:hover:bg-zinc-800/40 dark:hover:text-zinc-200",
             )}
             onClick={() =>
               setOpenGroups((prev) => ({
@@ -142,7 +154,7 @@ export function Sidebar({ userRole, className, variant = "default", onNavigateCl
             )}
           </button>
           {isOpen ? (
-            <div className="ml-2 space-y-1 border-l-2 border-border pl-2">
+            <div className="ml-2 space-y-1 border-l-2 border-border/70 pl-2 dark:border-zinc-700/80">
               {item.children
                 .filter((c) => c.roles.includes(userRole))
                 .map((child) => {
@@ -158,7 +170,7 @@ export function Sidebar({ userRole, className, variant = "default", onNavigateCl
                         "group flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium transition-all duration-200",
                         isActive
                           ? "bg-primary/15 text-primary ring-1 ring-primary/30 dark:bg-blue-500/20 dark:text-blue-400"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200"
+                          : "text-slate-600 hover:bg-slate-100/90 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800/55 dark:hover:text-zinc-100",
                       )}
                     >
                       <ChildIcon className="size-3.5 shrink-0" />
@@ -183,14 +195,19 @@ export function Sidebar({ userRole, className, variant = "default", onNavigateCl
         href={item.href}
         onClick={onNavigateClick}
         className={cn(
-          "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200 border",
+          "group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-all duration-200",
           isActive
-            ? "bg-primary/15 text-primary ring-1 ring-primary/30 shadow-[0_0_12px_hsl(var(--primary)/0.2)] dark:bg-blue-500/20 dark:text-blue-400 dark:ring-blue-500/30 dark:shadow-[0_0_12px_rgba(59,130,246,0.15)]"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground border-transparent dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200 dark:hover:border-zinc-700/50"
+            ? "bg-primary/15 text-primary shadow-[0_0_12px_hsl(var(--primary)/0.18)] ring-1 ring-primary/30 dark:bg-blue-500/20 dark:text-blue-400 dark:shadow-[0_0_12px_rgba(59,130,246,0.15)] dark:ring-blue-500/30"
+            : "border-transparent text-slate-600 hover:border-border/60 hover:bg-slate-100/90 hover:text-slate-900 dark:border-transparent dark:text-zinc-400 dark:hover:border-zinc-700/50 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-100",
         )}
       >
         <Icon
-          className={cn("size-4 shrink-0", isActive ? "text-primary dark:text-blue-400" : "text-muted-foreground group-hover:text-foreground dark:text-zinc-500 dark:group-hover:text-zinc-200")}
+          className={cn(
+            "size-4 shrink-0",
+            isActive
+              ? "text-primary dark:text-blue-400"
+              : "text-slate-500 group-hover:text-slate-800 dark:text-zinc-500 dark:group-hover:text-zinc-100",
+          )}
         />
         {item.label}
       </Link>
@@ -201,11 +218,11 @@ export function Sidebar({ userRole, className, variant = "default", onNavigateCl
     <nav className={cn("flex flex-col gap-1.5 p-4", variant === "mobile" && "pt-8")}>
       <Link
         href="/dashboard"
-        className="mb-4 flex items-center gap-2 rounded-xl border border-border bg-card/80 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/30"
+        className="mb-4 flex items-center gap-2 rounded-xl border border-border/80 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-900/60"
         aria-label="Ir al inicio"
       >
         <Image src="/logo.png" alt="" width={80} height={32} className="h-8 w-auto shrink-0 object-contain" />
-        <span className="text-base font-black tracking-tight text-foreground dark:text-zinc-100">
+        <span className="text-base font-black tracking-tight text-slate-900 dark:text-zinc-100">
           PLASTICOS <span className="text-primary">LA 16</span>
         </span>
       </Link>
@@ -215,7 +232,12 @@ export function Sidebar({ userRole, className, variant = "default", onNavigateCl
 
   if (variant === "mobile") {
     return (
-      <div className={cn("flex h-full flex-col bg-zinc-100 dark:bg-black", className)}>
+      <div
+        className={cn(
+          "flex h-full flex-col border-r border-border/80 bg-card dark:border-zinc-800/80 dark:bg-zinc-950",
+          className,
+        )}
+      >
         {content}
       </div>
     );
@@ -224,10 +246,13 @@ export function Sidebar({ userRole, className, variant = "default", onNavigateCl
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col lg:flex",
-        "bg-zinc-100 dark:bg-black",
-        className
+        "fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-border/80 bg-card shadow-[1px_0_16px_-8px_rgba(15,23,42,0.08)] lg:flex",
+        "dark:border-zinc-800/80 dark:bg-zinc-950 dark:shadow-none",
+        "transform-gpu transition-transform duration-300 ease-out motion-reduce:transition-none",
+        !desktopExpanded && "lg:pointer-events-none lg:-translate-x-full",
+        className,
       )}
+      aria-hidden={!desktopExpanded ? true : undefined}
     >
       {content}
     </aside>

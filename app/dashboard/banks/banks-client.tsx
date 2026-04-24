@@ -74,7 +74,10 @@ export function BanksClient({
         title="Flujo de Caja"
         description="Cuentas bancarias y movimientos diarios."
         actions={
-          <Button onClick={() => setFormOpen(true)} className="h-11 rounded-xl w-fit sm:w-auto">
+          <Button
+            onClick={() => setFormOpen(true)}
+            className="h-11 w-fit rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25 sm:w-auto"
+          >
             + Registrar Movimiento
           </Button>
         }

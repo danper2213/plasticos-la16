@@ -138,7 +138,10 @@ export function UsuariosClient({ initialUsers, initialError, currentUserId }: Us
         title="Usuarios"
         description="Cree usuarios y asigne rol de administrador o empleado."
         actions={
-          <Button onClick={() => setCreateOpen(true)} className="h-11 rounded-xl w-fit gap-2 sm:w-auto">
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="h-11 w-fit gap-2 rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25 sm:w-auto"
+          >
             <UserPlus className="size-4" />
             Crear usuario
           </Button>

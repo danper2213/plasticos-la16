@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { MovementForm } from "@/components/inventory/movement-form";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
+import { DashboardToolbar } from "@/components/layout/dashboard-toolbar";
 import { triggerSuccess } from "@/lib/confetti";
 import { toast } from "sonner";
 import {
@@ -506,22 +507,25 @@ export function InventoryClient({
         title="Inventario P16"
         description="Comprobantes por guardado (varios productos) y histórico sin comprobante."
         actions={
-          <Button onClick={() => setFormOpen(true)} className="h-11 rounded-xl w-fit sm:w-auto">
+          <Button
+            onClick={() => setFormOpen(true)}
+            className="h-11 w-fit rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25 sm:w-auto"
+          >
             + Registrar movimientos
           </Button>
         }
       />
 
-      <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4">
+      <DashboardToolbar className="flex flex-col gap-3 p-4">
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <Package className="size-4" />
           Comprobantes que incluyen un producto
         </div>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-primary/80" />
           <Input
             placeholder="Buscar producto (comprobantes que lo incluyan, mín. 2 caracteres)"
-            className="max-w-sm rounded-lg h-9 pl-9"
+            className="h-9 max-w-sm rounded-lg border border-input/90 bg-background pl-9 shadow-sm transition-all focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-input"
             value={productSearchQuery}
             onChange={(e) => setProductSearchQuery(e.target.value)}
           />
@@ -568,9 +572,9 @@ export function InventoryClient({
             </Button>
           </div>
         ) : null}
-      </div>
+      </DashboardToolbar>
 
-      <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4">
+      <DashboardToolbar className="flex flex-col gap-3 p-4">
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <Calendar className="size-4" />
           Fecha del comprobante
@@ -657,7 +661,7 @@ export function InventoryClient({
             </Button>
           </form>
         </div>
-      </div>
+      </DashboardToolbar>
 
       <div className="space-y-3">
         {!hasAnyData ? (

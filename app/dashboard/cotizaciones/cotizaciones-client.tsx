@@ -319,7 +319,9 @@ export function CotizacionesClient({ customers, recentQuotes }: CotizacionesClie
         }
         description={
           <>
-            Defina la <span className="font-medium text-foreground">utilidad sobre costo</span> (por defecto 20%). Cada
+            Defina la{" "}
+            <span className="font-medium text-slate-800 dark:text-zinc-200">utilidad sobre costo</span> (por defecto
+            20%). Cada
             producto nuevo parte de ese cálculo; luego puede afinar costo y precio en la tabla.
           </>
         }

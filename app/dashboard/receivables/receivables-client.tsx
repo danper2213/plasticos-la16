@@ -79,7 +79,10 @@ export function ReceivablesClient({
         title="Cuentas por Cobrar"
         description="Cuentas por cobrar a clientes."
         actions={
-          <Button onClick={() => setFormOpen(true)} className="h-11 rounded-xl w-fit sm:w-auto">
+          <Button
+            onClick={() => setFormOpen(true)}
+            className="h-11 w-fit rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25 sm:w-auto"
+          >
             + Nueva Cuenta por Cobrar
           </Button>
         }

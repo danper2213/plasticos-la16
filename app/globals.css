@@ -34,26 +34,26 @@
 
 @layer base {
   :root {
-    /* Light: off-white base, subtle zinc surfaces, blue primary */
-    --background: 0 0% 98.5%;
-    --foreground: 240 10% 9%;
+    /* Light: canvas ligeramente fría, texto más legible, primario con buen contraste sobre blanco */
+    --background: 220 18% 97%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 9%;
-    --primary: 221.2 83.2% 53.3%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 48%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 4.8% 93%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 93%;
-    --muted-foreground: 240 4% 45%;
-    --accent: 240 4.8% 93%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 40%;
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.7% 88%;
-    --input: 240 5.7% 88%;
-    --ring: 221.2 83.2% 53.3%;
+    --border: 220 13% 90%;
+    --input: 220 13% 90%;
+    --ring: 221 83% 48%;
     --radius: 0.5rem;
   }
 
@@ -195,6 +195,57 @@
   .supplier-marquee-inner {
     animation: none;
     transform: none;
+  }
+}
+
+/* Botones primarios (variant default): brillo animado (sin ::after, compatible con asChild y lectores de pantalla) */
+@keyframes btn-primary-shimmer-move {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.btn-primary-shimmer:not(:disabled) {
+  background-color: hsl(var(--primary));
+  background-image: linear-gradient(
+    105deg,
+    hsl(var(--primary)) 0%,
+    hsl(var(--primary)) 36%,
+    color-mix(in hsl, hsl(var(--primary)) 78%, white 22%) 50%,
+    hsl(var(--primary)) 64%,
+    hsl(var(--primary)) 100%
+  );
+  background-size: 220% 100%;
+}
+
+.dark .btn-primary-shimmer:not(:disabled) {
+  background-image: linear-gradient(
+    105deg,
+    hsl(var(--primary)) 0%,
+    hsl(var(--primary)) 36%,
+    color-mix(in hsl, hsl(var(--primary)) 88%, white 12%) 50%,
+    hsl(var(--primary)) 64%,
+    hsl(var(--primary)) 100%
+  );
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .btn-primary-shimmer:not(:disabled) {
+    animation: btn-primary-shimmer-move 3.2s ease-in-out infinite;
+  }
+
+  .btn-primary-shimmer:not(:disabled):hover {
+    animation-duration: 1.6s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary-shimmer:not(:disabled) {
+    background-image: none;
   }
 }
 

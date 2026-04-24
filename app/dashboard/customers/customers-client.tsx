@@ -64,7 +64,10 @@ export function CustomersClient({ customers: initialCustomers }: CustomersClient
         title="Clientes"
         description="Gestión de clientes y datos de contacto."
         actions={
-          <Button onClick={handleNewCustomer} className="h-11 rounded-xl w-fit sm:w-auto">
+          <Button
+            onClick={handleNewCustomer}
+            className="h-11 w-fit rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25 sm:w-auto"
+          >
             + Nuevo Cliente
           </Button>
         }

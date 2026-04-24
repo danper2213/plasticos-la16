@@ -20,6 +20,8 @@ export interface ProductRow {
   image_url: string | null;
   featured_on_landing: boolean;
   featured_sort_order: number;
+  /** Código escaneable (1D/QR); estable por producto */
+  scan_code: string;
   created_at?: string;
   updated_at?: string;
   suppliers: { name: string } | { name: string }[] | null;
@@ -55,6 +57,7 @@ const PRODUCTS_SELECT_FULL = `
       image_url,
       featured_on_landing,
       featured_sort_order,
+      scan_code,
       created_at,
       updated_at,
       suppliers ( name ),
@@ -77,6 +80,33 @@ const PRODUCTS_SELECT_BASE = `
       suppliers ( name ),
       product_categories ( name )
     `;
+
+function mapRowToProductWithRelations(row: Partial<ProductRow>): ProductWithRelations {
+  const supplier = row.suppliers;
+  const category = row.product_categories;
+  const supplierName = Array.isArray(supplier) ? supplier[0]?.name : supplier?.name;
+  const categoryName = Array.isArray(category) ? category[0]?.name : category?.name;
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    presentation: row.presentation as string,
+    packaging: row.packaging ?? null,
+    cost: row.cost as number,
+    selling_price: row.selling_price as number,
+    stock_quantity: row.stock_quantity ?? null,
+    is_active: Boolean(row.is_active),
+    supplier_id: row.supplier_id as string,
+    category_id: row.category_id as string,
+    image_url: row.image_url ?? null,
+    featured_on_landing: Boolean(row.featured_on_landing),
+    featured_sort_order: Number(row.featured_sort_order ?? 0),
+    scan_code: (row.scan_code as string | undefined) ?? "",
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    supplier_name: supplierName ?? "—",
+    category_name: categoryName ?? "—",
+  };
+}
 
 export async function getProducts(): Promise<ProductWithRelations[]> {
   const { supabase } = await requireUser();
@@ -111,31 +141,96 @@ export async function getProducts(): Promise<ProductWithRelations[]> {
   }
 
   const rows = rowsRaw ?? [];
-  return rows.map((row) => {
-    const supplier = row.suppliers;
-    const category = row.product_categories;
-    const supplierName = Array.isArray(supplier) ? supplier[0]?.name : supplier?.name;
-    const categoryName = Array.isArray(category) ? category[0]?.name : category?.name;
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      presentation: row.presentation as string,
-      packaging: row.packaging ?? null,
-      cost: row.cost as number,
-      selling_price: row.selling_price as number,
-      stock_quantity: row.stock_quantity ?? null,
-      is_active: Boolean(row.is_active),
-      supplier_id: row.supplier_id as string,
-      category_id: row.category_id as string,
-      image_url: row.image_url ?? null,
-      featured_on_landing: Boolean(row.featured_on_landing),
-      featured_sort_order: Number(row.featured_sort_order ?? 0),
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      supplier_name: supplierName ?? "—",
-      category_name: categoryName ?? "—",
-    };
-  });
+  return rows.map((row) => mapRowToProductWithRelations(row as Partial<ProductRow>));
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Busca un producto activo por código de escaneo (o por id UUID si el lector envía solo el UUID).
+ */
+function normalizeScanInput(raw: string): string {
+  return raw.trim().toUpperCase();
+}
+
+export async function getProductByScanCode(rawCode: string): Promise<ProductWithRelations | null> {
+  const normalized = normalizeScanInput(rawCode);
+  if (!normalized) return null;
+
+  const { supabase } = await requireUser();
+
+  let { data, error } = await supabase
+    .from("products")
+    .select(PRODUCTS_SELECT_FULL)
+    .eq("is_active", true)
+    .eq("scan_code", normalized)
+    .maybeSingle();
+
+  if (
+    error &&
+    (error.message?.toLowerCase().includes("column") || error.code === "42703")
+  ) {
+    console.error("getProductByScanCode: falta columna scan_code. Ejecutá la migración en Supabase.");
+    return null;
+  }
+
+  if (error) {
+    console.error("getProductByScanCode error:", error);
+    return null;
+  }
+
+  if (!data && UUID_RE.test(normalized)) {
+    const byId = await supabase
+      .from("products")
+      .select(PRODUCTS_SELECT_FULL)
+      .eq("is_active", true)
+      .eq("id", normalized)
+      .maybeSingle();
+    if (byId.error) {
+      console.error("getProductByScanCode by id:", byId.error);
+      return null;
+    }
+    data = byId.data;
+  }
+
+  if (!data) return null;
+  return mapRowToProductWithRelations(data as unknown as Partial<ProductRow>);
+}
+
+export async function getProductById(id: string): Promise<ProductWithRelations | null> {
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("products")
+    .select(PRODUCTS_SELECT_FULL)
+    .eq("is_active", true)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (
+    error &&
+    (error.message?.toLowerCase().includes("column") || error.code === "42703")
+  ) {
+    const fb = await supabase
+      .from("products")
+      .select(PRODUCTS_SELECT_BASE)
+      .eq("is_active", true)
+      .eq("id", id)
+      .maybeSingle();
+    if (fb.error) {
+      console.error("getProductById error:", fb.error);
+      return null;
+    }
+    if (!fb.data) return null;
+    return mapRowToProductWithRelations(fb.data as unknown as Partial<ProductRow>);
+  }
+
+  if (error) {
+    console.error("getProductById error:", error);
+    return null;
+  }
+  if (!data) return null;
+  return mapRowToProductWithRelations(data as unknown as Partial<ProductRow>);
 }
 
 export async function getActiveSuppliers(): Promise<ActiveSupplierOption[]> {
