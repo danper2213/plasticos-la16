@@ -166,6 +166,29 @@ export async function createPayable(data: PayableFormValues) {
   return { success: true as const };
 }
 
+/** Actualiza solo la fecha de vencimiento (p. ej. arrastrar en el calendario). */
+export async function updatePayableDueDate(id: string, dueDate: string) {
+  const { supabase } = await requireUser();
+  const stored = toStorageDate(dueDate);
+  if (!stored) {
+    return { success: false as const, error: "Fecha de vencimiento inválida" };
+  }
+
+  const { error } = await supabase
+    .from("accounts_payable")
+    .update({
+      due_date: stored,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) {
+    return { success: false as const, error: error.message };
+  }
+  revalidatePath("/dashboard/payables");
+  return { success: true as const };
+}
+
 export async function updatePayable(id: string, data: PayableFormValues) {
   const { supabase } = await requireUser();
   const receptionDate = toStorageDate(data.reception_date) ?? (data.reception_date?.trim().slice(0, 10) ? `${data.reception_date.trim().slice(0, 10)}T12:00:00.000Z` : "");

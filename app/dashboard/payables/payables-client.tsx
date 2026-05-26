@@ -4,22 +4,15 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, Suspense } from "react";
 import {
-  CreditCard,
   Search,
-  Trash2,
   Calendar,
   Plus,
   Wallet,
   CheckCircle2,
   Target,
   FileText,
-  Building2,
-  Pencil,
-  AlertTriangle,
-  Clock,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -42,8 +35,8 @@ import { PayableForm } from "@/components/payables/payable-form";
 import { PayableDetailModal } from "@/components/payables/payable-detail-modal";
 import { PayableComprobanteModal } from "@/components/payables/comprobante-modal";
 import { PaymentModal } from "@/components/payables/payment-modal";
-import { PaymentHistoryModal } from "@/components/payables/payment-history-modal";
 import { MonthPaginator } from "@/components/payables/month-paginator";
+import { PayablesCalendar } from "@/components/payables/payables-calendar";
 import { Progress } from "@/components/ui/progress";
 import { formatCop } from "@/lib/format";
 import { triggerSuccess } from "@/lib/confetti";
@@ -54,33 +47,14 @@ import {
   DashboardToolbar,
   DashboardToolbarSearchShell,
 } from "@/components/layout/dashboard-toolbar";
+import { formatDateOnlyEsCO } from "@/lib/calendar-date";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import type { PayableWithSupplier, BankAccountOption } from "./actions";
 import type { ActiveSupplierOption } from "./actions";
 
-const listVariants = {
-  visible: {
-    transition: { staggerChildren: 0.08 },
-  },
-};
-
-const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.4 },
-  },
-};
-
 type QuickFilter = "all" | "pending" | "under3m";
-const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
-  { value: "all", label: "Todas" },
-  { value: "pending", label: "Solo Pendientes" },
-  { value: "under3m", label: "Menores a $3M" },
-];
 const UNDER_3M = 3_000_000;
 
 interface PayablesClientProps {
@@ -89,169 +63,6 @@ interface PayablesClientProps {
   bankAccounts: BankAccountOption[];
   month: number;
   year: number;
-}
-
-/** Formatea fecha sin cambio de día por timezone: usa solo YYYY-MM-DD. */
-function formatDate(value: string | null): string {
-  if (!value) return "—";
-  const d = value.trim().slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-    const [y, m, day] = d.split("-");
-    return `${day}/${m}/${y}`;
-  }
-  try {
-    return new Date(value).toLocaleDateString("es-CO", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  } catch {
-    return value;
-  }
-}
-
-function StatusBadge({ status }: { status: string }) {
-  if (status === "paid") {
-    return <Badge variant="success">Pagada</Badge>;
-  }
-  return <Badge variant="warning">Pendiente</Badge>;
-}
-
-type DuePriority = "overdue" | "today" | "ok";
-
-function PayableCard({
-  row,
-  priority,
-  onOpenDetail,
-  onCardClick,
-  onPointerDown,
-  onEdit,
-  onRegisterPayment,
-  onDelete,
-  formatDate,
-  formatCop,
-}: {
-  row: PayableWithSupplier;
-  priority: DuePriority;
-  onOpenDetail: (row: PayableWithSupplier) => void;
-  onCardClick: (e: React.MouseEvent, row: PayableWithSupplier) => void;
-  onPointerDown: (e: React.PointerEvent) => void;
-  onEdit: (e: React.MouseEvent) => void;
-  onRegisterPayment: () => void;
-  onDelete: () => void;
-  formatDate: (value: string | null) => string;
-  formatCop: (n: number) => string;
-}) {
-  const priorityStyles =
-    priority === "overdue"
-      ? "border-2 border-destructive/60 bg-destructive/5 dark:bg-destructive/10"
-      : priority === "today"
-        ? "border-2 border-amber-500/50 bg-amber-500/5 dark:bg-amber-500/10"
-        : "border-2 border-border";
-
-  const priorityLabel =
-    priority === "overdue" ? (
-      <span className="inline-flex items-center gap-1 rounded-md bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive dark:bg-destructive/20 dark:text-destructive">
-        <AlertTriangle className="size-3.5" />
-        Vencida
-      </span>
-    ) : priority === "today" ? (
-      <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-400/20 dark:text-amber-400">
-        <Clock className="size-3.5" />
-        Vence hoy
-      </span>
-    ) : null;
-
-  return (
-    <motion.div
-      layout
-      variants={cardVariants}
-      whileHover={{ zIndex: 50, y: -4 }}
-      className={cn(
-        "relative min-w-0 rounded-xl bg-card shadow-md overflow-hidden flex flex-col cursor-pointer transition-shadow duration-300 hover:shadow-lg hover:shadow-primary/10 hover:border-primary/40",
-        priorityStyles
-      )}
-    >
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={(e) => onCardClick(e, row)}
-        onPointerDown={onPointerDown}
-        onKeyDown={(e) => e.key === "Enter" && onOpenDetail(row)}
-        className="flex-1 flex flex-col min-h-0"
-        aria-label={`Ver detalle de factura ${row.invoice_number}`}
-      >
-        <header className="relative flex flex-row items-start justify-between gap-2 p-3 pr-16 border-b border-border/80 bg-muted/40">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-muted-foreground truncate flex items-center gap-1.5">
-              <Building2 className="size-3.5 shrink-0 text-primary/80" />
-              {row.supplier_name}
-            </p>
-            <p className="text-xs font-medium tabular-nums text-muted-foreground/90 mt-0.5 flex items-center gap-1">
-              <FileText className="size-3 shrink-0" />
-              #{row.invoice_number}
-            </p>
-          </div>
-          <div className="absolute top-2.5 right-2.5">
-            <StatusBadge status={row.status} />
-          </div>
-        </header>
-
-        <div className="p-4 flex flex-col gap-3">
-          <p className="text-2xl font-black tabular-nums text-foreground text-center leading-tight">
-            {formatCop(row.invoice_amount)}
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 shrink-0" />
-              Vence: {formatDate(row.due_date)}
-            </span>
-            {priorityLabel}
-          </div>
-          {row.payment_note?.trim() ? (
-            <p className="text-xs text-muted-foreground border-t border-border/60 pt-2 mt-0.5 line-clamp-2" title={row.payment_note.trim()}>
-              <span className="font-semibold text-foreground/80">Nota:</span> {row.payment_note.trim()}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <footer
-        className="border-t border-border/80 p-2 flex flex-wrap items-center justify-end gap-1.5 bg-muted/40"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1 h-8 text-xs"
-          onClick={onEdit}
-        >
-          <Pencil className="size-3.5" />
-          Editar
-        </Button>
-        {row.status === "pending" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1 h-8 text-xs"
-            onClick={onRegisterPayment}
-          >
-            <CreditCard className="size-3.5" />
-            Registrar Pago
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-          aria-label="Eliminar factura"
-          onClick={onDelete}
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
-      </footer>
-    </motion.div>
-  );
 }
 
 export function PayablesClient({
@@ -265,7 +76,6 @@ export function PayablesClient({
   const [formOpen, setFormOpen] = useState(false);
   const [payableToEdit, setPayableToEdit] = useState<PayableWithSupplier | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [payableToDelete, setPayableToDelete] = useState<PayableWithSupplier | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -273,20 +83,24 @@ export function PayablesClient({
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [supplierFilter, setSupplierFilter] = useState<string>("all");
   const [selectedPayableForPayment, setSelectedPayableForPayment] = useState<PayableWithSupplier | null>(null);
-  const [selectedPayableForHistory, setSelectedPayableForHistory] = useState<PayableWithSupplier | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedPayableForDetail, setSelectedPayableForDetail] = useState<PayableWithSupplier | null>(null);
   const [comprobanteModalOpen, setComprobanteModalOpen] = useState(false);
   const [payableForComprobante, setPayableForComprobante] = useState<PayableWithSupplier | null>(null);
   const mouseDownRef = React.useRef<{ x: number; y: number } | null>(null);
+  const [localPayables, setLocalPayables] = useState(payables);
 
-  const uniqueSuppliers = useMemo(() => {
-    const names = new Set(payables.map((p) => p.supplier_name).filter(Boolean));
-    return Array.from(names).sort();
+  React.useEffect(() => {
+    setLocalPayables(payables);
   }, [payables]);
 
+  const uniqueSuppliers = useMemo(() => {
+    const names = new Set(localPayables.map((p) => p.supplier_name).filter(Boolean));
+    return Array.from(names).sort();
+  }, [localPayables]);
+
   const filteredPayables = useMemo(() => {
-    let result = payables;
+    let result = localPayables;
 
     if (quickFilter === "pending") {
       result = result.filter((row) => row.status === "pending");
@@ -308,33 +122,39 @@ export function PayablesClient({
     }
 
     return result;
-  }, [payables, quickFilter, supplierFilter, searchQuery]);
+  }, [localPayables, quickFilter, supplierFilter, searchQuery]);
 
-  const { pendingPayables, paidPayables } = useMemo(() => {
-    const pending = filteredPayables
-      .filter((p) => p.status === "pending")
-      .sort((a, b) => {
-        const da = (a.due_date ?? "").slice(0, 10);
-        const db = (b.due_date ?? "").slice(0, 10);
-        return da.localeCompare(db);
-      });
-    const paid = filteredPayables
-      .filter((p) => p.status === "paid")
-      .sort((a, b) => {
-        const da = (b.updated_at ?? b.due_date ?? "").slice(0, 10);
-        const db = (a.updated_at ?? a.due_date ?? "").slice(0, 10);
-        return da.localeCompare(db);
-      });
-    return { pendingPayables: pending, paidPayables: paid };
-  }, [filteredPayables]);
+  const handleDueDateChange = React.useCallback(
+    async (payableId: string, fromDateKey: string, toDateKey: string) => {
+      if (fromDateKey === toDateKey) return;
 
-  function getDuePriority(row: PayableWithSupplier): "overdue" | "today" | "ok" {
-    if (row.status !== "pending" || !row.due_date) return "ok";
-    const dueStr = row.due_date.slice(0, 10);
-    if (dueStr < todayStr) return "overdue";
-    if (dueStr === todayStr) return "today";
-    return "ok";
-  }
+      const snapshot = localPayables;
+      const storageDate = `${toDateKey}T12:00:00.000Z`;
+      setLocalPayables((prev) =>
+        prev.map((p) => (p.id === payableId ? { ...p, due_date: storageDate } : p))
+      );
+
+      const { updatePayableDueDate } = await import("./actions");
+      const result = await updatePayableDueDate(payableId, toDateKey);
+
+      if (result.success) {
+        const targetMonth = Number(toDateKey.slice(5, 7));
+        const targetYear = Number(toDateKey.slice(0, 4));
+        if (targetMonth !== month || targetYear !== year) {
+          toast.success(`Vencimiento movido al ${formatDateOnlyEsCO(toDateKey)}`, {
+            description: "La factura quedó en otro mes. Usa el paginador para verla.",
+          });
+        } else {
+          toast.success(`Vencimiento movido al ${formatDateOnlyEsCO(toDateKey)}`);
+        }
+        router.refresh();
+      } else {
+        setLocalPayables(snapshot);
+        toast.error(result.error ?? "No se pudo cambiar la fecha de vencimiento");
+      }
+    },
+    [localPayables, month, year, router]
+  );
 
   function handleFormSuccess() {
     router.refresh();
@@ -343,11 +163,6 @@ export function PayablesClient({
   function openPaymentModal(payable: PayableWithSupplier) {
     setSelectedPayableForPayment(payable);
     setPaymentModalOpen(true);
-  }
-
-  function openHistoryModal(payable: PayableWithSupplier) {
-    setSelectedPayableForHistory(payable);
-    setHistoryModalOpen(true);
   }
 
   function openDeleteDialog(payable: PayableWithSupplier) {
@@ -389,13 +204,13 @@ export function PayablesClient({
     }
   }
 
-  const totalInMonth = payables.length;
-  const pendingInMonth = payables.filter((p) => p.status === "pending").length;
-  const paidInMonth = payables.filter((p) => p.status === "paid").length;
-  const totalPorPagar = payables
+  const totalInMonth = localPayables.length;
+  const pendingInMonth = localPayables.filter((p) => p.status === "pending").length;
+  const paidInMonth = localPayables.filter((p) => p.status === "paid").length;
+  const totalPorPagar = localPayables
     .filter((p) => p.status === "pending")
     .reduce((sum, p) => sum + (Number(p.invoice_amount) || 0), 0);
-  const totalPagado = payables
+  const totalPagado = localPayables
     .filter((p) => p.status === "paid")
     .reduce((sum, p) => sum + (Number(p.invoice_amount) || 0), 0);
   const metaPercent = totalInMonth > 0 ? Math.round((paidInMonth / totalInMonth) * 100) : 0;
@@ -409,24 +224,40 @@ export function PayablesClient({
   const todayStr = format(today, "yyyy-MM-dd");
   const todayLabel = format(today, "EEEE d 'de' MMMM 'de' yyyy", { locale: es });
   const todayLabelCapitalized = todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1);
-  const pendingDueToday = payables.filter(
+  const pendingDueToday = localPayables.filter(
     (p) => p.status === "pending" && p.due_date && p.due_date.slice(0, 10) === todayStr
   ).length;
 
   const titleSpring = { type: "spring" as const, stiffness: 300, damping: 30 };
 
+  const calendarHandlers = {
+    onOpenDetail: openDetailModal,
+    onCardClick: handleCardClick,
+    onPointerDown: handleCardPointerDown,
+    onEdit: (row: PayableWithSupplier) => {
+      setPayableToEdit(row);
+      setFormOpen(true);
+    },
+    onRegisterPayment: openPaymentModal,
+    onDelete: openDeleteDialog,
+  };
+
   return (
     <div className="space-y-6">
-      {/* Recordatorio: día actual + facturas por pagar hoy + facturas pendientes del mes */}
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="size-4 text-primary/80" />
           Hoy es{" "}
-          <strong className="font-semibold text-slate-800 dark:text-zinc-100">{todayLabelCapitalized}</strong>
+          <strong className="font-semibold text-slate-800 dark:text-zinc-100">
+            {todayLabelCapitalized}
+          </strong>
         </span>
         <span className="text-sm text-muted-foreground">
           · Hoy vencen{" "}
-          <strong className="font-semibold text-slate-800 dark:text-zinc-100">{pendingDueToday}</strong> factura
+          <strong className="font-semibold text-slate-800 dark:text-zinc-100">
+            {pendingDueToday}
+          </strong>{" "}
+          factura
           {pendingDueToday !== 1 ? "s" : ""}
         </span>
       </div>
@@ -472,7 +303,6 @@ export function PayablesClient({
         }
       />
 
-      {/* Dashboard KPI cards — left-aligned with title */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-border/80 bg-card/70 p-4 shadow-sm backdrop-blur-sm dark:border-border">
           <p className="mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -519,8 +349,7 @@ export function PayablesClient({
         </div>
       </div>
 
-      {/* Action bar — search & filters, left-aligned */}
-      <DashboardToolbar className="mb-6 flex flex-wrap items-center gap-4">
+      <DashboardToolbar className="mb-2 flex flex-wrap items-center gap-4">
         <div className="relative min-w-[200px] w-full flex-1">
           <DashboardToolbarSearchShell>
             <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-primary/90" />
@@ -590,109 +419,19 @@ export function PayablesClient({
           transition={{ duration: 0.3, ease: "easeOut" }}
           className="rounded-lg border border-border bg-card p-12 text-center text-muted-foreground"
         >
-          {payables.length === 0
+          {localPayables.length === 0
             ? "No hay facturas registradas para este mes."
             : "Ningún resultado coincide con la búsqueda."}
         </motion.div>
       ) : (
-        <div className="overflow-visible space-y-8 pt-6 pb-8">
-          <AnimatePresence mode="wait">
-            {pendingPayables.length > 0 && (
-              <motion.section
-                key="section-pending"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
-              >
-                <div className="flex items-center gap-2">
-                  <Clock className="size-5 text-amber-500 dark:text-amber-400" />
-                  <h2 className="text-lg font-bold text-foreground">
-                    Pendientes
-                    <span className="ml-2 text-sm font-normal text-muted-foreground">
-                      ({pendingPayables.length})
-                    </span>
-                  </h2>
-                </div>
-                <motion.div
-                  key={`pending-${month}-${year}-${searchQuery}-${quickFilter}-${supplierFilter}`}
-                  variants={listVariants}
-                  initial="hidden"
-                  animate="visible"
-                  className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch"
-                >
-                  {pendingPayables.map((row) => {
-                    const priority = getDuePriority(row);
-                    return (
-                      <PayableCard
-                        key={row.id}
-                        row={row}
-                        priority={priority}
-                        onOpenDetail={openDetailModal}
-                        onCardClick={handleCardClick}
-                        onPointerDown={handleCardPointerDown}
-                        onEdit={(e) => {
-                          e.stopPropagation();
-                          setPayableToEdit(row);
-                          setFormOpen(true);
-                        }}
-                        onRegisterPayment={() => openPaymentModal(row)}
-                        onDelete={() => openDeleteDialog(row)}
-                        formatDate={formatDate}
-                        formatCop={formatCop}
-                      />
-                    );
-                  })}
-                </motion.div>
-              </motion.section>
-            )}
-
-            {paidPayables.length > 0 && (
-              <motion.section
-                key="section-paid"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
-              >
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="size-5 text-emerald-500 dark:text-emerald-400" />
-                  <h2 className="text-lg font-bold text-foreground">
-                    Pagadas
-                    <span className="ml-2 text-sm font-normal text-muted-foreground">
-                      ({paidPayables.length})
-                    </span>
-                  </h2>
-                </div>
-                <motion.div
-                  key={`paid-${month}-${year}-${searchQuery}-${quickFilter}-${supplierFilter}`}
-                  variants={listVariants}
-                  initial="hidden"
-                  animate="visible"
-                  className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch"
-                >
-                  {paidPayables.map((row) => (
-                    <PayableCard
-                      key={row.id}
-                      row={row}
-                      priority="ok"
-                      onOpenDetail={openDetailModal}
-                      onCardClick={handleCardClick}
-                      onPointerDown={handleCardPointerDown}
-                      onEdit={(e) => {
-                        e.stopPropagation();
-                        setPayableToEdit(row);
-                        setFormOpen(true);
-                      }}
-                      onRegisterPayment={() => openPaymentModal(row)}
-                      onDelete={() => openDeleteDialog(row)}
-                      formatDate={formatDate}
-                      formatCop={formatCop}
-                    />
-                  ))}
-                </motion.div>
-              </motion.section>
-            )}
-          </AnimatePresence>
-        </div>
+        <PayablesCalendar
+          payables={filteredPayables}
+          month={month}
+          year={year}
+          todayStr={todayStr}
+          onDueDateChange={handleDueDateChange}
+          {...calendarHandlers}
+        />
       )}
 
       <PayableDetailModal
@@ -767,13 +506,6 @@ export function PayablesClient({
         onSuccess={handleFormSuccess}
       />
 
-      <PaymentHistoryModal
-        open={historyModalOpen}
-        onOpenChange={setHistoryModalOpen}
-        payableId={selectedPayableForHistory?.id ?? null}
-        invoice_number={selectedPayableForHistory?.invoice_number ?? ""}
-        supplier_name={selectedPayableForHistory?.supplier_name ?? ""}
-      />
     </div>
   );
 }

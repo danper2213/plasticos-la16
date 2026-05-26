@@ -160,12 +160,14 @@ export async function getProductByScanCode(rawCode: string): Promise<ProductWith
 
   const { supabase } = await requireUser();
 
-  let { data, error } = await supabase
+  const { data: scanData, error } = await supabase
     .from("products")
     .select(PRODUCTS_SELECT_FULL)
     .eq("is_active", true)
     .eq("scan_code", normalized)
     .maybeSingle();
+
+  let data = scanData;
 
   if (
     error &&
