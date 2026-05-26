@@ -43,6 +43,7 @@ import { toast } from "sonner";
 import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { formatInventoryQuantity } from "@/lib/inventory-quantity";
+import { sortProductsBySearchRelevance } from "@/lib/product-search";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import {
   DashboardToolbar,
@@ -129,13 +130,7 @@ export function ProductsClient({
     }
 
     if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      result = result.filter(
-        (row) =>
-          row.name.toLowerCase().includes(q) ||
-          row.presentation.toLowerCase().includes(q) ||
-          (row.scan_code && row.scan_code.toLowerCase().includes(q)),
-      );
+      result = sortProductsBySearchRelevance(result, searchQuery);
     }
 
     return result;
@@ -204,7 +199,7 @@ export function ProductsClient({
           <DashboardToolbarSearchShell>
             <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-primary/90" />
             <Input
-              placeholder="Buscar por nombre, código o descripción..."
+              placeholder="Buscar por palabras: plato hondo, 12 oz, código…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-10 w-full rounded-lg border-0 bg-transparent pl-11 pr-4 text-base focus-visible:ring-0"

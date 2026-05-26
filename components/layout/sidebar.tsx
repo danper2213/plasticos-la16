@@ -50,8 +50,23 @@ function isNavGroup(item: NavItem): item is NavGroup {
   return "children" in item && Array.isArray((item as NavGroup).children);
 }
 
+const administracionGroup: NavGroup = {
+  label: "Administración",
+  icon: ShieldCheck,
+  roles: ["admin"],
+  children: [
+    { href: "/dashboard/banks", label: "Cuentas Bancarias", icon: Landmark, roles: ["admin"] },
+    { href: "/dashboard/closures", label: "Cierres Diario", icon: Calendar, roles: ["admin"] },
+    { href: "/dashboard/closures/samit", label: "Cierres SAMIT", icon: Calculator, roles: ["admin"] },
+    { href: "/dashboard/proveedores", label: "Proveedores", icon: Truck, roles: ["admin"] },
+    { href: "/dashboard/payables", label: "Cuentas por Pagar", icon: CreditCard, roles: ["admin"] },
+    { href: "/dashboard/usuarios", label: "Usuarios", icon: UserCog, roles: ["admin"] },
+  ],
+};
+
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Inicio", icon: LayoutDashboard, roles: ["admin", "employee"] },
+  administracionGroup,
   { href: "/dashboard/customers", label: "Clientes", icon: Users, roles: ["admin", "employee"] },
   { href: "/dashboard/products", label: "Productos", icon: Package, roles: ["admin", "employee"] },
   { href: "/dashboard/escaneo", label: "Escaneo", icon: ScanLine, roles: ["admin", "employee"] },
@@ -66,19 +81,6 @@ const navItems: NavItem[] = [
       { href: "/dashboard/social", label: "Contenido Social", icon: Clapperboard, roles: ["admin"] },
       { href: "/dashboard/newsletter", label: "Newsletter", icon: Mail, roles: ["admin"] },
       { href: "/dashboard/configuracion", label: "Configuración", icon: Settings, roles: ["admin"] },
-    ],
-  },
-  {
-    label: "Administración",
-    icon: ShieldCheck,
-    roles: ["admin"],
-    children: [
-      { href: "/dashboard/banks", label: "Cuentas Bancarias", icon: Landmark, roles: ["admin"] },
-      { href: "/dashboard/closures", label: "Cierres Diario", icon: Calendar, roles: ["admin"] },
-      { href: "/dashboard/closures/samit", label: "Cierres SAMIT", icon: Calculator, roles: ["admin"] },
-      { href: "/dashboard/proveedores", label: "Proveedores", icon: Truck, roles: ["admin"] },
-      { href: "/dashboard/payables", label: "Cuentas por Pagar", icon: CreditCard, roles: ["admin"] },
-      { href: "/dashboard/usuarios", label: "Usuarios", icon: UserCog, roles: ["admin"] },
     ],
   },
 ];
@@ -215,10 +217,16 @@ export function Sidebar({
   }
 
   const content = (
-    <nav className={cn("flex flex-col gap-1.5 p-4", variant === "mobile" && "pt-8")}>
+    <nav
+      className={cn(
+        "flex flex-col gap-1.5 p-4 pb-8",
+        variant === "mobile" && "pt-10 pr-12"
+      )}
+    >
       <Link
         href="/dashboard"
-        className="mb-4 flex items-center gap-2 rounded-xl border border-border/80 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-900/60"
+        onClick={onNavigateClick}
+        className="mb-4 flex shrink-0 items-center gap-2 rounded-xl border border-border/80 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-900/60"
         aria-label="Ir al inicio"
       >
         <Image src="/logo.png" alt="" width={80} height={32} className="h-8 w-auto shrink-0 object-contain" />
@@ -234,11 +242,13 @@ export function Sidebar({
     return (
       <div
         className={cn(
-          "flex h-full flex-col border-r border-border/80 bg-card dark:border-zinc-800/80 dark:bg-zinc-950",
+          "flex h-full min-h-0 flex-col border-r border-border/80 bg-card dark:border-zinc-800/80 dark:bg-zinc-950",
           className,
         )}
       >
-        {content}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+          {content}
+        </div>
       </div>
     );
   }
@@ -246,7 +256,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-border/80 bg-card shadow-[1px_0_16px_-8px_rgba(15,23,42,0.08)] lg:flex",
+        "fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col overflow-hidden border-r border-border/80 bg-card shadow-[1px_0_16px_-8px_rgba(15,23,42,0.08)] lg:flex",
         "dark:border-zinc-800/80 dark:bg-zinc-950 dark:shadow-none",
         "transform-gpu transition-transform duration-300 ease-out motion-reduce:transition-none",
         !desktopExpanded && "lg:pointer-events-none lg:-translate-x-full",
@@ -254,7 +264,9 @@ export function Sidebar({
       )}
       aria-hidden={!desktopExpanded ? true : undefined}
     >
-      {content}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {content}
+      </div>
     </aside>
   );
 }

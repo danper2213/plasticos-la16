@@ -47,7 +47,11 @@ export function Header({ userEmail, userRole, sidebarExpanded = true, onToggleSi
               <Menu className="size-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-64 p-0" showCloseButton={true}>
+          <SheetContent
+            side="left"
+            className="flex h-full max-h-[100dvh] w-64 flex-col overflow-hidden p-0"
+            showCloseButton={true}
+          >
             <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
             <Sidebar userRole={userRole} variant="mobile" onNavigateClick={() => setSheetOpen(false)} />
           </SheetContent>
