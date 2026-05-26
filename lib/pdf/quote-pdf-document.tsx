@@ -178,12 +178,11 @@ export function QuotePdfDocument({
   createdAtLabel,
   lines,
 }: QuotePdfProps) {
-  let grand = 0;
   const rows = lines.map((l) => {
     const sub = quoteLineTotal(l.list_unit_price, l.quantity);
-    grand += sub;
     return { l, sub };
   });
+  const grand = rows.reduce((sum, row) => sum + row.sub, 0);
 
   const validityLine = validUntil
     ? `Propuesta válida hasta el ${validUntil}. Los valores pueden ajustarse según disponibilidad y condiciones acordadas.`

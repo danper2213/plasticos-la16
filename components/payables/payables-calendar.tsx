@@ -33,7 +33,6 @@ import {
   usePayablesDrag,
   usePayablesDropDayState,
 } from "@/components/payables/payables-drag-context";
-import { formatDateOnlyEsCO } from "@/lib/calendar-date";
 import type { PayableWithSupplier } from "@/app/dashboard/payables/actions";
 
 const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];

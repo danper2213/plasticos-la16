@@ -3,7 +3,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { GripVertical } from "lucide-react";
-import { cn } from "@/lib/utils";
 import type { PayableDragPayload } from "@/lib/payables-drag";
 
 export const PAYABLE_DROP_DAY_ATTR = "data-payable-drop-day";
@@ -115,7 +114,6 @@ export function PayablesDragProvider({
   React.useEffect(() => {
     const onMove = (e: PointerEvent) => {
       const pending = pendingRef.current;
-      const active = activeRef.current;
 
       if (pending && pending.pointerId === e.pointerId) {
         const dist = Math.hypot(e.clientX - pending.startX, e.clientY - pending.startY);

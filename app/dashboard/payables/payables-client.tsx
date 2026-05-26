@@ -65,10 +65,6 @@ interface PayablesClientProps {
   year: number;
 }
 
-function formatDate(value: string | null): string {
-  return formatDateOnlyEsCO(value);
-}
-
 export function PayablesClient({
   payables,
   suppliers,
