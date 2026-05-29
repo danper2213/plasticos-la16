@@ -1,10 +1,7 @@
 import type { ProductsPageResult } from "@/app/dashboard/products/actions";
-import type { SearchSuggestion } from "@/lib/searchEngine";
 
 const PAGE_TTL_MS = 5 * 60 * 1000;
-const SUGGESTIONS_TTL_MS = 2 * 60 * 1000;
 const MAX_PAGE_ENTRIES = 60;
-const MAX_SUGGESTION_ENTRIES = 40;
 
 type CacheEntry<T> = {
   data: T;
@@ -71,30 +68,11 @@ export function buildProductsPageCacheKey(params: {
   ].join("|");
 }
 
-export function buildSuggestionsCacheKey(params: {
-  query: string;
-  stockFilter: string;
-  categoryId: string;
-}): string {
-  return [
-    "suggest",
-    normalizeSearch(params.query),
-    params.stockFilter,
-    params.categoryId,
-  ].join("|");
-}
-
 export const productsPageCache = new SessionCache<ProductsPageResult>(
   MAX_PAGE_ENTRIES,
   PAGE_TTL_MS,
 );
 
-export const productsSuggestionsCache = new SessionCache<SearchSuggestion[]>(
-  MAX_SUGGESTION_ENTRIES,
-  SUGGESTIONS_TTL_MS,
-);
-
 export function clearProductsListCache(): void {
   productsPageCache.clear();
-  productsSuggestionsCache.clear();
 }

@@ -96,6 +96,42 @@ export function tokenize(query: string): string[] {
   return tokens;
 }
 
+const COMPACT_MEASURE_RE = new RegExp(
+  `^(\\d+(?:[.,]\\d+)?)(${MEASURE_UNITS})$`,
+  "i",
+);
+
+/**
+ * Variantes de un token para ILIKE en Supabase.
+ * Ej.: "3oz" → ["3oz", "3 oz"] porque en BD suele guardarse con espacio.
+ */
+export function expandSearchTermVariants(term: string): string[] {
+  const variants = new Set<string>([term]);
+  const match = COMPACT_MEASURE_RE.exec(term);
+
+  if (match) {
+    const num = match[1].replace(",", ".");
+    const unit = match[2].toLowerCase();
+    variants.add(`${num}${unit}`);
+    variants.add(`${num} ${unit}`);
+  }
+
+  return [...variants];
+}
+
+/** Grupos de términos: cada grupo es OR; entre grupos es AND (todos deben coincidir). */
+export function getSearchTermGroupsForServer(query: string): string[][] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const tokens = tokenize(trimmed);
+  if (tokens.length === 0) {
+    return [[trimmed]];
+  }
+
+  return tokens.map((token) => expandSearchTermVariants(token));
+}
+
 function getProductHaystacks(product: Product) {
   const name = normalizeText(product.name);
   const category = normalizeText(product.category);
@@ -256,101 +292,6 @@ export function searchIntelligent<T extends Product>(
   });
 
   return scored.map((row) => row.product);
-}
-
-export type SearchSuggestion = {
-  productId: string;
-  label: string;
-  subtitle: string;
-};
-
-function scoreSuggestionMatch(
-  haystacks: ReturnType<typeof getProductHaystacks>,
-  normalizedQuery: string,
-  queryTokens: string[],
-): number {
-  if (!normalizedQuery) return 0;
-
-  let score = 0;
-
-  if (haystacks.sku && haystacks.sku === normalizedQuery) score += 500;
-  else if (haystacks.sku.startsWith(normalizedQuery)) score += 320;
-  else if (haystacks.sku.includes(normalizedQuery)) score += 260;
-
-  if (haystacks.name === normalizedQuery) score += 400;
-  else if (haystacks.name.startsWith(normalizedQuery)) score += 280;
-  else if (haystacks.name.includes(normalizedQuery)) score += 220;
-
-  if (haystacks.descriptive.includes(normalizedQuery)) score += 160;
-  if (haystacks.category.includes(normalizedQuery)) score += 80;
-
-  for (const token of queryTokens) {
-    if (!token) continue;
-    if (haystacks.sku === token) score += 200;
-    else if (haystacks.sku.includes(token)) score += 140;
-    else if (tokenMatchesHaystack(haystacks.name, token)) score += 90;
-    else if (haystacks.name.includes(token)) score += 70;
-    else if (haystacks.descriptive.includes(token)) score += 50;
-    else if (haystacks.category.includes(token)) score += 30;
-  }
-
-  return score;
-}
-
-/**
- * Sugerencias para autocompletado (más permisivo que searchIntelligent).
- * Ej.: "portacomida" → todos los portacomidas; "j1" → Portacomida J1 por SKU/nombre.
- */
-export function getSearchSuggestions<T extends Product>(
-  query: string,
-  products: T[],
-  limit = 10,
-): SearchSuggestion[] {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
-
-  const normalizedQuery = normalizeText(trimmed);
-  const queryTokens = tokenize(trimmed);
-  if (!normalizedQuery && queryTokens.length === 0) return [];
-
-  const ranked: { suggestion: SearchSuggestion; score: number }[] = [];
-
-  for (const product of products) {
-    const haystacks = getProductHaystacks(product);
-    const score = scoreSuggestionMatch(haystacks, normalizedQuery, queryTokens);
-    if (score <= 0) continue;
-
-    const subtitle = [product.presentation, product.category]
-      .filter(Boolean)
-      .join(" · ");
-
-    ranked.push({
-      score,
-      suggestion: {
-        productId: product.id,
-        label: product.name,
-        subtitle,
-      },
-    });
-  }
-
-  ranked.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.suggestion.label.localeCompare(b.suggestion.label, "es");
-  });
-
-  const seen = new Set<string>();
-  const unique: SearchSuggestion[] = [];
-
-  for (const row of ranked) {
-    const key = `${row.suggestion.label}|${row.suggestion.subtitle}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(row.suggestion);
-    if (unique.length >= limit) break;
-  }
-
-  return unique;
 }
 
 /** Adapta un producto del dashboard al contrato del motor. */

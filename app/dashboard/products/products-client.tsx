@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Layers, Package } from "lucide-react";
@@ -30,10 +29,8 @@ import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   buildProductsPageCacheKey,
-  buildSuggestionsCacheKey,
   clearProductsListCache,
   productsPageCache,
-  productsSuggestionsCache,
 } from "@/lib/products-list-cache";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import {
@@ -42,7 +39,6 @@ import {
 } from "@/components/layout/dashboard-toolbar";
 import {
   deleteProduct,
-  getProductSearchSuggestions,
   getProductsPage,
   type ActiveSupplierOption,
   type CategoryOption,
@@ -58,6 +54,9 @@ const STOCK_FILTERS: { value: StockFilter; label: string }[] = [
   { value: "no_stock", label: "Sin Stock" },
   { value: "with_stock", label: "Con Stock" },
 ];
+
+const SEARCH_DEBOUNCE_MS = 350;
+const LOADING_DELAY_MS = 150;
 
 interface ProductsClientProps {
   suppliers: ActiveSupplierOption[];
@@ -87,9 +86,15 @@ export function ProductsClient({
   const [productToDelete, setProductToDelete] = useState<ProductWithRelations | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const debouncedSearch = useDebounce(searchQuery, 280);
+  const debouncedSearch = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS);
+
   const skipInitialFetch = useRef(true);
   const cacheSeeded = useRef(false);
+  const requestIdRef = useRef(0);
+  const inflightRequests = useRef(new Map<string, Promise<ProductsPageResult>>());
+  const filterKeyRef = useRef("");
+
+  const filterKey = `${debouncedSearch}|${stockFilter}|${categoryFilter}`;
 
   const hasActiveFilters =
     stockFilter !== "all" || (categoryFilter !== "all" && categoryFilter !== "");
@@ -108,8 +113,129 @@ export function ProductsClient({
     );
   }, [initialPage]);
 
+  const fetchProductsPage = useCallback(
+    async (targetPage: number, search: string) => {
+      const cacheKey = buildProductsPageCacheKey({
+        page: targetPage,
+        search,
+        stockFilter,
+        categoryId: categoryFilter,
+      });
+
+      const cached = productsPageCache.get(cacheKey);
+      if (cached) return cached;
+
+      const pending = inflightRequests.current.get(cacheKey);
+      if (pending) return pending;
+
+      const promise = getProductsPage({
+        page: targetPage,
+        search,
+        stockFilter,
+        categoryId: categoryFilter,
+      })
+        .then((result) => {
+          productsPageCache.set(cacheKey, result);
+          inflightRequests.current.delete(cacheKey);
+          return result;
+        })
+        .catch((error) => {
+          inflightRequests.current.delete(cacheKey);
+          throw error;
+        });
+
+      inflightRequests.current.set(cacheKey, promise);
+      return promise;
+    },
+    [stockFilter, categoryFilter],
+  );
+
+  useEffect(() => {
+    if (skipInitialFetch.current) {
+      skipInitialFetch.current = false;
+      if (
+        page === initialPage.page &&
+        !debouncedSearch &&
+        stockFilter === "all" &&
+        categoryFilter === "all"
+      ) {
+        filterKeyRef.current = filterKey;
+        return;
+      }
+    }
+
+    const filtersChanged = filterKeyRef.current !== filterKey;
+    if (filtersChanged) {
+      filterKeyRef.current = filterKey;
+      if (page !== 1) {
+        setPage(1);
+        return;
+      }
+    }
+
+    const reqId = ++requestIdRef.current;
+    let cancelled = false;
+    let loadingTimer: ReturnType<typeof setTimeout> | null = null;
+
+    void (async () => {
+      const cacheKey = buildProductsPageCacheKey({
+        page,
+        search: debouncedSearch,
+        stockFilter,
+        categoryId: categoryFilter,
+      });
+      const cached = productsPageCache.get(cacheKey);
+
+      if (cached) {
+        setListState(cached);
+        setIsLoading(false);
+        return;
+      }
+
+      loadingTimer = setTimeout(() => {
+        if (!cancelled && reqId === requestIdRef.current) {
+          setIsLoading(true);
+        }
+      }, LOADING_DELAY_MS);
+
+      try {
+        const result = await fetchProductsPage(page, debouncedSearch);
+        if (cancelled || reqId !== requestIdRef.current) return;
+        setListState(result);
+        setPage(result.page);
+      } catch {
+        if (!cancelled && reqId === requestIdRef.current) {
+          toast.error("No se pudo cargar la lista de productos");
+        }
+      } finally {
+        if (loadingTimer) clearTimeout(loadingTimer);
+        if (!cancelled && reqId === requestIdRef.current) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (loadingTimer) clearTimeout(loadingTimer);
+    };
+  }, [
+    page,
+    debouncedSearch,
+    filterKey,
+    stockFilter,
+    categoryFilter,
+    initialPage.page,
+    fetchProductsPage,
+  ]);
+
   const loadPage = useCallback(
     async (targetPage: number, options?: { force?: boolean }) => {
+      if (options?.force) {
+        clearProductsListCache();
+        inflightRequests.current.clear();
+      }
+
       const cacheKey = buildProductsPageCacheKey({
         page: targetPage,
         search: debouncedSearch,
@@ -128,13 +254,7 @@ export function ProductsClient({
 
       setIsLoading(true);
       try {
-        const result = await getProductsPage({
-          page: targetPage,
-          search: debouncedSearch,
-          stockFilter,
-          categoryId: categoryFilter,
-        });
-        productsPageCache.set(cacheKey, result);
+        const result = await fetchProductsPage(targetPage, debouncedSearch);
         setListState(result);
         setPage(result.page);
       } catch {
@@ -143,50 +263,12 @@ export function ProductsClient({
         setIsLoading(false);
       }
     },
-    [debouncedSearch, stockFilter, categoryFilter],
-  );
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch]);
-
-  useEffect(() => {
-    if (skipInitialFetch.current) {
-      skipInitialFetch.current = false;
-      if (
-        page === initialPage.page &&
-        !debouncedSearch &&
-        stockFilter === "all" &&
-        categoryFilter === "all"
-      ) {
-        return;
-      }
-    }
-    void loadPage(page);
-  }, [page, loadPage, debouncedSearch, stockFilter, categoryFilter, initialPage.page]);
-
-  const fetchSuggestions = useCallback(
-    async (query: string) => {
-      const cacheKey = buildSuggestionsCacheKey({
-        query,
-        stockFilter,
-        categoryId: categoryFilter,
-      });
-      const cached = productsSuggestionsCache.get(cacheKey);
-      if (cached) return cached;
-
-      const result = await getProductSearchSuggestions(query, {
-        stockFilter,
-        categoryId: categoryFilter,
-      });
-      productsSuggestionsCache.set(cacheKey, result);
-      return result;
-    },
-    [stockFilter, categoryFilter],
+    [debouncedSearch, stockFilter, categoryFilter, fetchProductsPage],
   );
 
   function handleFormSuccess() {
     clearProductsListCache();
+    inflightRequests.current.clear();
     router.refresh();
     void loadPage(page, { force: true });
   }
@@ -221,6 +303,7 @@ export function ProductsClient({
     if (result.success) {
       toast.success("Producto eliminado");
       clearProductsListCache();
+      inflightRequests.current.clear();
       router.refresh();
       const nextPage =
         listState.products.length === 1 && page > 1 ? page - 1 : page;
@@ -314,7 +397,6 @@ export function ProductsClient({
           isLoading={isLoading}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
-          onFetchSuggestions={fetchSuggestions}
           onPageChange={setPage}
           hasActiveFilters={hasActiveFilters}
           totalRegistered={totalRegistered}

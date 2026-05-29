@@ -1,8 +1,6 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
 import {
   Boxes,
   Building2,
@@ -25,7 +23,6 @@ import { formatCop } from "@/lib/format";
 import { formatInventoryQuantity } from "@/lib/inventory-quantity";
 import { cn } from "@/lib/utils";
 import { SearchLottie } from "@/components/ui/search-lottie";
-import type { SearchSuggestion } from "@/lib/searchEngine";
 import type { ProductWithRelations } from "@/app/dashboard/products/actions";
 
 function formatPriceCop(value: number): string {
@@ -73,7 +70,6 @@ export interface PriceListProps {
   isLoading?: boolean;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
-  onFetchSuggestions: (query: string) => Promise<SearchSuggestion[]>;
   onPageChange: (page: number) => void;
   totalRegistered: number;
   hasActiveFilters?: boolean;
@@ -90,7 +86,6 @@ export function PriceList({
   isLoading = false,
   searchQuery,
   onSearchQueryChange,
-  onFetchSuggestions,
   onPageChange,
   totalRegistered,
   hasActiveFilters = false,
@@ -98,163 +93,26 @@ export function PriceList({
   onSimulate,
   onDelete,
 }: PriceListProps) {
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
-  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const searchContainerRef = useRef<HTMLDivElement>(null);
-
   const isSearching = searchQuery.trim().length > 0;
   const showEmptySearch = isSearching && !isLoading && products.length === 0 && totalCount === 0;
-
-  const showSuggestions =
-    suggestionsOpen && searchQuery.trim().length > 0 && (suggestions.length > 0 || suggestionsLoading);
-
-  useEffect(() => {
-    setActiveSuggestionIndex(-1);
-  }, [searchQuery, suggestions.length]);
-
-  useEffect(() => {
-    const q = searchQuery.trim();
-    if (q.length < 1) {
-      setSuggestions([]);
-      return;
-    }
-
-    let cancelled = false;
-    const loadingTimer = window.setTimeout(() => {
-      if (!cancelled) setSuggestionsLoading(true);
-    }, 120);
-
-    void onFetchSuggestions(q).then((items) => {
-      if (cancelled) return;
-      window.clearTimeout(loadingTimer);
-      setSuggestions(items);
-      setSuggestionsLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(loadingTimer);
-    };
-  }, [searchQuery, onFetchSuggestions]);
-
-  useEffect(() => {
-    function handlePointerDown(event: MouseEvent) {
-      if (
-        searchContainerRef.current &&
-        !searchContainerRef.current.contains(event.target as Node)
-      ) {
-        setSuggestionsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, []);
-
-  function applySuggestion(suggestion: SearchSuggestion) {
-    onSearchQueryChange(suggestion.label);
-    setSuggestionsOpen(false);
-    setActiveSuggestionIndex(-1);
-  }
-
-  function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (!showSuggestions || suggestions.length === 0) return;
-
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActiveSuggestionIndex((prev) =>
-        prev < suggestions.length - 1 ? prev + 1 : 0,
-      );
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActiveSuggestionIndex((prev) =>
-        prev > 0 ? prev - 1 : suggestions.length - 1,
-      );
-    } else if (event.key === "Enter" && activeSuggestionIndex >= 0) {
-      event.preventDefault();
-      const picked = suggestions[activeSuggestionIndex];
-      if (picked) applySuggestion(picked);
-    } else if (event.key === "Escape") {
-      setSuggestionsOpen(false);
-      setActiveSuggestionIndex(-1);
-    }
-  }
 
   return (
     <div className="space-y-4">
       <div className="sticky top-0 z-20 -mx-1 px-1 pb-3 pt-0.5 backdrop-blur-md supports-[backdrop-filter]:bg-background/80">
-        <div
-          ref={searchContainerRef}
-          className="relative rounded-xl border border-border/80 bg-card shadow-sm transition-shadow focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20"
-        >
+        <div className="relative rounded-xl border border-border/80 bg-card shadow-sm transition-shadow focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
           <Search
             className="pointer-events-none absolute left-4 top-1/2 z-10 size-5 -translate-y-1/2 text-primary/85"
             aria-hidden
           />
           <Input
             type="search"
-            role="combobox"
-            aria-expanded={showSuggestions}
-            aria-controls="price-list-suggestions"
-            aria-autocomplete="list"
-            aria-activedescendant={
-              activeSuggestionIndex >= 0
-                ? `price-suggestion-${activeSuggestionIndex}`
-                : undefined
-            }
             value={searchQuery}
-            onChange={(e) => {
-              onSearchQueryChange(e.target.value);
-              setSuggestionsOpen(true);
-            }}
-            onFocus={() => setSuggestionsOpen(true)}
-            onKeyDown={handleSearchKeyDown}
+            onChange={(e) => onSearchQueryChange(e.target.value)}
             placeholder="Buscar: portacomida, j1, 12oz…"
             className="h-12 w-full rounded-xl border-0 bg-transparent pl-12 pr-4 text-base shadow-none focus-visible:ring-0"
-            aria-label="Buscar productos con sugerencias"
+            aria-label="Buscar productos"
             autoComplete="off"
           />
-
-          {showSuggestions ? (
-            <ul
-              id="price-list-suggestions"
-              role="listbox"
-              className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-72 overflow-y-auto rounded-xl border border-border/90 bg-popover py-1 shadow-lg"
-            >
-              {suggestionsLoading ? (
-                <li className="flex items-center gap-3 px-4 py-3 text-sm text-muted-foreground">
-                  <SearchLottie size={28} ariaLabel="Buscando sugerencias" />
-                  Buscando sugerencias…
-                </li>
-              ) : (
-                suggestions.map((suggestion, index) => (
-                  <li key={`${suggestion.productId}-${suggestion.subtitle}`} role="option">
-                    <button
-                      type="button"
-                      id={`price-suggestion-${index}`}
-                      aria-selected={index === activeSuggestionIndex}
-                      className={cn(
-                        "flex w-full flex-col items-start gap-0.5 px-4 py-2.5 text-left text-sm transition-colors",
-                        index === activeSuggestionIndex
-                          ? "bg-primary/10 text-foreground"
-                          : "text-foreground hover:bg-muted/80",
-                      )}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => applySuggestion(suggestion)}
-                    >
-                      <span className="font-semibold leading-snug">{suggestion.label}</span>
-                      {suggestion.subtitle ? (
-                        <span className="text-xs text-muted-foreground">
-                          {suggestion.subtitle}
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-          ) : null}
         </div>
         {isSearching || totalCount > 0 ? (
           <div

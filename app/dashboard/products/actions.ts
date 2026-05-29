@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/utils/supabase/require-user";
 import {
   escapeIlikePattern,
-  tokenize,
-  type SearchSuggestion,
+  getSearchTermGroupsForServer,
 } from "@/lib/searchEngine";
 import type { ProductFormValues } from "./schema";
 import {
@@ -101,6 +100,41 @@ const PRODUCTS_SELECT_BASE = `
       product_categories ( name )
     `;
 
+const SEARCH_ILIKE_FIELDS = ["name", "scan_code"] as const;
+
+function getSearchIlikeFields(term: string): readonly string[] {
+  if (/^[a-z0-9-]{1,8}$/i.test(term) && /\d/.test(term)) {
+    return SEARCH_ILIKE_FIELDS;
+  }
+  return ["name"];
+}
+
+function applySearchFilter<
+  T extends {
+    or: (filters: string) => T;
+  },
+>(query: T, search: string): T {
+  let q = query;
+  const termGroups = getSearchTermGroupsForServer(search);
+
+  for (const variants of termGroups) {
+    const orParts: string[] = [];
+
+    for (const variant of variants) {
+      const pattern = `%${escapeIlikePattern(variant)}%`;
+      const fields = getSearchIlikeFields(variant);
+
+      for (const field of fields) {
+        orParts.push(`${field}.ilike.${pattern}`);
+      }
+    }
+
+    q = q.or(orParts.join(","));
+  }
+
+  return q;
+}
+
 function mapRowToProductWithRelations(row: Partial<ProductRow>): ProductWithRelations {
   const supplier = row.suppliers;
   const category = row.product_categories;
@@ -186,15 +220,7 @@ function applyProductsListFilters<
 
   const search = filters.search?.trim();
   if (search) {
-    const tokens = tokenize(search);
-    const terms = tokens.length > 0 ? tokens : [search];
-
-    for (const term of terms) {
-      const pattern = `%${escapeIlikePattern(term)}%`;
-      q = q.or(
-        `name.ilike.${pattern},presentation.ilike.${pattern},packaging.ilike.${pattern},scan_code.ilike.${pattern}`,
-      );
-    }
+    q = applySearchFilter(q, search);
   }
 
   return q;
@@ -265,60 +291,6 @@ export async function getProductsPage(
     pageSize,
     totalPages,
   };
-}
-
-export async function getProductSearchSuggestions(
-  query: string,
-  filters: Omit<ProductsListFilters, "page" | "search"> = {},
-  limit = 10,
-): Promise<SearchSuggestion[]> {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
-
-  const { supabase } = await requireUser();
-
-  const runQuery = (select: string) => {
-    let q = supabase
-      .from("products")
-      .select(select)
-      .eq("is_active", true);
-
-    q = applyProductsListFilters(q, { ...filters, search: trimmed });
-    return q.order("name", { ascending: true }).limit(limit);
-  };
-
-  let response = await runQuery(PRODUCTS_SELECT_FULL);
-
-  if (
-    response.error &&
-    (response.error.message?.toLowerCase().includes("column") ||
-      response.error.code === "42703")
-  ) {
-    response = await runQuery(PRODUCTS_SELECT_BASE);
-  }
-
-  if (response.error) {
-    console.error("getProductSearchSuggestions error:", response.error);
-    return [];
-  }
-
-  const rows = (response.data ?? []) as Partial<ProductRow>[];
-  const seen = new Set<string>();
-  const suggestions: SearchSuggestion[] = [];
-
-  for (const row of rows) {
-    const product = mapRowToProductWithRelations(row);
-    const key = `${product.name}|${product.presentation}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    suggestions.push({
-      productId: product.id,
-      label: product.name,
-      subtitle: [product.presentation, product.category_name].filter(Boolean).join(" · "),
-    });
-  }
-
-  return suggestions;
 }
 
 const UUID_RE =
