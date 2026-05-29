@@ -2,7 +2,27 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/utils/supabase/require-user";
+import {
+  escapeIlikePattern,
+  tokenize,
+  type SearchSuggestion,
+} from "@/lib/searchEngine";
 import type { ProductFormValues } from "./schema";
+import {
+  PRODUCTS_PAGE_SIZE,
+  type ProductsListFilters,
+  type ProductsStockFilter,
+} from "./list-types";
+
+export type { ProductsListFilters, ProductsStockFilter } from "./list-types";
+
+export type ProductsPageResult = {
+  products: ProductWithRelations[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
 
 /** Raw row from Supabase with FK relations */
 export interface ProductRow {
@@ -142,6 +162,163 @@ export async function getProducts(): Promise<ProductWithRelations[]> {
 
   const rows = rowsRaw ?? [];
   return rows.map((row) => mapRowToProductWithRelations(row as Partial<ProductRow>));
+}
+
+function applyProductsListFilters<
+  T extends {
+    eq: (column: string, value: unknown) => T;
+    or: (filters: string) => T;
+    gt: (column: string, value: number) => T;
+    is: (column: string, value: null) => T;
+  },
+>(query: T, filters: ProductsListFilters): T {
+  let q = query;
+
+  if (filters.stockFilter === "no_stock") {
+    q = q.or("stock_quantity.is.null,stock_quantity.eq.0");
+  } else if (filters.stockFilter === "with_stock") {
+    q = q.gt("stock_quantity", 0);
+  }
+
+  if (filters.categoryId && filters.categoryId !== "all") {
+    q = q.eq("category_id", filters.categoryId);
+  }
+
+  const search = filters.search?.trim();
+  if (search) {
+    const tokens = tokenize(search);
+    const terms = tokens.length > 0 ? tokens : [search];
+
+    for (const term of terms) {
+      const pattern = `%${escapeIlikePattern(term)}%`;
+      q = q.or(
+        `name.ilike.${pattern},presentation.ilike.${pattern},packaging.ilike.${pattern},scan_code.ilike.${pattern}`,
+      );
+    }
+  }
+
+  return q;
+}
+
+export async function getActiveProductsCount(): Promise<number> {
+  const { supabase } = await requireUser();
+  const { count, error } = await supabase
+    .from("products")
+    .select("id", { count: "exact", head: true })
+    .eq("is_active", true);
+
+  if (error) {
+    console.error("getActiveProductsCount error:", error);
+    return 0;
+  }
+  return count ?? 0;
+}
+
+export async function getProductsPage(
+  filters: ProductsListFilters = {},
+): Promise<ProductsPageResult> {
+  const { supabase } = await requireUser();
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = PRODUCTS_PAGE_SIZE;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const runQuery = (select: string) => {
+    let query = supabase
+      .from("products")
+      .select(select, { count: "exact" })
+      .eq("is_active", true);
+
+    query = applyProductsListFilters(query, filters);
+    return query.order("name", { ascending: true }).range(from, to);
+  };
+
+  let response = await runQuery(PRODUCTS_SELECT_FULL);
+
+  if (
+    response.error &&
+    (response.error.message?.toLowerCase().includes("column") ||
+      response.error.code === "42703")
+  ) {
+    response = await runQuery(PRODUCTS_SELECT_BASE);
+  }
+
+  if (response.error) {
+    console.error("getProductsPage error:", response.error);
+    return {
+      products: [],
+      totalCount: 0,
+      page,
+      pageSize,
+      totalPages: 0,
+    };
+  }
+
+  const rows = (response.data ?? []) as Partial<ProductRow>[];
+  const totalCount = response.count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    products: rows.map((row) => mapRowToProductWithRelations(row)),
+    totalCount,
+    page: Math.min(page, totalPages),
+    pageSize,
+    totalPages,
+  };
+}
+
+export async function getProductSearchSuggestions(
+  query: string,
+  filters: Omit<ProductsListFilters, "page" | "search"> = {},
+  limit = 10,
+): Promise<SearchSuggestion[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const { supabase } = await requireUser();
+
+  const runQuery = (select: string) => {
+    let q = supabase
+      .from("products")
+      .select(select)
+      .eq("is_active", true);
+
+    q = applyProductsListFilters(q, { ...filters, search: trimmed });
+    return q.order("name", { ascending: true }).limit(limit);
+  };
+
+  let response = await runQuery(PRODUCTS_SELECT_FULL);
+
+  if (
+    response.error &&
+    (response.error.message?.toLowerCase().includes("column") ||
+      response.error.code === "42703")
+  ) {
+    response = await runQuery(PRODUCTS_SELECT_BASE);
+  }
+
+  if (response.error) {
+    console.error("getProductSearchSuggestions error:", response.error);
+    return [];
+  }
+
+  const rows = (response.data ?? []) as Partial<ProductRow>[];
+  const seen = new Set<string>();
+  const suggestions: SearchSuggestion[] = [];
+
+  for (const row of rows) {
+    const product = mapRowToProductWithRelations(row);
+    const key = `${product.name}|${product.presentation}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    suggestions.push({
+      productId: product.id,
+      label: product.name,
+      subtitle: [product.presentation, product.category_name].filter(Boolean).join(" · "),
+    });
+  }
+
+  return suggestions;
 }
 
 const UUID_RE =

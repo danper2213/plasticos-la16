@@ -1,0 +1,376 @@
+/**
+ * Motor de búsqueda cliente estilo marketplace para Lista de Precios.
+ * Sin dependencias externas: normalización, tokenización y scoring en TypeScript puro.
+ */
+
+export interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  category: string;
+  presentation?: string | null;
+  packaging?: string | null;
+  price: number;
+}
+
+export const STOP_WORDS = new Set([
+  "a",
+  "al",
+  "con",
+  "de",
+  "del",
+  "e",
+  "el",
+  "en",
+  "la",
+  "las",
+  "lo",
+  "los",
+  "o",
+  "para",
+  "por",
+  "un",
+  "una",
+  "unas",
+  "unos",
+  "y",
+]);
+
+const MEASURE_UNITS =
+  "oz|ml|cc|lb|kg|g|lt|l|und|unidad|unidades|u|onza|onzas|gramo|gramos|litro|litros";
+
+/** Une número + unidad: "12 oz" → "12oz", "500 cc" → "500cc" */
+const MEASURE_JOIN_RE = new RegExp(
+  `(\\d+(?:[.,]\\d+)?)\\s*(${MEASURE_UNITS})\\b`,
+  "gi",
+);
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isNumericToken(token: string): boolean {
+  return /^\d+(?:[.,]\d+)?$/.test(token);
+}
+
+/**
+ * Minúsculas, sin tildes, puntuación como espacio y medidas compactadas (12oz).
+ */
+export function normalizeText(value: string): string {
+  const base = value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return base.replace(MEASURE_JOIN_RE, (_, num: string, unit: string) => {
+    const normalizedNum = num.replace(",", ".");
+    return `${normalizedNum}${unit.toLowerCase()}`;
+  });
+}
+
+/**
+ * Divide la consulta en tokens útiles (sin stop-words).
+ */
+/** Escapa comodines para filtros SQL `ILIKE`. */
+export function escapeIlikePattern(value: string): string {
+  return value.replace(/[%_\\]/g, (char) => `\\${char}`);
+}
+
+export function tokenize(query: string): string[] {
+  const normalized = normalizeText(query);
+  if (!normalized) return [];
+
+  const seen = new Set<string>();
+  const tokens: string[] = [];
+
+  for (const raw of normalized.split(" ")) {
+    const token = raw.trim();
+    if (!token || STOP_WORDS.has(token) || seen.has(token)) continue;
+    seen.add(token);
+    tokens.push(token);
+  }
+
+  return tokens;
+}
+
+function getProductHaystacks(product: Product) {
+  const name = normalizeText(product.name);
+  const category = normalizeText(product.category);
+  const sku = normalizeText(product.sku);
+  const descriptive = normalizeText(
+    [product.name, product.presentation, product.packaging].filter(Boolean).join(" "),
+  );
+  const full = normalizeText(
+    [
+      product.name,
+      product.presentation,
+      product.packaging,
+      product.category,
+      product.sku,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  return { name, category, sku, descriptive, full };
+}
+
+function tokenMatchesHaystack(haystack: string, token: string): boolean {
+  if (!haystack || !token) return false;
+
+  if (isNumericToken(token)) {
+    return new RegExp(`(^|\\s)${escapeRegExp(token)}($|\\s)`, "u").test(haystack);
+  }
+
+  if (token.length <= 2) {
+    return new RegExp(`(^|\\s)${escapeRegExp(token)}($|\\s)`, "u").test(haystack);
+  }
+
+  return haystack.includes(token);
+}
+
+function countMatchedTokens(
+  haystacks: ReturnType<typeof getProductHaystacks>,
+  tokens: string[],
+): { matched: number; missing: string[] } {
+  const missing: string[] = [];
+
+  for (const token of tokens) {
+    const hit =
+      tokenMatchesHaystack(haystacks.name, token) ||
+      tokenMatchesHaystack(haystacks.descriptive, token) ||
+      tokenMatchesHaystack(haystacks.category, token) ||
+      tokenMatchesHaystack(haystacks.sku, token) ||
+      tokenMatchesHaystack(haystacks.full, token) ||
+      (token.length >= 2 && haystacks.sku.includes(token)) ||
+      (token.length >= 2 && haystacks.name.includes(token));
+
+    if (!hit) missing.push(token);
+  }
+
+  return { matched: tokens.length - missing.length, missing };
+}
+
+/**
+ * Puntaje de relevancia. `null` = no cumple criterios mínimos (términos faltantes).
+ */
+export function calculateScore(
+  product: Product,
+  queryTokens: string[],
+  normalizedQuery: string,
+): number | null {
+  if (queryTokens.length === 0 && !normalizedQuery) return 0;
+
+  const haystacks = getProductHaystacks(product);
+
+  if (normalizedQuery && haystacks.sku && haystacks.sku === normalizedQuery) {
+    return 10_000;
+  }
+
+  for (const token of queryTokens) {
+    if (haystacks.sku && haystacks.sku === token) {
+      return 10_000;
+    }
+  }
+
+  const { missing } = countMatchedTokens(haystacks, queryTokens);
+  if (missing.length > 0) {
+    return null;
+  }
+
+  let score = 0;
+
+  if (normalizedQuery) {
+    if (haystacks.name === normalizedQuery) score += 1_000;
+    else if (haystacks.name.startsWith(normalizedQuery)) score += 500;
+    else if (haystacks.name.includes(normalizedQuery)) score += 300;
+    else if (haystacks.descriptive.includes(normalizedQuery)) score += 200;
+    else if (haystacks.full.includes(normalizedQuery)) score += 120;
+  }
+
+  for (const token of queryTokens) {
+    if (haystacks.name === token) score += 80;
+    else if (haystacks.name.startsWith(token)) score += 45;
+    else if (haystacks.name.split(" ").some((w) => w.startsWith(token))) score += 35;
+    else if (haystacks.name.includes(token)) score += 25;
+    else if (haystacks.descriptive.includes(token)) score += 18;
+    else if (haystacks.category.includes(token)) score += 12;
+    else if (haystacks.sku.includes(token)) score += 8;
+  }
+
+  if (queryTokens.length > 1) {
+    let lastIndex = -1;
+    let inOrder = true;
+    for (const token of queryTokens) {
+      const idx = haystacks.name.indexOf(token, lastIndex + 1);
+      if (idx === -1) {
+        inOrder = false;
+        break;
+      }
+      lastIndex = idx;
+    }
+    if (inOrder) score += 60;
+  }
+
+  const missingPenalty = missing.length * 250;
+  score -= missingPenalty;
+
+  score -= haystacks.name.length * 0.05;
+
+  return score;
+}
+
+export type ScoredProduct<T extends Product> = {
+  product: T;
+  score: number;
+};
+
+/**
+ * Búsqueda inteligente: filtra por tokens obligatorios y ordena por relevancia.
+ */
+export function searchIntelligent<T extends Product>(
+  query: string,
+  products: T[],
+): T[] {
+  const trimmed = query.trim();
+  if (!trimmed) return products;
+
+  const normalizedQuery = normalizeText(trimmed);
+  const queryTokens = tokenize(trimmed);
+  if (queryTokens.length === 0 && !normalizedQuery) return products;
+
+  const scored: ScoredProduct<T>[] = [];
+
+  for (const product of products) {
+    const score = calculateScore(product, queryTokens, normalizedQuery);
+    if (score === null) continue;
+    scored.push({ product, score });
+  }
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.product.name.localeCompare(b.product.name, "es");
+  });
+
+  return scored.map((row) => row.product);
+}
+
+export type SearchSuggestion = {
+  productId: string;
+  label: string;
+  subtitle: string;
+};
+
+function scoreSuggestionMatch(
+  haystacks: ReturnType<typeof getProductHaystacks>,
+  normalizedQuery: string,
+  queryTokens: string[],
+): number {
+  if (!normalizedQuery) return 0;
+
+  let score = 0;
+
+  if (haystacks.sku && haystacks.sku === normalizedQuery) score += 500;
+  else if (haystacks.sku.startsWith(normalizedQuery)) score += 320;
+  else if (haystacks.sku.includes(normalizedQuery)) score += 260;
+
+  if (haystacks.name === normalizedQuery) score += 400;
+  else if (haystacks.name.startsWith(normalizedQuery)) score += 280;
+  else if (haystacks.name.includes(normalizedQuery)) score += 220;
+
+  if (haystacks.descriptive.includes(normalizedQuery)) score += 160;
+  if (haystacks.category.includes(normalizedQuery)) score += 80;
+
+  for (const token of queryTokens) {
+    if (!token) continue;
+    if (haystacks.sku === token) score += 200;
+    else if (haystacks.sku.includes(token)) score += 140;
+    else if (tokenMatchesHaystack(haystacks.name, token)) score += 90;
+    else if (haystacks.name.includes(token)) score += 70;
+    else if (haystacks.descriptive.includes(token)) score += 50;
+    else if (haystacks.category.includes(token)) score += 30;
+  }
+
+  return score;
+}
+
+/**
+ * Sugerencias para autocompletado (más permisivo que searchIntelligent).
+ * Ej.: "portacomida" → todos los portacomidas; "j1" → Portacomida J1 por SKU/nombre.
+ */
+export function getSearchSuggestions<T extends Product>(
+  query: string,
+  products: T[],
+  limit = 10,
+): SearchSuggestion[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const normalizedQuery = normalizeText(trimmed);
+  const queryTokens = tokenize(trimmed);
+  if (!normalizedQuery && queryTokens.length === 0) return [];
+
+  const ranked: { suggestion: SearchSuggestion; score: number }[] = [];
+
+  for (const product of products) {
+    const haystacks = getProductHaystacks(product);
+    const score = scoreSuggestionMatch(haystacks, normalizedQuery, queryTokens);
+    if (score <= 0) continue;
+
+    const subtitle = [product.presentation, product.category]
+      .filter(Boolean)
+      .join(" · ");
+
+    ranked.push({
+      score,
+      suggestion: {
+        productId: product.id,
+        label: product.name,
+        subtitle,
+      },
+    });
+  }
+
+  ranked.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.suggestion.label.localeCompare(b.suggestion.label, "es");
+  });
+
+  const seen = new Set<string>();
+  const unique: SearchSuggestion[] = [];
+
+  for (const row of ranked) {
+    const key = `${row.suggestion.label}|${row.suggestion.subtitle}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row.suggestion);
+    if (unique.length >= limit) break;
+  }
+
+  return unique;
+}
+
+/** Adapta un producto del dashboard al contrato del motor. */
+export function toSearchProduct(row: {
+  id: string;
+  name: string;
+  scan_code?: string | null;
+  category_name?: string | null;
+  presentation?: string | null;
+  packaging?: string | null;
+  selling_price?: number;
+  cost?: number;
+}): Product {
+  return {
+    id: row.id,
+    name: row.name,
+    sku: row.scan_code ?? "",
+    category: row.category_name ?? "",
+    presentation: row.presentation ?? null,
+    packaging: row.packaging ?? null,
+    price: row.selling_price ?? row.cost ?? 0,
+  };
+}

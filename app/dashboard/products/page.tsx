@@ -1,19 +1,26 @@
-import { getProducts, getActiveSuppliers, getCategories } from "./actions";
+import {
+  getActiveProductsCount,
+  getActiveSuppliers,
+  getCategories,
+  getProductsPage,
+} from "./actions";
 import { ProductsClient } from "./products-client";
 
 export default async function ProductsPage() {
-  const [products, suppliers, categories] = await Promise.all([
-    getProducts(),
+  const [suppliers, categories, totalRegistered, initialPage] = await Promise.all([
     getActiveSuppliers(),
     getCategories(),
+    getActiveProductsCount(),
+    getProductsPage({ page: 1 }),
   ]);
 
   return (
     <div className="space-y-6">
       <ProductsClient
-        products={products}
         suppliers={suppliers}
         categories={categories}
+        totalRegistered={totalRegistered}
+        initialPage={initialPage}
       />
     </div>
   );

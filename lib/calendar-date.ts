@@ -13,6 +13,14 @@ export function localDateInputValue(d: Date = new Date()): string {
 
 const YMD = /^(\d{4})-(\d{2})-(\d{2})/;
 
+const ES_CO_LOCALE = "es-CO";
+const COLOMBIA_TZ = "America/Bogota";
+
+/** Intl en Node vs navegador puede usar NBSP distinto (p. ej. "a. m."); unifica para hidratación. */
+function normalizeIntlOutput(value: string): string {
+  return value.replace(/[\u00a0\u202f]/g, " ");
+}
+
 /**
  * Muestra una fecha solo-día (columna `date` o prefijo YYYY-MM-DD) en es-CO.
  */
@@ -24,11 +32,14 @@ export function formatDateOnlyEsCO(value: string | null | undefined): string {
     try {
       const d = new Date(value);
       if (Number.isNaN(d.getTime())) return value;
-      return d.toLocaleDateString("es-CO", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      });
+      return normalizeIntlOutput(
+        d.toLocaleDateString(ES_CO_LOCALE, {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          timeZone: COLOMBIA_TZ,
+        }),
+      );
     } catch {
       return value;
     }
@@ -37,11 +48,13 @@ export function formatDateOnlyEsCO(value: string | null | undefined): string {
   const mo = Number(m[2]);
   const d = Number(m[3]);
   const local = new Date(y, mo - 1, d);
-  return local.toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  return normalizeIntlOutput(
+    local.toLocaleDateString(ES_CO_LOCALE, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }),
+  );
 }
 
 /** Fecha y hora local desde un ISO timestamptz (p. ej. Supabase). */
@@ -49,11 +62,14 @@ export function formatDateTimeEsCO(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("es-CO", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return normalizeIntlOutput(
+    d.toLocaleString(ES_CO_LOCALE, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: COLOMBIA_TZ,
+    }),
+  );
 }
