@@ -2,7 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Layers, Package } from "lucide-react";
+import {
+  buildProductsListPath,
+  type ProductsListUrlState,
+} from "@/lib/products-list-url";
+import { Building2, Layers, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -63,6 +67,7 @@ interface ProductsClientProps {
   categories: CategoryOption[];
   totalRegistered: number;
   initialPage: ProductsPageResult;
+  initialUrl: ProductsListUrlState;
 }
 
 export function ProductsClient({
@@ -70,23 +75,27 @@ export function ProductsClient({
   categories,
   totalRegistered,
   initialPage,
+  initialUrl,
 }: ProductsClientProps) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<ProductWithRelations | null>(null);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [productForSimulator, setProductForSimulator] = useState<ProductWithRelations | null>(null);
-  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [stockFilter, setStockFilter] = useState<StockFilter>(initialUrl.stockFilter);
+  const [categoryFilter, setCategoryFilter] = useState<string>(initialUrl.categoryId);
+  const [supplierFilter, setSupplierFilter] = useState<string>(initialUrl.supplierId);
+  const [searchQuery, setSearchQuery] = useState(initialUrl.search);
   const [page, setPage] = useState(initialPage.page);
   const [listState, setListState] = useState<ProductsPageResult>(initialPage);
   const [isLoading, setIsLoading] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<ProductWithRelations | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [forcedSearch, setForcedSearch] = useState<string | undefined>(undefined);
 
   const debouncedSearch = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS);
+  const activeSearch = forcedSearch !== undefined ? forcedSearch : debouncedSearch;
 
   const skipInitialFetch = useRef(true);
   const cacheSeeded = useRef(false);
@@ -94,10 +103,47 @@ export function ProductsClient({
   const inflightRequests = useRef(new Map<string, Promise<ProductsPageResult>>());
   const filterKeyRef = useRef("");
 
-  const filterKey = `${debouncedSearch}|${stockFilter}|${categoryFilter}`;
+  const filterKey = `${activeSearch}|${stockFilter}|${categoryFilter}|${supplierFilter}`;
 
   const hasActiveFilters =
-    stockFilter !== "all" || (categoryFilter !== "all" && categoryFilter !== "");
+    stockFilter !== "all" ||
+    (categoryFilter !== "all" && categoryFilter !== "") ||
+    (supplierFilter !== "all" && supplierFilter !== "");
+
+  const activeCategoryName =
+    categoryFilter !== "all"
+      ? categories.find((cat) => cat.id === categoryFilter)?.name
+      : undefined;
+
+  const activeSupplierName =
+    supplierFilter !== "all"
+      ? suppliers.find((supplier) => supplier.id === supplierFilter)?.name
+      : undefined;
+
+  const activeStockLabel = STOCK_FILTERS.find((f) => f.value === stockFilter)?.label;
+
+  useEffect(() => {
+    if (forcedSearch !== undefined && forcedSearch === debouncedSearch) {
+      setForcedSearch(undefined);
+    }
+  }, [debouncedSearch, forcedSearch]);
+
+  useEffect(() => {
+    const nextPath = buildProductsListPath({
+      search: activeSearch,
+      page,
+      stockFilter,
+      categoryId: categoryFilter,
+      supplierId: supplierFilter,
+    });
+    const currentPath =
+      typeof window !== "undefined"
+        ? `${window.location.pathname}${window.location.search}`
+        : "";
+    if (currentPath && currentPath !== nextPath) {
+      router.replace(nextPath, { scroll: false });
+    }
+  }, [activeSearch, page, stockFilter, categoryFilter, supplierFilter, router]);
 
   useEffect(() => {
     if (cacheSeeded.current) return;
@@ -105,13 +151,14 @@ export function ProductsClient({
     productsPageCache.set(
       buildProductsPageCacheKey({
         page: initialPage.page,
-        search: "",
-        stockFilter: "all",
-        categoryId: "all",
+        search: initialUrl.search,
+        stockFilter: initialUrl.stockFilter,
+        categoryId: initialUrl.categoryId,
+        supplierId: initialUrl.supplierId,
       }),
       initialPage,
     );
-  }, [initialPage]);
+  }, [initialPage, initialUrl]);
 
   const fetchProductsPage = useCallback(
     async (targetPage: number, search: string) => {
@@ -120,6 +167,7 @@ export function ProductsClient({
         search,
         stockFilter,
         categoryId: categoryFilter,
+        supplierId: supplierFilter,
       });
 
       const cached = productsPageCache.get(cacheKey);
@@ -133,6 +181,7 @@ export function ProductsClient({
         search,
         stockFilter,
         categoryId: categoryFilter,
+        supplierId: supplierFilter,
       })
         .then((result) => {
           productsPageCache.set(cacheKey, result);
@@ -147,7 +196,7 @@ export function ProductsClient({
       inflightRequests.current.set(cacheKey, promise);
       return promise;
     },
-    [stockFilter, categoryFilter],
+    [stockFilter, categoryFilter, supplierFilter],
   );
 
   useEffect(() => {
@@ -155,9 +204,10 @@ export function ProductsClient({
       skipInitialFetch.current = false;
       if (
         page === initialPage.page &&
-        !debouncedSearch &&
-        stockFilter === "all" &&
-        categoryFilter === "all"
+        activeSearch === initialUrl.search &&
+        stockFilter === initialUrl.stockFilter &&
+        categoryFilter === initialUrl.categoryId &&
+        supplierFilter === initialUrl.supplierId
       ) {
         filterKeyRef.current = filterKey;
         return;
@@ -180,9 +230,10 @@ export function ProductsClient({
     void (async () => {
       const cacheKey = buildProductsPageCacheKey({
         page,
-        search: debouncedSearch,
+        search: activeSearch,
         stockFilter,
         categoryId: categoryFilter,
+        supplierId: supplierFilter,
       });
       const cached = productsPageCache.get(cacheKey);
 
@@ -199,7 +250,7 @@ export function ProductsClient({
       }, LOADING_DELAY_MS);
 
       try {
-        const result = await fetchProductsPage(page, debouncedSearch);
+        const result = await fetchProductsPage(page, activeSearch);
         if (cancelled || reqId !== requestIdRef.current) return;
         setListState(result);
         setPage(result.page);
@@ -221,13 +272,37 @@ export function ProductsClient({
     };
   }, [
     page,
-    debouncedSearch,
+    activeSearch,
     filterKey,
     stockFilter,
     categoryFilter,
+    supplierFilter,
     initialPage.page,
+    initialUrl,
     fetchProductsPage,
   ]);
+
+  function handleSearchQueryChange(value: string) {
+    setSearchQuery(value);
+    if (page !== 1) setPage(1);
+  }
+
+  function handleSearchClear() {
+    setSearchQuery("");
+    setForcedSearch("");
+    setPage(1);
+  }
+
+  function handleSearchSubmit() {
+    const trimmed = searchQuery.trim();
+    setForcedSearch(trimmed);
+    setPage(1);
+  }
+
+  function handleSupplierSelect(supplierId: string) {
+    setSupplierFilter(supplierId);
+    setPage(1);
+  }
 
   const loadPage = useCallback(
     async (targetPage: number, options?: { force?: boolean }) => {
@@ -238,9 +313,10 @@ export function ProductsClient({
 
       const cacheKey = buildProductsPageCacheKey({
         page: targetPage,
-        search: debouncedSearch,
+        search: activeSearch,
         stockFilter,
         categoryId: categoryFilter,
+        supplierId: supplierFilter,
       });
 
       if (!options?.force) {
@@ -254,7 +330,7 @@ export function ProductsClient({
 
       setIsLoading(true);
       try {
-        const result = await fetchProductsPage(targetPage, debouncedSearch);
+        const result = await fetchProductsPage(targetPage, activeSearch);
         setListState(result);
         setPage(result.page);
       } catch {
@@ -263,7 +339,7 @@ export function ProductsClient({
         setIsLoading(false);
       }
     },
-    [debouncedSearch, stockFilter, categoryFilter, fetchProductsPage],
+    [activeSearch, stockFilter, categoryFilter, supplierFilter, fetchProductsPage],
   );
 
   function handleFormSuccess() {
@@ -335,6 +411,28 @@ export function ProductsClient({
         <DashboardToolbar className="flex flex-col items-center gap-4 lg:flex-row">
           <div className="flex w-full flex-wrap items-center gap-3 lg:flex-1">
             <Select
+              value={supplierFilter}
+              onValueChange={(value) => {
+                setSupplierFilter(value);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="h-10 w-full rounded-lg border-input bg-background md:w-[220px] focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                <div className="flex items-center gap-2 truncate">
+                  <Building2 className="size-4 shrink-0 text-primary" aria-hidden />
+                  <SelectValue placeholder="Todos los proveedores" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los proveedores</SelectItem>
+                {suppliers.map((supplier) => (
+                  <SelectItem key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
               value={categoryFilter}
               onValueChange={(value) => {
                 setCategoryFilter(value);
@@ -396,9 +494,16 @@ export function ProductsClient({
           totalPages={listState.totalPages}
           isLoading={isLoading}
           searchQuery={searchQuery}
-          onSearchQueryChange={setSearchQuery}
+          onSearchQueryChange={handleSearchQueryChange}
+          onSearchClear={handleSearchClear}
+          onSearchSubmit={handleSearchSubmit}
           onPageChange={setPage}
           hasActiveFilters={hasActiveFilters}
+          activeCategoryName={activeCategoryName}
+          activeSupplierName={activeSupplierName}
+          highlightedSupplierId={supplierFilter}
+          onSupplierSelect={handleSupplierSelect}
+          activeStockLabel={stockFilter !== "all" ? activeStockLabel : undefined}
           totalRegistered={totalRegistered}
           onEdit={openEditProductForm}
           onSimulate={openSimulator}

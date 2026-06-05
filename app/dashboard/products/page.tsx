@@ -1,4 +1,8 @@
 import {
+  parseProductsListUrl,
+  toProductsListFilters,
+} from "@/lib/products-list-url";
+import {
   getActiveProductsCount,
   getActiveSuppliers,
   getCategories,
@@ -6,12 +10,21 @@ import {
 } from "./actions";
 import { ProductsClient } from "./products-client";
 
-export default async function ProductsPage() {
+type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
+
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = await searchParams;
+  const initialUrl = parseProductsListUrl(params);
+
   const [suppliers, categories, totalRegistered, initialPage] = await Promise.all([
     getActiveSuppliers(),
     getCategories(),
     getActiveProductsCount(),
-    getProductsPage({ page: 1 }),
+    getProductsPage(toProductsListFilters(initialUrl)),
   ]);
 
   return (
@@ -21,6 +34,7 @@ export default async function ProductsPage() {
         categories={categories}
         totalRegistered={totalRegistered}
         initialPage={initialPage}
+        initialUrl={initialUrl}
       />
     </div>
   );

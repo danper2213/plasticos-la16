@@ -53,6 +53,94 @@ function isNumericToken(token: string): boolean {
   return /^\d+(?:[.,]\d+)?$/.test(token);
 }
 
+export type SearchHighlightSegment = {
+  value: string;
+  highlight: boolean;
+};
+
+function mergeHighlightRanges(
+  ranges: { start: number; end: number }[],
+): { start: number; end: number }[] {
+  if (ranges.length === 0) return [];
+
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const merged = [sorted[0]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const last = merged[merged.length - 1];
+    const current = sorted[i];
+    if (current.start <= last.end) {
+      last.end = Math.max(last.end, current.end);
+    } else {
+      merged.push(current);
+    }
+  }
+
+  return merged;
+}
+
+/** Segmentos de texto para resaltar coincidencias de búsqueda en la UI. */
+export function getSearchHighlightSegments(
+  text: string,
+  query: string,
+): SearchHighlightSegment[] {
+  if (!text) return [{ value: "", highlight: false }];
+
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return [{ value: text, highlight: false }];
+
+  const ranges: { start: number; end: number }[] = [];
+  const lowerText = text.toLowerCase();
+
+  for (const token of tokens) {
+    const lowerToken = token.toLowerCase();
+
+    if (isNumericToken(token)) {
+      const re = new RegExp(`\\b${escapeRegExp(token)}\\b`, "gi");
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(text)) !== null) {
+        ranges.push({
+          start: match.index,
+          end: match.index + match[0].length,
+        });
+      }
+      continue;
+    }
+
+    let index = 0;
+    while ((index = lowerText.indexOf(lowerToken, index)) !== -1) {
+      ranges.push({ start: index, end: index + token.length });
+      index += token.length || 1;
+    }
+  }
+
+  const merged = mergeHighlightRanges(ranges);
+  if (merged.length === 0) return [{ value: text, highlight: false }];
+
+  const segments: SearchHighlightSegment[] = [];
+  let cursor = 0;
+
+  for (const range of merged) {
+    if (range.start > cursor) {
+      segments.push({
+        value: text.slice(cursor, range.start),
+        highlight: false,
+      });
+    }
+    segments.push({
+      value: text.slice(range.start, range.end),
+      highlight: true,
+    });
+    cursor = range.end;
+  }
+
+  if (cursor < text.length) {
+    segments.push({ value: text.slice(cursor), highlight: false });
+  }
+
+  return segments;
+}
+
 /**
  * Minúsculas, sin tildes, puntuación como espacio y medidas compactadas (12oz).
  */
@@ -117,6 +205,37 @@ export function expandSearchTermVariants(term: string): string[] {
   }
 
   return [...variants];
+}
+
+/**
+ * Patrones ILIKE por término. Los números sueltos usan contexto (espacios/unidad)
+ * para no confundir "7" con "17" o "70".
+ */
+export function getIlikePatternsForSearchTerm(term: string): string[] {
+  const escaped = escapeIlikePattern(term);
+
+  if (COMPACT_MEASURE_RE.test(term)) {
+    return [`%${escaped}%`];
+  }
+
+  if (isNumericToken(term)) {
+    const patterns = new Set([
+      `% ${escaped} %`,
+      `${escaped} %`,
+      `% ${escaped}`,
+    ]);
+
+    for (const unit of ["oz", "ml", "cc", "lt", "l", "und"]) {
+      patterns.add(`% ${escaped} ${unit}%`);
+      patterns.add(`% ${escaped}${unit}%`);
+      patterns.add(`${escaped} ${unit}%`);
+      patterns.add(`${escaped}${unit}%`);
+    }
+
+    return [...patterns];
+  }
+
+  return [`%${escaped}%`];
 }
 
 /** Grupos de términos: cada grupo es OR; entre grupos es AND (todos deben coincidir). */

@@ -58,6 +58,7 @@ export function buildProductsPageCacheKey(params: {
   search: string;
   stockFilter: string;
   categoryId: string;
+  supplierId: string;
 }): string {
   return [
     "page",
@@ -65,6 +66,7 @@ export function buildProductsPageCacheKey(params: {
     normalizeSearch(params.search),
     params.stockFilter,
     params.categoryId,
+    params.supplierId,
   ].join("|");
 }
 

@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRef, type KeyboardEvent } from "react";
 import {
-  Boxes,
-  Building2,
   Calculator,
   Calendar,
   ChevronLeft,
@@ -14,6 +13,7 @@ import {
   Search,
   SearchX,
   Trash2,
+  X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +23,47 @@ import { formatCop } from "@/lib/format";
 import { formatInventoryQuantity } from "@/lib/inventory-quantity";
 import { cn } from "@/lib/utils";
 import { SearchLottie } from "@/components/ui/search-lottie";
+import { HighlightedText } from "@/components/products/highlighted-text";
+import {
+  ProductDetailsSection,
+  ProductDetailField,
+  productCardStyles,
+} from "@/components/products/product-info-panel";
+import { SupplierHighlight } from "@/components/products/supplier-highlight";
 import type { ProductWithRelations } from "@/app/dashboard/products/actions";
+import { unitPriceFromCostAndUtilityPercent } from "@/lib/quotes/pricing";
+
+const LIST_SALE_UTILITY_PERCENT = 25;
+
+function getSearchTips(query: string): string[] {
+  const trimmed = query.trim();
+  const tips: string[] = [];
+
+  if (/\d/.test(trimmed) && !/\b(oz|ml|cc|lt|und)\b/i.test(trimmed)) {
+    const numberMatch = trimmed.match(/\d+(?:[.,]\d+)?/);
+    const sample = numberMatch?.[0] ?? trimmed;
+    tips.push(`Prueba con unidad: «${sample} oz» o «${sample}oz».`);
+  }
+
+  if (trimmed.split(/\s+/).filter(Boolean).length > 2) {
+    tips.push("Usa menos palabras o busca por código (ej. j1).");
+  }
+
+  tips.push("Prueba términos cortos: «vaso», «portacomida», «tapas».");
+  return tips.slice(0, 3);
+}
+
+function formatActiveFiltersLabel(
+  categoryName?: string,
+  stockLabel?: string,
+  supplierName?: string,
+): string | null {
+  const parts: string[] = [];
+  if (supplierName) parts.push(supplierName);
+  if (categoryName) parts.push(categoryName);
+  if (stockLabel) parts.push(stockLabel);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 function formatPriceCop(value: number): string {
   return value.toLocaleString("es-CO", {
@@ -43,17 +83,15 @@ function StockBadge({ quantity }: { quantity: number }) {
     <Badge
       variant="outline"
       className={cn(
-        "shrink-0 px-2.5 py-0.5 tabular-nums border font-medium shadow-none",
-        isZero &&
-          "border-border/70 bg-muted/35 text-muted-foreground dark:border-zinc-700/70 dark:bg-zinc-900/65 dark:text-zinc-400",
+        "shrink-0 rounded-lg border-border/70 bg-background/80 px-2.5 py-1 tabular-nums text-[11px] font-semibold uppercase tracking-wide shadow-none",
+        isZero && "text-muted-foreground",
         isLow &&
-          "border-amber-500/25 bg-amber-500/[0.08] text-amber-800 dark:border-amber-500/22 dark:bg-amber-500/[0.07] dark:text-amber-400/95",
-        isPlenty &&
-          "border-border/60 bg-muted/45 text-foreground/90 dark:border-zinc-700/55 dark:bg-zinc-800/55 dark:text-zinc-200",
+          "border-amber-500/30 bg-amber-500/[0.08] text-amber-800 dark:text-amber-400/95",
+        isPlenty && "text-foreground/90",
       )}
     >
       <div className="flex items-center gap-1.5">
-        <Package className="w-3 h-3 shrink-0 opacity-80" />
+        <Package className="size-3 shrink-0 opacity-80" />
         <span>
           {isZero ? "Sin stock" : `Stock: ${formatInventoryQuantity(quantity)}`}
         </span>
@@ -70,9 +108,16 @@ export interface PriceListProps {
   isLoading?: boolean;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
+  onSearchClear: () => void;
+  onSearchSubmit: () => void;
   onPageChange: (page: number) => void;
   totalRegistered: number;
   hasActiveFilters?: boolean;
+  activeCategoryName?: string;
+  activeStockLabel?: string;
+  activeSupplierName?: string;
+  highlightedSupplierId?: string;
+  onSupplierSelect?: (supplierId: string) => void;
   onEdit: (product: ProductWithRelations) => void;
   onSimulate: (product: ProductWithRelations) => void;
   onDelete: (product: ProductWithRelations) => void;
@@ -86,15 +131,42 @@ export function PriceList({
   isLoading = false,
   searchQuery,
   onSearchQueryChange,
+  onSearchClear,
+  onSearchSubmit,
   onPageChange,
   totalRegistered,
   hasActiveFilters = false,
+  activeCategoryName,
+  activeStockLabel,
+  activeSupplierName,
+  highlightedSupplierId,
+  onSupplierSelect,
   onEdit,
   onSimulate,
   onDelete,
 }: PriceListProps) {
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const isSearching = searchQuery.trim().length > 0;
   const showEmptySearch = isSearching && !isLoading && products.length === 0 && totalCount === 0;
+  const activeFiltersLabel = formatActiveFiltersLabel(
+    activeCategoryName,
+    activeStockLabel,
+    activeSupplierName,
+  );
+  const searchTips = getSearchTips(searchQuery);
+
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onSearchClear();
+      searchInputRef.current?.blur();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      onSearchSubmit();
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -105,32 +177,65 @@ export function PriceList({
             aria-hidden
           />
           <Input
-            type="search"
+            ref={searchInputRef}
+            type="text"
+            role="searchbox"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
             placeholder="Buscar: portacomida, j1, 12oz…"
-            className="h-12 w-full rounded-xl border-0 bg-transparent pl-12 pr-4 text-base shadow-none focus-visible:ring-0"
+            className="h-12 w-full rounded-xl border-0 bg-transparent pl-12 pr-11 text-base shadow-none focus-visible:ring-0"
             aria-label="Buscar productos"
             autoComplete="off"
           />
+          {isSearching ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1.5 top-1/2 z-10 size-9 -translate-y-1/2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={onSearchClear}
+              aria-label="Limpiar búsqueda"
+            >
+              <X className="size-4" aria-hidden />
+            </Button>
+          ) : null}
         </div>
-        {isSearching || totalCount > 0 ? (
+        {isSearching || totalCount > 0 || hasActiveFilters ? (
           <div
-            className="mt-2 text-xs text-muted-foreground tabular-nums"
+            className="mt-2 space-y-1 text-xs text-muted-foreground"
             role="status"
             aria-live="polite"
           >
             {isLoading ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 tabular-nums">
                 <SearchLottie size={22} ariaLabel="Cargando resultados" />
                 <span>Cargando resultados…</span>
               </div>
             ) : (
-              <>
-                {totalCount} resultado{totalCount === 1 ? "" : "s"}
-                {totalPages > 1 ? ` · Página ${page} de ${totalPages}` : ""}
-              </>
+              <p className="tabular-nums">
+                {isSearching || hasActiveFilters ? (
+                  <>
+                    {totalCount} resultado{totalCount === 1 ? "" : "s"}
+                    {totalPages > 1 ? ` · Página ${page} de ${totalPages}` : ""}
+                  </>
+                ) : (
+                  <>
+                    {totalCount} producto{totalCount === 1 ? "" : "s"} activo
+                    {totalCount === 1 ? "" : "s"}
+                    {totalPages > 1 ? ` · Página ${page} de ${totalPages}` : ""}
+                  </>
+                )}
+              </p>
             )}
+            {!isLoading && activeFiltersLabel ? (
+              <p>
+                Filtros activos:{" "}
+                <span className="font-medium text-foreground/90">
+                  {activeFiltersLabel}
+                </span>
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -143,15 +248,28 @@ export function PriceList({
           <h3 className="text-lg font-semibold text-foreground">
             No encontramos &quot;{searchQuery.trim()}&quot;
           </h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground leading-relaxed">
-            Revisa la ortografía o prueba términos más generales.
-          </p>
+          {activeFiltersLabel ? (
+            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground leading-relaxed">
+              Hay filtros activos ({activeFiltersLabel}) que pueden estar
+              limitando los resultados.
+            </p>
+          ) : null}
+          <ul className="mx-auto mt-3 max-w-md space-y-1.5 text-left text-sm text-muted-foreground">
+            {searchTips.map((tip) => (
+              <li key={tip} className="flex gap-2 leading-relaxed">
+                <span className="text-primary" aria-hidden>
+                  ·
+                </span>
+                <span>{tip}</span>
+              </li>
+            ))}
+          </ul>
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="mt-5 rounded-lg"
-            onClick={() => onSearchQueryChange("")}
+            onClick={onSearchClear}
           >
             Limpiar búsqueda
           </Button>
@@ -161,7 +279,9 @@ export function PriceList({
           {totalRegistered === 0
             ? 'No hay productos registrados. Haga clic en "Nuevo Producto" para agregar uno.'
             : hasActiveFilters
-              ? "Ningún resultado coincide con los filtros."
+              ? activeFiltersLabel
+                ? `Ningún producto coincide con los filtros (${activeFiltersLabel}).`
+                : "Ningún producto coincide con los filtros activos."
               : "No hay productos para mostrar."}
         </div>
       ) : (
@@ -179,73 +299,97 @@ export function PriceList({
             )}
           >
             {products.map((product) => (
-              <article
-                key={product.id}
-                className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/90 bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md hover:shadow-slate-900/5 dark:hover:shadow-primary/10"
-              >
-                <header className="flex flex-row items-start justify-between gap-2 p-5 pb-2">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-lg font-bold tracking-tight text-foreground leading-tight">
-                      {product.name}
-                    </h3>
-                    <p className="mt-1 text-xs text-muted-foreground truncate">
-                      {product.category_name}
-                    </p>
+              <article key={product.id} className={productCardStyles.article}>
+                <header className={productCardStyles.header}>
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className={productCardStyles.label}>
+                        <HighlightedText
+                          text={product.category_name}
+                          query={searchQuery}
+                        />
+                      </p>
+                      <h3
+                        className="mt-1.5 text-xl font-black leading-[1.15] tracking-tight text-foreground line-clamp-2 sm:text-[1.35rem]"
+                        title={product.name}
+                      >
+                        <HighlightedText
+                          text={product.name}
+                          query={searchQuery}
+                          highlightClassName="bg-primary/30 font-black dark:bg-primary/35"
+                        />
+                      </h3>
+                    </div>
+                    <StockBadge quantity={product.stock_quantity ?? 0} />
                   </div>
-                  <StockBadge quantity={product.stock_quantity ?? 0} />
                 </header>
 
-                <div className="mb-2 mt-2 flex flex-wrap gap-2 px-5">
-                  <div className="flex items-center gap-1.5 rounded-md border border-border/80 bg-slate-100/90 px-2.5 py-1.5 text-xs font-medium text-foreground dark:bg-muted/60">
-                    <Package className="size-3.5 shrink-0 text-primary" />
-                    <span>{product.presentation}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 rounded-md border border-border/80 bg-slate-100/90 px-2.5 py-1.5 text-xs font-medium text-foreground dark:bg-muted/60">
-                    <Boxes className="size-3.5 shrink-0 text-primary" />
-                    <span>{product.packaging ?? "—"}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 rounded-md border border-border/80 bg-slate-100/90 px-2.5 py-1.5 text-xs font-medium text-foreground dark:bg-muted/60">
-                    <Building2 className="size-3.5 shrink-0 text-primary" />
-                    <span>{product.supplier_name}</span>
-                  </div>
+                <div className={productCardStyles.body}>
+                  <SupplierHighlight
+                    supplierId={product.supplier_id}
+                    supplierName={product.supplier_name}
+                    searchQuery={searchQuery}
+                    onSelect={onSupplierSelect}
+                    emphasized={
+                      highlightedSupplierId !== undefined &&
+                      highlightedSupplierId !== "all" &&
+                      product.supplier_id === highlightedSupplierId
+                    }
+                  />
+
+                  <ProductDetailsSection>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                      <ProductDetailField label="Presentación">
+                        <HighlightedText
+                          text={product.presentation}
+                          query={searchQuery}
+                        />
+                      </ProductDetailField>
+                      <ProductDetailField label="Empaque">
+                        <HighlightedText
+                          text={product.packaging ?? "—"}
+                          query={searchQuery}
+                        />
+                      </ProductDetailField>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 border-t border-border/50 pt-3">
+                      <ProductDetailField
+                        label={`Precio venta (+${LIST_SALE_UTILITY_PERCENT}%)`}
+                        valueClassName="text-base font-bold tabular-nums text-primary"
+                      >
+                        {formatPriceCop(
+                          unitPriceFromCostAndUtilityPercent(
+                            product.cost,
+                            LIST_SALE_UTILITY_PERCENT,
+                          ),
+                        )}
+                      </ProductDetailField>
+                      <ProductDetailField
+                        label="Costo base"
+                        valueClassName="text-base font-semibold tabular-nums"
+                      >
+                        {formatCop(product.cost)}
+                      </ProductDetailField>
+                    </div>
+
+                    <p className="mt-3 flex items-center gap-1.5 border-t border-border/50 pt-2.5 text-[11px] leading-snug text-muted-foreground">
+                      <Calendar className="size-3 shrink-0 opacity-70" aria-hidden />
+                      <span>
+                        Actualizado{" "}
+                        {formatDateTimeEsCO(
+                          product.updated_at ?? product.created_at ?? null,
+                        )}
+                      </span>
+                    </p>
+                  </ProductDetailsSection>
                 </div>
 
-                <div className="mx-5 mt-2 grid gap-2 sm:grid-cols-2">
-                  <div className="flex flex-col rounded-xl border border-border/80 bg-slate-50/90 p-3 dark:bg-muted/30">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Precio venta
-                    </span>
-                    <span className="text-lg font-black tabular-nums text-primary">
-                      {formatPriceCop(product.selling_price)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col rounded-xl border border-border/80 bg-slate-50/90 p-3 dark:bg-muted/30">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Costo base
-                    </span>
-                    <span className="text-lg font-black tabular-nums text-foreground/90">
-                      {formatCop(product.cost)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-3 space-y-0.5 px-5 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                    <span>
-                      Última actualización:{" "}
-                      {formatDateTimeEsCO(
-                        product.updated_at ?? product.created_at ?? null,
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                <footer className="mt-4 flex justify-end gap-2 border-t border-border/70 bg-slate-50/50 px-5 pb-4 pt-3 dark:bg-muted/30">
+                <footer className={productCardStyles.footer}>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="size-8 rounded-lg text-muted-foreground hover:bg-background/80 hover:text-foreground"
                     aria-label="Editar producto"
                     onClick={() => onEdit(product)}
                   >
@@ -254,7 +398,7 @@ export function PriceList({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="size-8 rounded-lg text-muted-foreground hover:bg-background/80 hover:text-foreground"
                     aria-label="Simular precio"
                     onClick={() => onSimulate(product)}
                   >
@@ -263,7 +407,7 @@ export function PriceList({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="size-8 rounded-lg text-muted-foreground hover:bg-background/80 hover:text-foreground"
                     aria-label="Etiqueta QR para imprimir"
                     asChild
                   >
@@ -276,7 +420,7 @@ export function PriceList({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    className="size-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     aria-label="Eliminar producto"
                     onClick={() => onDelete(product)}
                   >

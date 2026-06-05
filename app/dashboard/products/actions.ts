@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/utils/supabase/require-user";
 import {
-  escapeIlikePattern,
+  getIlikePatternsForSearchTerm,
   getSearchTermGroupsForServer,
 } from "@/lib/searchEngine";
 import type { ProductFormValues } from "./schema";
@@ -103,7 +103,12 @@ const PRODUCTS_SELECT_BASE = `
 const SEARCH_ILIKE_FIELDS = ["name", "scan_code"] as const;
 
 function getSearchIlikeFields(term: string): readonly string[] {
-  if (/^[a-z0-9-]{1,8}$/i.test(term) && /\d/.test(term)) {
+  // Códigos tipo "j1", "a-12": nombre + scan_code. Números sueltos solo en nombre.
+  if (
+    /^[a-z0-9-]{1,8}$/i.test(term) &&
+    /\d/.test(term) &&
+    /[a-z-]/i.test(term)
+  ) {
     return SEARCH_ILIKE_FIELDS;
   }
   return ["name"];
@@ -112,6 +117,7 @@ function getSearchIlikeFields(term: string): readonly string[] {
 function applySearchFilter<
   T extends {
     or: (filters: string) => T;
+    ilike: (column: string, pattern: string) => T;
   },
 >(query: T, search: string): T {
   let q = query;
@@ -121,14 +127,28 @@ function applySearchFilter<
     const orParts: string[] = [];
 
     for (const variant of variants) {
-      const pattern = `%${escapeIlikePattern(variant)}%`;
+      const patterns = getIlikePatternsForSearchTerm(variant);
       const fields = getSearchIlikeFields(variant);
 
-      for (const field of fields) {
-        orParts.push(`${field}.ilike.${pattern}`);
+      for (const pattern of patterns) {
+        for (const field of fields) {
+          orParts.push(`${field}.ilike.${pattern}`);
+        }
       }
     }
 
+    if (orParts.length === 0) continue;
+
+    if (orParts.length === 1) {
+      const [filter] = orParts;
+      const match = /^(\w+)\.ilike\.(.+)$/.exec(filter);
+      if (match) {
+        q = q.ilike(match[1], match[2]);
+        continue;
+      }
+    }
+
+    // Un OR por token; encadenado con ilike/or previos = AND entre tokens.
     q = q.or(orParts.join(","));
   }
 
@@ -202,6 +222,7 @@ function applyProductsListFilters<
   T extends {
     eq: (column: string, value: unknown) => T;
     or: (filters: string) => T;
+    ilike: (column: string, pattern: string) => T;
     gt: (column: string, value: number) => T;
     is: (column: string, value: null) => T;
   },
@@ -216,6 +237,10 @@ function applyProductsListFilters<
 
   if (filters.categoryId && filters.categoryId !== "all") {
     q = q.eq("category_id", filters.categoryId);
+  }
+
+  if (filters.supplierId && filters.supplierId !== "all") {
+    q = q.eq("supplier_id", filters.supplierId);
   }
 
   const search = filters.search?.trim();

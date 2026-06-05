@@ -7,4 +7,5 @@ export type ProductsListFilters = {
   search?: string;
   stockFilter?: ProductsStockFilter;
   categoryId?: string;
+  supplierId?: string;
 };
