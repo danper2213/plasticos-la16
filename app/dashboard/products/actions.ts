@@ -5,6 +5,8 @@ import { requireUser } from "@/utils/supabase/require-user";
 import {
   getIlikePatternsForSearchTerm,
   getSearchTermGroupsForServer,
+  searchIntelligent,
+  toSearchProduct,
 } from "@/lib/searchEngine";
 import type { ProductFormValues } from "./schema";
 import {
@@ -251,6 +253,39 @@ function applyProductsListFilters<
   return q;
 }
 
+function sortProductsBySearchRelevance(
+  products: ProductWithRelations[],
+  search: string,
+): ProductWithRelations[] {
+  const trimmed = search.trim();
+  if (!trimmed) {
+    return [...products].sort((a, b) => a.name.localeCompare(b.name, "es"));
+  }
+
+  const rankInput = products.map((product) =>
+    toSearchProduct({
+      id: product.id,
+      name: product.name,
+      scan_code: product.scan_code,
+      category_name: product.category_name,
+      presentation: product.presentation,
+      packaging: product.packaging,
+      selling_price: product.selling_price,
+      cost: product.cost,
+    }),
+  );
+
+  const ranked = searchIntelligent(trimmed, rankInput);
+  const order = new Map(ranked.map((product, index) => [product.id, index]));
+
+  return [...products].sort((a, b) => {
+    const rankA = order.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const rankB = order.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (rankA !== rankB) return rankA - rankB;
+    return a.name.localeCompare(b.name, "es");
+  });
+}
+
 export async function getActiveProductsCount(): Promise<number> {
   const { supabase } = await requireUser();
   const { count, error } = await supabase
@@ -271,28 +306,50 @@ export async function getProductsPage(
   const { supabase } = await requireUser();
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = PRODUCTS_PAGE_SIZE;
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
+  const search = filters.search?.trim();
 
-  const runQuery = (select: string) => {
+  const runQuery = (select: string, options?: { paginate?: boolean }) => {
     let query = supabase
       .from("products")
       .select(select, { count: "exact" })
       .eq("is_active", true);
 
     query = applyProductsListFilters(query, filters);
+
+    if (options?.paginate === false) {
+      return query.order("name", { ascending: true });
+    }
+
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
     return query.order("name", { ascending: true }).range(from, to);
   };
 
-  let response = await runQuery(PRODUCTS_SELECT_FULL);
+  const fetchPage = async (select: string) => {
+    if (search) {
+      let response = await runQuery(select, { paginate: false });
+      if (
+        response.error &&
+        (response.error.message?.toLowerCase().includes("column") ||
+          response.error.code === "42703")
+      ) {
+        response = await runQuery(PRODUCTS_SELECT_BASE, { paginate: false });
+      }
+      return response;
+    }
 
-  if (
-    response.error &&
-    (response.error.message?.toLowerCase().includes("column") ||
-      response.error.code === "42703")
-  ) {
-    response = await runQuery(PRODUCTS_SELECT_BASE);
-  }
+    let response = await runQuery(select, { paginate: true });
+    if (
+      response.error &&
+      (response.error.message?.toLowerCase().includes("column") ||
+        response.error.code === "42703")
+    ) {
+      response = await runQuery(PRODUCTS_SELECT_BASE, { paginate: true });
+    }
+    return response;
+  };
+
+  let response = await fetchPage(PRODUCTS_SELECT_FULL);
 
   if (response.error) {
     console.error("getProductsPage error:", response.error);
@@ -306,11 +363,30 @@ export async function getProductsPage(
   }
 
   const rows = (response.data ?? []) as Partial<ProductRow>[];
+  let products = rows.map((row) => mapRowToProductWithRelations(row));
+
+  if (search) {
+    products = sortProductsBySearchRelevance(products, search);
+    const totalCount = products.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const from = (safePage - 1) * pageSize;
+    products = products.slice(from, from + pageSize);
+
+    return {
+      products,
+      totalCount,
+      page: safePage,
+      pageSize,
+      totalPages,
+    };
+  }
+
   const totalCount = response.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return {
-    products: rows.map((row) => mapRowToProductWithRelations(row)),
+    products,
     totalCount,
     page: Math.min(page, totalPages),
     pageSize,

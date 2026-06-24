@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildProductsListPath,
   type ProductsListUrlState,
@@ -28,6 +28,15 @@ import {
 import { ProductForm } from "@/components/products/product-form";
 import { PriceSimulatorModal } from "@/components/products/price-simulator-modal";
 import { PriceList } from "@/components/products/price-list";
+import {
+  ProductSearchBar,
+  type ProductSearchBarHandle,
+} from "@/components/products/product-search-bar";
+import {
+  ProductsFilterChips,
+  type ActiveFilterChip,
+} from "@/components/products/products-filter-chips";
+import { ProductsSearchHero } from "@/components/products/products-search-hero";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -38,10 +47,6 @@ import {
 } from "@/lib/products-list-cache";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import {
-  DashboardToolbar,
-  DashboardToolbarStat,
-} from "@/components/layout/dashboard-toolbar";
-import {
   deleteProduct,
   getProductsPage,
   type ActiveSupplierOption,
@@ -50,6 +55,10 @@ import {
   type ProductsPageResult,
 } from "./actions";
 import type { ProductsStockFilter } from "./list-types";
+import {
+  isProductSearchShortcut,
+  isTypingElement,
+} from "@/lib/product-search-shortcut";
 
 type StockFilter = ProductsStockFilter;
 
@@ -102,6 +111,10 @@ export function ProductsClient({
   const requestIdRef = useRef(0);
   const inflightRequests = useRef(new Map<string, Promise<ProductsPageResult>>());
   const filterKeyRef = useRef("");
+  const heroObservedRef = useRef<HTMLDivElement>(null);
+  const searchBarRef = useRef<ProductSearchBarHandle>(null);
+  const stickySearchBarRef = useRef<ProductSearchBarHandle>(null);
+  const [heroVisible, setHeroVisible] = useState(true);
 
   const filterKey = `${activeSearch}|${stockFilter}|${categoryFilter}|${supplierFilter}`;
 
@@ -121,6 +134,68 @@ export function ProductsClient({
       : undefined;
 
   const activeStockLabel = STOCK_FILTERS.find((f) => f.value === stockFilter)?.label;
+
+  const isSearching = searchQuery.trim().length > 0;
+
+  const filterChips = useMemo((): ActiveFilterChip[] => {
+    const chips: ActiveFilterChip[] = [];
+
+    if (isSearching) {
+      chips.push({
+        id: "search",
+        label: `«${searchQuery.trim()}»`,
+        onRemove: () => {
+          setSearchQuery("");
+          setForcedSearch("");
+          setPage(1);
+        },
+      });
+    }
+
+    if (supplierFilter !== "all" && activeSupplierName) {
+      chips.push({
+        id: "supplier",
+        label: activeSupplierName,
+        onRemove: () => {
+          setSupplierFilter("all");
+          setPage(1);
+        },
+      });
+    }
+
+    if (categoryFilter !== "all" && activeCategoryName) {
+      chips.push({
+        id: "category",
+        label: activeCategoryName,
+        onRemove: () => {
+          setCategoryFilter("all");
+          setPage(1);
+        },
+      });
+    }
+
+    if (stockFilter !== "all" && activeStockLabel) {
+      chips.push({
+        id: "stock",
+        label: activeStockLabel,
+        onRemove: () => {
+          setStockFilter("all");
+          setPage(1);
+        },
+      });
+    }
+
+    return chips;
+  }, [
+    isSearching,
+    searchQuery,
+    supplierFilter,
+    activeSupplierName,
+    categoryFilter,
+    activeCategoryName,
+    stockFilter,
+    activeStockLabel,
+  ]);
 
   useEffect(() => {
     if (forcedSearch !== undefined && forcedSearch === debouncedSearch) {
@@ -304,6 +379,52 @@ export function ProductsClient({
     setPage(1);
   }
 
+  function clearAllFilters() {
+    handleSearchClear();
+    setSupplierFilter("all");
+    setCategoryFilter("all");
+    setStockFilter("all");
+  }
+
+  const focusSearch = useCallback(() => {
+    if (heroVisible) {
+      heroObservedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      searchBarRef.current?.focus();
+      return;
+    }
+    stickySearchBarRef.current?.focus();
+  }, [heroVisible]);
+
+  useEffect(() => {
+    const node = heroObservedRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry) setHeroVisible(entry.isIntersecting);
+      },
+      { threshold: 0, rootMargin: "-56px 0px 0px 0px" },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isTypingElement(event.target)) return;
+      if (!isProductSearchShortcut(event)) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      focusSearch();
+    };
+
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [focusSearch]);
+
   const loadPage = useCallback(
     async (targetPage: number, options?: { force?: boolean }) => {
       if (options?.force) {
@@ -396,7 +517,7 @@ export function ProductsClient({
         <DashboardPageHeader
           icon={Layers}
           title="Lista de Precios"
-          description="Productos activos con proveedor y categoría."
+          description="Consulta precios, proveedores y stock de productos activos."
           actions={
             <Button
               onClick={openNewProductForm}
@@ -408,8 +529,48 @@ export function ProductsClient({
           }
         />
 
-        <DashboardToolbar className="flex flex-col items-center gap-4 lg:flex-row">
-          <div className="flex w-full flex-wrap items-center gap-3 lg:flex-1">
+        <div
+          className={cn(
+            "fixed inset-x-0 top-14 z-20 border-b border-border/70 bg-background/95 px-4 py-2.5 shadow-md backdrop-blur-md transition-all duration-300 motion-reduce:transition-none lg:px-6",
+            heroVisible
+              ? "pointer-events-none -translate-y-full opacity-0"
+              : "translate-y-0 opacity-100",
+          )}
+          aria-hidden={heroVisible}
+        >
+          <ProductSearchBar
+            ref={stickySearchBarRef}
+            variant="sticky"
+            value={searchQuery}
+            onChange={handleSearchQueryChange}
+            onClear={handleSearchClear}
+            onSubmit={handleSearchSubmit}
+          />
+        </div>
+
+        <div ref={heroObservedRef}>
+          <ProductsSearchHero
+            ref={searchBarRef}
+            searchQuery={searchQuery}
+            onSearchQueryChange={handleSearchQueryChange}
+            onSearchClear={handleSearchClear}
+            onSearchSubmit={handleSearchSubmit}
+            totalCount={listState.totalCount}
+            totalPages={listState.totalPages}
+            page={listState.page}
+            totalRegistered={totalRegistered}
+            isLoading={isLoading}
+            isSearching={isSearching}
+            hasActiveFilters={hasActiveFilters}
+          />
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/15 px-4 py-3 dark:bg-muted/10">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                Filtrar
+              </span>
             <Select
               value={supplierFilter}
               onValueChange={(value) => {
@@ -417,10 +578,10 @@ export function ProductsClient({
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-10 w-full rounded-lg border-input bg-background md:w-[220px] focus:ring-2 focus:ring-primary/20 focus:border-primary">
+              <SelectTrigger className="h-9 w-full rounded-lg border-border/70 bg-background/80 sm:w-[180px]">
                 <div className="flex items-center gap-2 truncate">
-                  <Building2 className="size-4 shrink-0 text-primary" aria-hidden />
-                  <SelectValue placeholder="Todos los proveedores" />
+                  <Building2 className="size-3.5 shrink-0 text-primary" aria-hidden />
+                  <SelectValue placeholder="Proveedor" />
                 </div>
               </SelectTrigger>
               <SelectContent>
@@ -439,8 +600,8 @@ export function ProductsClient({
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-10 w-full rounded-lg border-input bg-background md:w-[200px] focus:ring-2 focus:ring-primary/20 focus:border-primary">
-                <SelectValue placeholder="Todas las categorías" />
+              <SelectTrigger className="h-9 w-full rounded-lg border-border/70 bg-background/80 sm:w-[160px]">
+                <SelectValue placeholder="Categoría" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas las categorías</SelectItem>
@@ -451,15 +612,17 @@ export function ProductsClient({
                 ))}
               </SelectContent>
             </Select>
-            <div className="flex flex-wrap gap-2">
+            </div>
+            <div className="flex flex-wrap gap-1.5">
               {STOCK_FILTERS.map(({ value, label }) => (
                 <Button
                   key={value}
                   variant={stockFilter === value ? "secondary" : "ghost"}
                   size="sm"
                   className={cn(
-                    "rounded-lg h-9",
-                    stockFilter === value && "bg-primary/15 text-primary ring-1 ring-primary/30",
+                    "h-9 rounded-lg px-3 text-xs",
+                    stockFilter === value &&
+                      "bg-primary/15 text-primary ring-1 ring-primary/30",
                   )}
                   onClick={() => {
                     setStockFilter(value);
@@ -471,21 +634,11 @@ export function ProductsClient({
               ))}
             </div>
           </div>
-          <div className="hidden h-8 w-px shrink-0 bg-border lg:block" aria-hidden />
-          <DashboardToolbarStat>
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary dark:bg-primary/15">
-              <Layers className="h-4 w-4" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] font-bold uppercase leading-none tracking-wider text-muted-foreground">
-                Total Registrados
-              </span>
-              <span className="text-xl font-black tabular-nums leading-tight text-foreground">
-                {totalRegistered}
-              </span>
-            </div>
-          </DashboardToolbarStat>
-        </DashboardToolbar>
+          <ProductsFilterChips
+            chips={filterChips}
+            onClearAll={filterChips.length > 1 ? clearAllFilters : undefined}
+          />
+        </div>
 
         <PriceList
           products={listState.products}
@@ -494,9 +647,7 @@ export function ProductsClient({
           totalPages={listState.totalPages}
           isLoading={isLoading}
           searchQuery={searchQuery}
-          onSearchQueryChange={handleSearchQueryChange}
           onSearchClear={handleSearchClear}
-          onSearchSubmit={handleSearchSubmit}
           onPageChange={setPage}
           hasActiveFilters={hasActiveFilters}
           activeCategoryName={activeCategoryName}

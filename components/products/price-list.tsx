@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, type KeyboardEvent } from "react";
 import {
   Calculator,
   Calendar,
@@ -10,12 +9,9 @@ import {
   Package,
   Pencil,
   QrCode,
-  Search,
   SearchX,
   Trash2,
-  X,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTimeEsCO } from "@/lib/calendar-date";
@@ -107,9 +103,7 @@ export interface PriceListProps {
   totalPages: number;
   isLoading?: boolean;
   searchQuery: string;
-  onSearchQueryChange: (value: string) => void;
-  onSearchClear: () => void;
-  onSearchSubmit: () => void;
+  onSearchClear?: () => void;
   onPageChange: (page: number) => void;
   totalRegistered: number;
   hasActiveFilters?: boolean;
@@ -130,9 +124,7 @@ export function PriceList({
   totalPages,
   isLoading = false,
   searchQuery,
-  onSearchQueryChange,
   onSearchClear,
-  onSearchSubmit,
   onPageChange,
   totalRegistered,
   hasActiveFilters = false,
@@ -145,7 +137,6 @@ export function PriceList({
   onSimulate,
   onDelete,
 }: PriceListProps) {
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const isSearching = searchQuery.trim().length > 0;
   const showEmptySearch = isSearching && !isLoading && products.length === 0 && totalCount === 0;
   const activeFiltersLabel = formatActiveFiltersLabel(
@@ -155,91 +146,8 @@ export function PriceList({
   );
   const searchTips = getSearchTips(searchQuery);
 
-  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onSearchClear();
-      searchInputRef.current?.blur();
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      onSearchSubmit();
-    }
-  }
-
   return (
     <div className="space-y-4">
-      <div className="sticky top-0 z-20 -mx-1 px-1 pb-3 pt-0.5 backdrop-blur-md supports-[backdrop-filter]:bg-background/80">
-        <div className="relative rounded-xl border border-border/80 bg-card shadow-sm transition-shadow focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-          <Search
-            className="pointer-events-none absolute left-4 top-1/2 z-10 size-5 -translate-y-1/2 text-primary/85"
-            aria-hidden
-          />
-          <Input
-            ref={searchInputRef}
-            type="text"
-            role="searchbox"
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-            placeholder="Buscar: portacomida, j1, 12oz…"
-            className="h-12 w-full rounded-xl border-0 bg-transparent pl-12 pr-11 text-base shadow-none focus-visible:ring-0"
-            aria-label="Buscar productos"
-            autoComplete="off"
-          />
-          {isSearching ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute right-1.5 top-1/2 z-10 size-9 -translate-y-1/2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={onSearchClear}
-              aria-label="Limpiar búsqueda"
-            >
-              <X className="size-4" aria-hidden />
-            </Button>
-          ) : null}
-        </div>
-        {isSearching || totalCount > 0 || hasActiveFilters ? (
-          <div
-            className="mt-2 space-y-1 text-xs text-muted-foreground"
-            role="status"
-            aria-live="polite"
-          >
-            {isLoading ? (
-              <div className="flex items-center gap-2 tabular-nums">
-                <SearchLottie size={22} ariaLabel="Cargando resultados" />
-                <span>Cargando resultados…</span>
-              </div>
-            ) : (
-              <p className="tabular-nums">
-                {isSearching || hasActiveFilters ? (
-                  <>
-                    {totalCount} resultado{totalCount === 1 ? "" : "s"}
-                    {totalPages > 1 ? ` · Página ${page} de ${totalPages}` : ""}
-                  </>
-                ) : (
-                  <>
-                    {totalCount} producto{totalCount === 1 ? "" : "s"} activo
-                    {totalCount === 1 ? "" : "s"}
-                    {totalPages > 1 ? ` · Página ${page} de ${totalPages}` : ""}
-                  </>
-                )}
-              </p>
-            )}
-            {!isLoading && activeFiltersLabel ? (
-              <p>
-                Filtros activos:{" "}
-                <span className="font-medium text-foreground/90">
-                  {activeFiltersLabel}
-                </span>
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
       {showEmptySearch ? (
         <div className="rounded-2xl border border-dashed border-border/90 bg-muted/20 px-6 py-14 text-center">
           <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-muted/60 text-muted-foreground">
@@ -301,27 +209,25 @@ export function PriceList({
             {products.map((product) => (
               <article key={product.id} className={productCardStyles.article}>
                 <header className={productCardStyles.header}>
-                  <div className="flex items-start gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className={productCardStyles.label}>
-                        <HighlightedText
-                          text={product.category_name}
-                          query={searchQuery}
-                        />
-                      </p>
-                      <h3
-                        className="mt-1.5 text-xl font-black leading-[1.15] tracking-tight text-foreground line-clamp-2 sm:text-[1.35rem]"
-                        title={product.name}
-                      >
-                        <HighlightedText
-                          text={product.name}
-                          query={searchQuery}
-                          highlightClassName="bg-primary/30 font-black dark:bg-primary/35"
-                        />
-                      </h3>
-                    </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className={productCardStyles.label}>
+                      <HighlightedText
+                        text={product.category_name}
+                        query={searchQuery}
+                      />
+                    </p>
                     <StockBadge quantity={product.stock_quantity ?? 0} />
                   </div>
+                  <h3
+                    className="mt-2 text-xl font-black leading-snug tracking-tight text-foreground break-words sm:text-[1.35rem]"
+                    title={product.name}
+                  >
+                    <HighlightedText
+                      text={product.name}
+                      query={searchQuery}
+                      highlightClassName="bg-primary/30 font-black dark:bg-primary/35"
+                    />
+                  </h3>
                 </header>
 
                 <div className={productCardStyles.body}>
