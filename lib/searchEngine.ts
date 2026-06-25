@@ -142,21 +142,28 @@ export function getSearchHighlightSegments(
 }
 
 /**
- * Minúsculas, sin tildes, puntuación como espacio y medidas compactadas (12oz).
+ * Minúsculas, sin tildes, puntuación como espacio y medidas compactadas (12oz, 1.5kg).
+ * Preserva decimales (1.5) antes de eliminar puntuación.
  */
 export function normalizeText(value: string): string {
-  const base = value
+  let base = value
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/(\d),(\d)/g, "$1.$2");
 
-  return base.replace(MEASURE_JOIN_RE, (_, num: string, unit: string) => {
+  // Unir medida antes de quitar puntuación: "1.5 kg" → "1.5kg"
+  base = base.replace(MEASURE_JOIN_RE, (_, num: string, unit: string) => {
     const normalizedNum = num.replace(",", ".");
     return `${normalizedNum}${unit.toLowerCase()}`;
   });
+
+  // Proteger decimales restantes (ej. "1.5" sin unidad pegada)
+  base = base.replace(/(\d)\.(\d)/g, "$1§$2");
+  base = base.replace(/[^\p{L}\p{N}§]+/gu, " ");
+  base = base.replace(/§/g, ".");
+
+  return base.replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -215,6 +222,12 @@ export function getIlikePatternsForSearchTerm(term: string): string[] {
   const escaped = escapeIlikePattern(term);
 
   if (COMPACT_MEASURE_RE.test(term)) {
+    const match = COMPACT_MEASURE_RE.exec(term);
+    if (match) {
+      const num = match[1].replace(",", ".");
+      const unit = match[2].toLowerCase();
+      return [`%${num}${unit}%`, `%${num} ${unit}%`];
+    }
     return [`%${escaped}%`];
   }
 
@@ -223,9 +236,10 @@ export function getIlikePatternsForSearchTerm(term: string): string[] {
       `% ${escaped} %`,
       `${escaped} %`,
       `% ${escaped}`,
+      `%${escaped}%`,
     ]);
 
-    for (const unit of ["oz", "ml", "cc", "lt", "l", "und"]) {
+    for (const unit of ["oz", "ml", "cc", "lt", "l", "und", "kg", "g", "lb"]) {
       patterns.add(`% ${escaped} ${unit}%`);
       patterns.add(`% ${escaped}${unit}%`);
       patterns.add(`${escaped} ${unit}%`);
