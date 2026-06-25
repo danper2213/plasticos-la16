@@ -17,7 +17,7 @@ const ES_CO_LOCALE = "es-CO";
 const COLOMBIA_TZ = "America/Bogota";
 
 /** Intl en Node vs navegador puede usar NBSP distinto (p. ej. "a. m."); unifica para hidratación. */
-function normalizeIntlOutput(value: string): string {
+export function normalizeIntlOutput(value: string): string {
   return value.replace(/[\u00a0\u202f]/g, " ");
 }
 
@@ -67,6 +67,37 @@ export function formatDateTimeEsCO(iso: string | null | undefined): string {
       day: "2-digit",
       month: "short",
       year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: COLOMBIA_TZ,
+    }),
+  );
+}
+
+/** dd/mm/yyyy, hh:mm — estable entre SSR y cliente (sin NBSP en a. m.). */
+export function formatDateTimeNumericEsCO(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return normalizeIntlOutput(
+    d.toLocaleString(ES_CO_LOCALE, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: COLOMBIA_TZ,
+    }),
+  );
+}
+
+/** Solo hora (hh:mm) — estable entre SSR y cliente. */
+export function formatTimeEsCO(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return normalizeIntlOutput(
+    d.toLocaleTimeString(ES_CO_LOCALE, {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: COLOMBIA_TZ,

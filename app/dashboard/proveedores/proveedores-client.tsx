@@ -3,8 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { matchesSearchQuery } from "@/lib/searchEngine";
 import {
-  Search,
   Plus,
   Building2,
   Landmark,
@@ -14,15 +14,17 @@ import {
   Trash2,
   Globe,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SupplierForm } from "@/components/suppliers/supplier-form";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
+import { DashboardSearchBar } from "@/components/layout/dashboard-search-bar";
+import { DashboardSearchHero } from "@/components/layout/dashboard-search-hero";
 import {
-  DashboardToolbar,
-  DashboardToolbarSearchShell,
-  DashboardToolbarStat,
-} from "@/components/layout/dashboard-toolbar";
+  DashboardFilterChips,
+  type ActiveFilterChip,
+} from "@/components/layout/dashboard-filter-chips";
+import { DashboardStickySearch } from "@/components/layout/dashboard-sticky-search";
+import { useDashboardSearchFocus } from "@/hooks/use-dashboard-search-focus";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -177,19 +179,43 @@ export function ProveedoresClient({ suppliers: initialSuppliers }: ProveedoresCl
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const {
+    heroObservedRef,
+    searchBarRef,
+    stickySearchBarRef,
+    heroVisible,
+  } = useDashboardSearchFocus();
 
   const filteredSuppliers = useMemo(() => {
     if (!searchQuery.trim()) return initialSuppliers;
-    const q = searchQuery.trim().toLowerCase();
-    return initialSuppliers.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.tax_id ?? "").toLowerCase().includes(q) ||
-        (s.bank_name ?? "").toLowerCase().includes(q) ||
-        (s.phone ?? "").toLowerCase().includes(q) ||
-        (s.account_number ?? "").toLowerCase().includes(q)
+    return initialSuppliers.filter((s) =>
+      matchesSearchQuery(
+        searchQuery,
+        s.name,
+        s.tax_id,
+        s.bank_name,
+        s.phone,
+        s.account_number,
+      ),
     );
   }, [initialSuppliers, searchQuery]);
+
+  const isSearching = searchQuery.trim().length > 0;
+
+  const filterChips = useMemo((): ActiveFilterChip[] => {
+    if (!isSearching) return [];
+    return [
+      {
+        id: "search",
+        label: `«${searchQuery.trim()}»`,
+        onRemove: () => setSearchQuery(""),
+      },
+    ];
+  }, [isSearching, searchQuery]);
+
+  function handleSearchClear() {
+    setSearchQuery("");
+  }
 
   function handleNewSupplier() {
     setSelectedSupplier(null);
@@ -249,27 +275,57 @@ export function ProveedoresClient({ suppliers: initialSuppliers }: ProveedoresCl
         }
       />
 
-      <DashboardToolbar className="flex flex-wrap items-center gap-4">
-        <div className="relative min-w-[200px] w-full flex-1">
-          <DashboardToolbarSearchShell>
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-primary/90" />
-            <Input
-              placeholder="Buscar por nombre, NIT, banco o teléfono..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 w-full rounded-lg border-0 bg-transparent pl-11 pr-4 text-base focus-visible:ring-0"
-              aria-label="Buscar proveedor"
-            />
-          </DashboardToolbarSearchShell>
-        </div>
-        <DashboardToolbarStat className="min-w-[120px] flex-col items-stretch gap-1 py-3">
-          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <Building2 className="size-3.5 shrink-0 text-primary/80" />
-            {searchQuery.trim() ? "Resultados" : "Proveedores"}
-          </p>
-          <p className="text-xl font-black tabular-nums text-foreground">{filteredSuppliers.length}</p>
-        </DashboardToolbarStat>
-      </DashboardToolbar>
+      <DashboardStickySearch visible={!heroVisible}>
+        <DashboardSearchBar
+          ref={stickySearchBarRef}
+          variant="sticky"
+          value={searchQuery}
+          onChange={setSearchQuery}
+          onClear={handleSearchClear}
+          onSubmit={() => stickySearchBarRef.current?.focus()}
+          placeholder="Buscar: nombre, NIT, banco…"
+          ariaLabel="Buscar proveedor"
+        />
+      </DashboardStickySearch>
+
+      <div ref={heroObservedRef}>
+        <DashboardSearchHero
+          ref={searchBarRef}
+          icon={Building2}
+          title="¿Qué proveedor buscas?"
+          description={
+            <>
+              Nombre, NIT, banco o teléfono — por ejemplo{" "}
+              <span className="font-medium text-foreground/80">Distribuidora ABC</span>
+            </>
+          }
+          ariaLabel="Búsqueda de proveedores"
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onSearchClear={handleSearchClear}
+          onSearchSubmit={() => searchBarRef.current?.focus()}
+          placeholder="Buscar: nombre, NIT, banco…"
+          searchAriaLabel="Buscar proveedor"
+          status={
+            <p className="tabular-nums">
+              {isSearching ? (
+                <>
+                  {filteredSuppliers.length} resultado
+                  {filteredSuppliers.length === 1 ? "" : "s"}
+                </>
+              ) : (
+                <>
+                  {initialSuppliers.length} proveedor
+                  {initialSuppliers.length === 1 ? "" : "es"} registrado
+                  {initialSuppliers.length === 1 ? "" : "s"}
+                </>
+              )}
+            </p>
+          }
+        />
+      </div>
+
+      <DashboardFilterChips chips={filterChips} />
 
       {/* Cards */}
       {filteredSuppliers.length === 0 ? (

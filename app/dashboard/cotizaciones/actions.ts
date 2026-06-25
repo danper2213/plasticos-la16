@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireUser } from "@/utils/supabase/require-user";
+import { queryActiveProductsWithSearch } from "@/lib/query-active-products";
+import { productAutocompleteSearchFields } from "@/lib/supabase-search-filter";
 import { fetchQuoteDetail } from "./quote-queries";
 import { saveQuoteSchema } from "./schema";
 import type { ProductQuoteSearchHit, QuoteDetail, QuoteLineRow, QuoteListItem } from "./quote-types";
@@ -10,51 +12,34 @@ import type { ProductQuoteSearchHit, QuoteDetail, QuoteLineRow, QuoteListItem } 
 const quoteIdSchema = z.string().uuid();
 
 export async function searchProductsForQuote(query: string): Promise<ProductQuoteSearchHit[]> {
-  const trimmed = query?.trim().replace(/[%_\\,]/g, " ");
   const { supabase } = await requireUser();
-  if (!trimmed || trimmed.length < 2) return [];
-
-  const pattern = `%${trimmed}%`;
-  const { data, error } = await supabase
-    .from("products")
-    .select(
-      `
+  return queryActiveProductsWithSearch(supabase, query, {
+    select: `
       id,
       name,
       presentation,
+      packaging,
       cost,
       product_categories ( name )
     `,
-    )
-    .eq("is_active", true)
-    .or(`name.ilike.${pattern},presentation.ilike.${pattern}`)
-    .order("name", { ascending: true })
-    .limit(25);
-
-  if (error) {
-    console.error("searchProductsForQuote error:", error);
-    return [];
-  }
-
-  return ((data ?? []) as unknown as ProductQuoteSearchRaw[]).map((row) => {
-    const cat = row.product_categories;
-    const categoryName = Array.isArray(cat) ? cat[0]?.name : cat?.name;
-    return {
-      id: row.id,
-      name: row.name,
-      presentation: row.presentation ?? "",
-      cost: Number(row.cost ?? 0),
-      category_name: categoryName ?? null,
-    };
+    limit: 25,
+    resolveFields: productAutocompleteSearchFields,
+    mapRow: (row) => {
+      const cat = row.product_categories as
+        | { name?: string }
+        | { name?: string }[]
+        | null
+        | undefined;
+      const categoryName = Array.isArray(cat) ? cat[0]?.name : cat?.name;
+      return {
+        id: row.id as string,
+        name: row.name as string,
+        presentation: (row.presentation as string) ?? "",
+        cost: Number(row.cost ?? 0),
+        category_name: categoryName ?? null,
+      };
+    },
   });
-}
-
-interface ProductQuoteSearchRaw {
-  id: string;
-  name: string;
-  presentation: string | null;
-  cost: number | null;
-  product_categories: { name: string } | { name: string }[] | null;
 }
 
 export async function getRecentQuotes(): Promise<QuoteListItem[]> {

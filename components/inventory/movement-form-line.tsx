@@ -7,7 +7,6 @@ import {
   Package,
   Hash,
   CircleDollarSign,
-  Search,
   Trash2,
   Minus,
   Plus,
@@ -17,6 +16,7 @@ import {
   Warehouse,
   AlertTriangle,
   ChevronDown,
+  CheckCircle2,
 } from "lucide-react";
 import {
   FormControl,
@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SearchCombobox } from "@/components/ui/search-combobox";
+import { DashboardSearchBar } from "@/components/layout/dashboard-search-bar";
 import {
   MOVEMENT_TYPES,
   type BatchInventoryMovementFormValues,
@@ -40,6 +40,12 @@ import {
   formatInventoryQuantity,
   normalizeInventoryQuantity,
 } from "@/lib/inventory-quantity";
+import {
+  formatMovementQuantityLabel,
+  getStockDisplayInfo,
+} from "@/lib/inventory-stock-display";
+import { validateMovementLine } from "@/lib/inventory-movement-validation";
+import { formatCop } from "@/lib/format";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
@@ -167,17 +173,18 @@ export function MovementFormLine({
     setParsedBaseLabel(null);
   }, [selectedProduct?.id, selectedProduct?.packaging, selectedProduct?.presentation, index, setValue]);
 
-  /** Sincroniza cantidad en unidad base al formulario (sin clamp de salida aquí: evita bucles setState). */
+  /** Sincroniza cantidad en unidad base al formulario. */
   React.useEffect(() => {
     if (!selectedProduct?.id) return;
-    const factor = selectedUnit?.factor_to_base ?? 1;
+    const packUnit = units.find((u) => u.factor_to_base > 1);
+    const factor = packUnit?.factor_to_base ?? selectedUnit?.factor_to_base ?? 1;
     const q = Number.isFinite(quantityEntered) && quantityEntered > 0 ? quantityEntered : 0;
     const finalQty = q <= 0 ? 0 : normalizeInventoryQuantity(q * factor);
     const path = `lines.${index}.quantity` as const;
     const curr = getValues(path);
     if (curr === finalQty) return;
-    setValue(path, finalQty, { shouldValidate: false });
-  }, [quantityEntered, selectedUnit, selectedProduct?.id, index, getValues, setValue]);
+    setValue(path, finalQty, { shouldValidate: true });
+  }, [quantityEntered, selectedUnit, units, selectedProduct?.id, index, getValues, setValue]);
 
   function handleSelectProduct(p: ProductSearchHit) {
     setSelectedProduct(p);
@@ -199,43 +206,90 @@ export function MovementFormLine({
 
   const baseUnitName =
     parsedBaseLabel ?? units.find((u) => u.factor_to_base === 1)?.name ?? "unidades";
-  const computedQuantity =
-    (Number.isFinite(quantityEntered) ? quantityEntered : 0) *
-    (selectedUnit?.factor_to_base ?? 1);
-  const showEquivalent =
-    selectedUnit &&
-    selectedUnit.factor_to_base !== 1 &&
-    quantityEntered > 0 &&
-    computedQuantity > 0;
+  const largeUnit = units.find((u) => u.factor_to_base > 1) ?? null;
+  const entryUnit = largeUnit ?? selectedUnit;
+  const usesLargePackaging = Boolean(largeUnit);
 
-  const comboboxKey = `${lineKey}-${dialogOpen ? "open" : "closed"}`;
+  const stockDisplay = getStockDisplayInfo(
+    selectedProduct ? linePreview.balanceBefore : null,
+    selectedProduct?.packaging,
+    selectedProduct?.presentation,
+  );
+
+  const balanceAfterLabel = selectedProduct
+    ? formatMovementQuantityLabel(
+        linePreview.balanceAfter,
+        selectedProduct.packaging,
+        selectedProduct.presentation,
+      )
+    : null;
 
   const maxOutBase =
     movementType === "out" ? Math.max(0, linePreview.balanceBefore) : Number.POSITIVE_INFINITY;
 
+  const maxOutLabel =
+    movementType === "out" && selectedProduct && Number.isFinite(maxOutBase)
+      ? formatMovementQuantityLabel(
+          maxOutBase,
+          selectedProduct.packaging,
+          selectedProduct.presentation,
+        )
+      : null;
+
+  const quantityBase =
+    typeof lineQuantity === "number" && Number.isFinite(lineQuantity) ? lineQuantity : 0;
+
+  const lineValidation =
+    selectedProduct && productId
+      ? validateMovementLine(
+          movementType,
+          quantityBase,
+          linePreview.balanceBefore,
+          selectedProduct.packaging,
+          selectedProduct.presentation,
+        )
+      : null;
+
+  const entryFactor = entryUnit?.factor_to_base ?? 1;
+  const maxEnteredOut =
+    movementType === "out" && Number.isFinite(maxOutBase)
+      ? maxOutBase / Math.max(entryFactor, 1e-12)
+      : Number.POSITIVE_INFINITY;
+  const atMaxOut =
+    movementType === "out" &&
+    Number.isFinite(maxEnteredOut) &&
+    quantityEntered >= maxEnteredOut - 1e-9;
+
+  const comboboxKey = `${lineKey}-${dialogOpen ? "open" : "closed"}`;
+
   function adjustQuantityStep(deltaEntered: number) {
-    const factor = selectedUnit?.factor_to_base ?? 1;
+    const factor = entryUnit?.factor_to_base ?? 1;
     let nextEntered = Math.max(0, quantityEntered + deltaEntered);
-    if (movementType === "out" && Number.isFinite(maxOutBase) && maxOutBase >= 0) {
+    if (movementType === "out" && deltaEntered > 0 && Number.isFinite(maxOutBase)) {
       const maxEntered = maxOutBase / Math.max(factor, 1e-12);
       nextEntered = Math.min(nextEntered, maxEntered);
     }
     setQuantityEntered(nextEntered);
   }
 
-  const stockLabel =
-    selectedProduct?.stock_quantity === null || selectedProduct?.stock_quantity === undefined
-      ? "Sin saldo cargado (salidas usan 0 hasta la primera entrada)"
-      : `En bodega: ${formatInventoryQuantity(selectedProduct.stock_quantity)} u.`;
+  const compactQuantityLabel = selectedProduct
+    ? formatMovementQuantityLabel(
+        typeof lineQuantity === "number" ? lineQuantity : 0,
+        selectedProduct.packaging,
+        selectedProduct.presentation,
+      )
+    : "—";
 
   return (
     <div
       className={cn(
         "rounded-xl border bg-muted/20 transition-shadow",
         compact ? "p-2" : "p-4 space-y-4",
-        linePreview.violates
+        linePreview.violates || lineValidation?.severity === "error"
           ? "border-destructive/60 ring-2 ring-destructive/20"
-          : "border-border"
+          : lineValidation?.severity === "ok" && movementType === "out"
+            ? "border-emerald-500/35 ring-1 ring-emerald-500/20"
+            : "border-border"
       )}
       onFocusCapture={
         !compact && showCollapseChrome ? () => onActivateLine() : undefined
@@ -260,8 +314,7 @@ export function MovementFormLine({
               </p>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 {MOVEMENT_TYPE_LABELS[movementType as MovementType] ?? movementType} ·{" "}
-                {formatInventoryQuantity(typeof lineQuantity === "number" ? lineQuantity : 0)}{" "}
-                u. base
+                {compactQuantityLabel}
                 {linePreview.violates ? " · saldo negativo" : ""}
               </p>
             </div>
@@ -327,7 +380,7 @@ export function MovementFormLine({
               Producto
             </FormLabel>
             {selectedProduct ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center gap-2 rounded-lg h-10 border border-border bg-muted/30 px-3">
                   <span className="flex-1 truncate text-sm font-medium">
                     {selectedProduct.name}
@@ -348,23 +401,53 @@ export function MovementFormLine({
                     Cambiar
                   </Button>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="inline-flex items-center gap-1 rounded-md bg-background/80 px-2 py-1 font-medium text-muted-foreground border border-border/80">
-                    <Warehouse className="size-3.5 shrink-0" aria-hidden />
-                    {stockLabel}
-                  </span>
+
+                <div
+                  className={cn(
+                    "rounded-xl border-2 px-4 py-3",
+                    linePreview.violates
+                      ? "border-destructive/40 bg-destructive/5"
+                      : "border-primary/30 bg-gradient-to-br from-primary/[0.12] to-primary/[0.04]",
+                  )}
+                >
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <Warehouse className="size-3.5 shrink-0 text-primary" aria-hidden />
+                    Stock en bodega
+                  </div>
+                  <p className="mt-1 text-2xl font-black tabular-nums tracking-tight text-foreground sm:text-3xl">
+                    {stockDisplay.primary}
+                  </p>
+                  {movementType === "out" && maxOutLabel ? (
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Máximo para salida:{" "}
+                      <span className="font-semibold text-foreground">{maxOutLabel}</span>
+                    </p>
+                  ) : null}
+                  {selectedProduct.packaging && usesLargePackaging ? (
+                    <p className="mt-1 text-[11px] text-muted-foreground/90">
+                      Registrás movimientos en{" "}
+                      <span className="font-medium text-foreground/90">
+                        {largeUnit?.name ?? "presentación grande"}
+                      </span>
+                      {largeUnit && largeUnit.factor_to_base > 1
+                        ? ` (1 = ${formatInventoryQuantity(largeUnit.factor_to_base)} ${baseUnitName})`
+                        : null}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             ) : (
               <div className="space-y-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por nombre (mín. 2 caracteres)"
-                    className={inputClassName + " pl-9"}
+                <div className="relative max-w-md">
+                  <DashboardSearchBar
+                    variant="default"
+                    align="start"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    aria-invalid={fieldState.invalid}
+                    onChange={setSearchQuery}
+                    onClear={() => setSearchQuery("")}
+                    onSubmit={() => undefined}
+                    placeholder="Buscar por nombre (mín. 2 caracteres)"
+                    ariaLabel="Buscar producto"
                   />
                 </div>
                 {searchQuery.trim().length >= 2 && (
@@ -390,6 +473,18 @@ export function MovementFormLine({
                               {p.presentation ? (
                                 <span className="text-muted-foreground text-xs">
                                   {p.presentation}
+                                </span>
+                              ) : null}
+                              {p.stock_quantity !== null && p.stock_quantity !== undefined ? (
+                                <span className="text-xs text-primary/90">
+                                  Bodega:{" "}
+                                  {
+                                    getStockDisplayInfo(
+                                      p.stock_quantity,
+                                      p.packaging,
+                                      p.presentation,
+                                    ).primary
+                                  }
                                 </span>
                               ) : null}
                             </button>
@@ -453,9 +548,9 @@ export function MovementFormLine({
             <FormLabel className="text-muted-foreground flex items-center gap-2">
               <Hash className="size-4 text-primary shrink-0" aria-hidden />
               Cantidad
-              {selectedUnit ? (
+              {entryUnit ? (
                 <span className="font-normal text-muted-foreground">
-                  (en {selectedUnit.name})
+                  (en {entryUnit.name})
                 </span>
               ) : null}
             </FormLabel>
@@ -467,7 +562,7 @@ export function MovementFormLine({
                   size="icon"
                   className="h-10 w-10 rounded-lg"
                   onClick={() => adjustQuantityStep(-1)}
-                  title="Restar 1 unidad mostrada"
+                  title="Restar 1"
                 >
                   <Minus className="size-4" />
                 </Button>
@@ -477,81 +572,67 @@ export function MovementFormLine({
                   size="icon"
                   className="h-10 w-10 rounded-lg"
                   onClick={() => adjustQuantityStep(1)}
-                  title="Sumar 1 unidad mostrada"
+                  title="Sumar 1"
+                  disabled={atMaxOut}
                 >
                   <Plus className="size-4" />
                 </Button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 flex-1 min-w-0">
-              {units.length > 1 ? (
-                <>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="any"
-                      className={inputClassName}
-                      value={quantityEntered === 0 ? "" : String(quantityEntered)}
-                      onChange={(e) => {
-                        const v = e.target.value.trim().replace(",", ".");
-                        if (v === "" || v === "-" || v === "." || v === "-.") {
-                          setQuantityEntered(0);
-                          return;
-                        }
-                        const n = Number(v);
-                        setQuantityEntered(Number.isFinite(n) ? Math.max(0, n) : 0);
-                      }}
-                      placeholder="0"
-                      aria-invalid={fieldState.invalid}
-                    />
-                  </FormControl>
-                  <SearchCombobox
-                    key={comboboxKey + "-unit"}
-                    options={units.map((u) => ({
-                      value: u.id,
-                      label:
-                        u.name +
-                        (u.factor_to_base !== 1
-                          ? ` (1 = ${u.factor_to_base} ${baseUnitName})`
-                          : ""),
-                    }))}
-                    value={selectedUnit?.id ?? ""}
-                    onChange={(id) => {
-                      const u = units.find((x) => x.id === id);
-                      if (u) setSelectedUnit(u);
-                    }}
-                    placeholder="Buscar unidad..."
-                    inputClassName={inputClassName + " min-w-[120px]"}
-                    emptyMessage="Ninguna unidad coincide."
-                  />
-                </>
-              ) : (
-                <FormControl>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="any"
-                    className={inputClassName}
-                    value={quantityEntered === 0 ? "" : String(quantityEntered)}
-                    onChange={(e) => {
-                      const v = e.target.value.trim().replace(",", ".");
-                      if (v === "" || v === "-" || v === "." || v === "-.") {
-                        setQuantityEntered(0);
-                        return;
-                      }
-                      const n = Number(v);
-                      setQuantityEntered(Number.isFinite(n) ? Math.max(0, n) : 0);
-                    }}
-                    aria-invalid={fieldState.invalid}
-                  />
-                </FormControl>
-              )}
-              </div>
+              <FormControl>
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  className={cn(
+                    inputClassName,
+                    "max-w-[10rem] text-lg font-semibold tabular-nums",
+                    lineValidation?.severity === "error" &&
+                      "border-destructive ring-2 ring-destructive/25",
+                  )}
+                  value={quantityEntered === 0 ? "" : String(quantityEntered)}
+                  onChange={(e) => {
+                    const v = e.target.value.trim().replace(",", ".");
+                    if (v === "" || v === "-" || v === "." || v === "-.") {
+                      setQuantityEntered(0);
+                      return;
+                    }
+                    const n = Number(v);
+                    setQuantityEntered(Number.isFinite(n) ? Math.max(0, n) : 0);
+                  }}
+                  placeholder="0"
+                  aria-invalid={lineValidation?.severity === "error" || fieldState.invalid}
+                />
+              </FormControl>
+              {entryUnit && usesLargePackaging ? (
+                <span className="text-sm font-medium text-muted-foreground">
+                  {entryUnit.name}
+                </span>
+              ) : null}
             </div>
-            {showEquivalent ? (
-              <p className="text-sm text-primary font-medium">
-                Equivale a {formatInventoryQuantity(computedQuantity)} {baseUnitName} en bodega
-              </p>
+            {selectedProduct && productId && lineValidation ? (
+              <div
+                className={cn(
+                  "rounded-lg border px-3 py-2.5 text-sm",
+                  lineValidation.severity === "error" &&
+                    "border-destructive/50 bg-destructive/10 text-destructive",
+                  lineValidation.severity === "warning" &&
+                    "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200",
+                  lineValidation.severity === "ok" &&
+                    movementType === "out" &&
+                    "border-emerald-500/35 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100",
+                )}
+                role="status"
+                aria-live="polite"
+              >
+                <p className="flex items-start gap-2 font-medium">
+                  {lineValidation.severity === "error" ? (
+                    <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden />
+                  ) : lineValidation.severity === "ok" && movementType === "out" ? (
+                    <CheckCircle2 className="size-4 shrink-0 mt-0.5" aria-hidden />
+                  ) : null}
+                  <span>{lineValidation.reason}</span>
+                </p>
+              </div>
             ) : null}
             {selectedProduct && productId ? (
               <div className="space-y-2 rounded-lg border border-border/80 bg-background/60 p-3">
@@ -559,30 +640,19 @@ export function MovementFormLine({
                   <span className="font-medium text-foreground">Saldo tras esta línea</span>
                   <span
                     className={cn(
-                      "tabular-nums font-bold",
-                      linePreview.violates ? "text-destructive" : "text-foreground"
+                      "tabular-nums font-bold text-base",
+                      linePreview.violates ? "text-destructive" : "text-foreground",
                     )}
                   >
-                    {formatInventoryQuantity(linePreview.balanceAfter)} u.
+                    {balanceAfterLabel}
                   </span>
                 </div>
-                {movementType === "out" && linePreview.balanceBefore > 0 ? (
+                {movementType === "out" && linePreview.balanceBefore > 0 && !linePreview.violates ? (
                   <Progress
-                    value={linePreview.balanceAfter}
+                    value={Math.max(0, linePreview.balanceAfter)}
                     max={Math.max(linePreview.balanceBefore, 1)}
                     className="h-2 bg-muted"
                   />
-                ) : null}
-                {linePreview.violates ? (
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
-                    <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
-                    Quedaría negativo: ajustá cantidad o tipo.
-                  </p>
-                ) : null}
-                {movementType === "out" && linePreview.balanceBefore === 0 ? (
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    No hay unidades disponibles para salida en esta simulación.
-                  </p>
                 ) : null}
               </div>
             ) : null}
@@ -591,39 +661,34 @@ export function MovementFormLine({
         )}
       />
 
-      <FormField
-        control={form.control}
-        name={`lines.${index}.historical_unit_cost`}
-        render={({ field, fieldState }) => (
-          <FormItem>
-            <FormLabel className="text-muted-foreground flex items-center gap-2">
-              <CircleDollarSign className="size-4 text-primary shrink-0" aria-hidden />
-              Costo unitario
-            </FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder="0"
-                className={inputClassName}
-                {...field}
-                value={
-                  field.value === undefined || field.value === null
-                    ? ""
-                    : String(field.value)
-                }
-                onChange={(e) => {
-                  const v = e.target.value;
-                  field.onChange(v === "" ? undefined : Number(v));
-                }}
-                aria-invalid={fieldState.invalid}
-              />
-            </FormControl>
-            <FormMessage>{fieldState.error?.message}</FormMessage>
-          </FormItem>
-        )}
-      />
+      {selectedProduct ? (
+        <FormField
+          control={form.control}
+          name={`lines.${index}.historical_unit_cost`}
+          render={({ field }) => (
+            <FormItem className="mb-0">
+              <FormControl>
+                <input
+                  type="hidden"
+                  ref={field.ref}
+                  onBlur={field.onBlur}
+                  onChange={(e) => field.onChange(Number(e.target.value))}
+                  value={Number(field.value ?? 0)}
+                />
+              </FormControl>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/25 px-3 py-2.5 text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground">
+                  <CircleDollarSign className="size-4 shrink-0 text-primary/80" aria-hidden />
+                  Costo unitario (referencia)
+                </span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatCop(Number(field.value ?? 0))}
+                </span>
+              </div>
+            </FormItem>
+          )}
+        />
+      ) : null}
       </div>
     </div>
   );

@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/utils/supabase/require-user";
+import { queryActiveProductsWithSearch } from "@/lib/query-active-products";
+import { productAutocompleteSearchFields } from "@/lib/supabase-search-filter";
 import {
   batchInventoryMovementSchema,
   type BatchInventoryMovementFormValues,
@@ -323,21 +325,21 @@ export async function getActiveProducts(): Promise<ActiveProductOption[]> {
 
 /** Búsqueda de productos por nombre para el registro de movimientos. */
 export async function searchProductsForMovement(query: string): Promise<ProductSearchHit[]> {
-  const trimmed = query?.trim();
   const { supabase } = await requireUser();
-  if (!trimmed || trimmed.length < 2) return [];
-  const { data, error } = await supabase
-    .from("products")
-    .select("id, name, presentation, packaging, cost, stock_quantity")
-    .eq("is_active", true)
-    .ilike("name", `%${trimmed}%`)
-    .order("name", { ascending: true })
-    .limit(20);
-  if (error) {
-    console.error("searchProductsForMovement error:", error);
-    return [];
-  }
-  return (data ?? []) as ProductSearchHit[];
+  return queryActiveProductsWithSearch(supabase, query, {
+    select: "id, name, presentation, packaging, cost, stock_quantity",
+    limit: 20,
+    resolveFields: productAutocompleteSearchFields,
+    mapRow: (row) =>
+      ({
+        id: row.id as string,
+        name: row.name as string,
+        presentation: row.presentation as string,
+        packaging: (row.packaging as string | null) ?? null,
+        cost: row.cost as number,
+        stock_quantity: row.stock_quantity as number | null,
+      }) satisfies ProductSearchHit,
+  });
 }
 
 async function assertLinesDoNotCauseNegativeStock(

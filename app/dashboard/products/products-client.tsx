@@ -30,7 +30,6 @@ import { PriceSimulatorModal } from "@/components/products/price-simulator-modal
 import { PriceList } from "@/components/products/price-list";
 import {
   ProductSearchBar,
-  type ProductSearchBarHandle,
 } from "@/components/products/product-search-bar";
 import {
   ProductsFilterChips,
@@ -46,6 +45,8 @@ import {
   productsPageCache,
 } from "@/lib/products-list-cache";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
+import { DashboardStickySearch } from "@/components/layout/dashboard-sticky-search";
+import { useDashboardSearchFocus } from "@/hooks/use-dashboard-search-focus";
 import {
   deleteProduct,
   getProductsPage,
@@ -55,10 +56,6 @@ import {
   type ProductsPageResult,
 } from "./actions";
 import type { ProductsStockFilter } from "./list-types";
-import {
-  isProductSearchShortcut,
-  isTypingElement,
-} from "@/lib/product-search-shortcut";
 
 type StockFilter = ProductsStockFilter;
 
@@ -111,10 +108,12 @@ export function ProductsClient({
   const requestIdRef = useRef(0);
   const inflightRequests = useRef(new Map<string, Promise<ProductsPageResult>>());
   const filterKeyRef = useRef("");
-  const heroObservedRef = useRef<HTMLDivElement>(null);
-  const searchBarRef = useRef<ProductSearchBarHandle>(null);
-  const stickySearchBarRef = useRef<ProductSearchBarHandle>(null);
-  const [heroVisible, setHeroVisible] = useState(true);
+  const {
+    heroObservedRef,
+    searchBarRef,
+    stickySearchBarRef,
+    heroVisible,
+  } = useDashboardSearchFocus();
 
   const filterKey = `${activeSearch}|${stockFilter}|${categoryFilter}|${supplierFilter}`;
 
@@ -386,45 +385,6 @@ export function ProductsClient({
     setStockFilter("all");
   }
 
-  const focusSearch = useCallback(() => {
-    if (heroVisible) {
-      heroObservedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      searchBarRef.current?.focus();
-      return;
-    }
-    stickySearchBarRef.current?.focus();
-  }, [heroVisible]);
-
-  useEffect(() => {
-    const node = heroObservedRef.current;
-    if (!node) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry) setHeroVisible(entry.isIntersecting);
-      },
-      { threshold: 0, rootMargin: "-56px 0px 0px 0px" },
-    );
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (isTypingElement(event.target)) return;
-      if (!isProductSearchShortcut(event)) return;
-
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      focusSearch();
-    };
-
-    document.addEventListener("keydown", onKeyDown, { capture: true });
-    return () =>
-      document.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [focusSearch]);
-
   const loadPage = useCallback(
     async (targetPage: number, options?: { force?: boolean }) => {
       if (options?.force) {
@@ -529,15 +489,7 @@ export function ProductsClient({
           }
         />
 
-        <div
-          className={cn(
-            "fixed inset-x-0 top-14 z-20 border-b border-border/70 bg-background/95 px-4 py-2.5 shadow-md backdrop-blur-md transition-all duration-300 motion-reduce:transition-none lg:px-6",
-            heroVisible
-              ? "pointer-events-none -translate-y-full opacity-0"
-              : "translate-y-0 opacity-100",
-          )}
-          aria-hidden={heroVisible}
-        >
+        <DashboardStickySearch visible={!heroVisible}>
           <ProductSearchBar
             ref={stickySearchBarRef}
             variant="sticky"
@@ -546,7 +498,7 @@ export function ProductsClient({
             onClear={handleSearchClear}
             onSubmit={handleSearchSubmit}
           />
-        </div>
+        </DashboardStickySearch>
 
         <div ref={heroObservedRef}>
           <ProductsSearchHero

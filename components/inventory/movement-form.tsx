@@ -266,10 +266,11 @@ export function MovementForm({ open, onOpenChange, onSuccess }: MovementFormProp
                       <div className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                         <AlertTriangle className="size-5 shrink-0 mt-0.5" aria-hidden />
                         <div>
-                          <p className="font-semibold">Saldo negativo en una o más líneas</p>
+                          <p className="font-semibold">Uno o más movimientos no se pueden registrar</p>
                           <p className="mt-1 text-destructive/90">
-                            Corregí cantidades o tipo (entrada/salida) antes de guardar. El servidor
-                            también rechaza saldos negativos.
+                            Revisá cada producto: las salidas no pueden superar el stock en bodega
+                            (ej. no podés sacar 10 cajas si solo hay 3). Ajustá la cantidad o el tipo
+                            antes de guardar.
                           </p>
                         </div>
                       </div>

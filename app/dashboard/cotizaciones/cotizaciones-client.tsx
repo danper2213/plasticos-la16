@@ -14,7 +14,6 @@ import {
   Plus,
   RefreshCw,
   Save,
-  Search,
   Sparkles,
   Trash2,
   TrendingUp,
@@ -47,6 +46,7 @@ import { quoteLineTotal, unitPriceFromCostAndUtilityPercent } from "@/lib/quotes
 import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
+import { DashboardSearchBar } from "@/components/layout/dashboard-search-bar";
 import { deleteQuote, getQuoteById, saveQuote, searchProductsForQuote } from "./actions";
 import type { ProductQuoteSearchHit, QuoteListItem } from "./quote-types";
 
@@ -529,19 +529,19 @@ export function CotizacionesClient({ customers, recentQuotes }: CotizacionesClie
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6 space-y-3">
-              <div className="relative group">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 size-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                <Input
-                  className={cn(
-                    inputClassName,
-                    "h-12 pl-11 text-base shadow-sm ring-offset-background transition-shadow group-focus-within:ring-2 group-focus-within:ring-primary/20",
-                  )}
-                  placeholder="Ej. bolsa, caja, tapa…"
-                  value={productSearchQuery}
-                  onChange={(e) => setProductSearchQuery(e.target.value)}
-                  aria-label="Buscar producto"
-                />
-              </div>
+              <DashboardSearchBar
+                variant="default"
+                align="start"
+                value={productSearchQuery}
+                onChange={setProductSearchQuery}
+                onClear={() => {
+                  setProductSearchQuery("");
+                  setProductSearchResults([]);
+                }}
+                onSubmit={() => undefined}
+                placeholder="Ej. bolsa, caja, tapa…"
+                ariaLabel="Buscar producto"
+              />
               {!searchActive ? (
                 <p className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="inline-flex rounded-lg border border-border/80 bg-muted/50 px-2 py-0.5 font-mono text-[10px] font-semibold">

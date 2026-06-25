@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { matchesSearchQuery } from "@/lib/searchEngine";
 import { cn } from "@/lib/utils";
 
 export interface SearchComboboxOption {
@@ -48,9 +49,8 @@ export function SearchCombobox({
         : search;
 
   const filtered = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q));
+    if (!search.trim()) return options;
+    return options.filter((o) => matchesSearchQuery(search, o.label));
   }, [options, search]);
 
   const clearCloseTimer = () => {
@@ -67,28 +67,33 @@ export function SearchCombobox({
 
   return (
     <div className={cn("relative", className)}>
-      <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden />
-      <Input
-        type="text"
-        autoComplete="off"
-        placeholder={placeholder}
-        value={displayValue}
-        disabled={disabled}
-        onChange={(e) => {
-          const v = e.target.value;
-          setSearch(v);
-          if (selectedOption) onChange("");
-          setListOpen(true);
-        }}
-        onFocus={() => {
-          setListOpen(true);
-          onOpen?.();
-        }}
-        onBlur={scheduleClose}
-        className={cn("pl-9", inputClassName)}
-        aria-autocomplete="list"
-        aria-expanded={listOpen && filtered.length > 0}
-      />
+      <div className="relative rounded-xl border border-border/70 bg-muted/70 shadow-sm transition-all focus-within:border-primary/35 focus-within:bg-primary/[0.08] focus-within:ring-2 focus-within:ring-primary/20 dark:bg-muted/50">
+        <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 size-4 text-primary" aria-hidden />
+        <Input
+          type="text"
+          autoComplete="off"
+          placeholder={placeholder}
+          value={displayValue}
+          disabled={disabled}
+          onChange={(e) => {
+            const v = e.target.value;
+            setSearch(v);
+            if (selectedOption) onChange("");
+            setListOpen(true);
+          }}
+          onFocus={() => {
+            setListOpen(true);
+            onOpen?.();
+          }}
+          onBlur={scheduleClose}
+          className={cn(
+            "h-10 border-0 bg-transparent pl-9 shadow-none focus-visible:ring-0",
+            inputClassName,
+          )}
+          aria-autocomplete="list"
+          aria-expanded={listOpen && filtered.length > 0}
+        />
+      </div>
       {listOpen && filtered.length > 0 && (
         <ul
           className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-md"

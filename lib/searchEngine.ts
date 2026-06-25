@@ -301,6 +301,35 @@ function tokenMatchesHaystack(haystack: string, token: string): boolean {
   return haystack.includes(token);
 }
 
+/** Texto unificado normalizado para comparar contra una consulta. */
+export function buildSearchHaystack(
+  ...parts: (string | null | undefined)[]
+): string {
+  return normalizeText(parts.filter(Boolean).join(" "));
+}
+
+/**
+ * ¿Coincide un conjunto de campos con la consulta? Misma lógica AND por tokens que productos.
+ */
+export function matchesSearchQuery(
+  query: string,
+  ...parts: (string | null | undefined)[]
+): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return true;
+
+  const haystack = buildSearchHaystack(...parts);
+  if (!haystack) return false;
+
+  const tokens = tokenize(trimmed);
+  if (tokens.length === 0) {
+    const normalizedQuery = normalizeText(trimmed);
+    return normalizedQuery ? haystack.includes(normalizedQuery) : true;
+  }
+
+  return tokens.every((token) => tokenMatchesHaystack(haystack, token));
+}
+
 function countMatchedTokens(
   haystacks: ReturnType<typeof getProductHaystacks>,
   tokens: string[],

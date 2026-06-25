@@ -3,8 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, Suspense } from "react";
+import { matchesSearchQuery } from "@/lib/searchEngine";
 import {
-  Search,
   Calendar,
   Plus,
   Wallet,
@@ -12,7 +12,6 @@ import {
   Target,
   FileText,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -43,10 +42,14 @@ import { triggerSuccess } from "@/lib/confetti";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
+import { DashboardSearchBar } from "@/components/layout/dashboard-search-bar";
+import { DashboardSearchHero } from "@/components/layout/dashboard-search-hero";
 import {
-  DashboardToolbar,
-  DashboardToolbarSearchShell,
-} from "@/components/layout/dashboard-toolbar";
+  DashboardFilterChips,
+  type ActiveFilterChip,
+} from "@/components/layout/dashboard-filter-chips";
+import { DashboardStickySearch } from "@/components/layout/dashboard-sticky-search";
+import { useDashboardSearchFocus } from "@/hooks/use-dashboard-search-focus";
 import { formatDateOnlyEsCO } from "@/lib/calendar-date";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -89,6 +92,12 @@ export function PayablesClient({
   const [payableForComprobante, setPayableForComprobante] = useState<PayableWithSupplier | null>(null);
   const mouseDownRef = React.useRef<{ x: number; y: number } | null>(null);
   const [localPayables, setLocalPayables] = useState(payables);
+  const {
+    heroObservedRef,
+    searchBarRef,
+    stickySearchBarRef,
+    heroVisible,
+  } = useDashboardSearchFocus();
 
   React.useEffect(() => {
     setLocalPayables(payables);
@@ -113,16 +122,63 @@ export function PayablesClient({
     }
 
     if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      result = result.filter(
-        (row) =>
-          row.supplier_name.toLowerCase().includes(q) ||
-          row.invoice_number.toLowerCase().includes(q)
+      result = result.filter((row) =>
+        matchesSearchQuery(searchQuery, row.supplier_name, row.invoice_number),
       );
     }
 
     return result;
   }, [localPayables, quickFilter, supplierFilter, searchQuery]);
+
+  const isSearching = searchQuery.trim().length > 0;
+  const hasActiveFilters =
+    isSearching || quickFilter !== "all" || supplierFilter !== "all";
+
+  const filterChips = useMemo((): ActiveFilterChip[] => {
+    const chips: ActiveFilterChip[] = [];
+
+    if (isSearching) {
+      chips.push({
+        id: "search",
+        label: `«${searchQuery.trim()}»`,
+        onRemove: () => setSearchQuery(""),
+      });
+    }
+
+    if (quickFilter === "pending") {
+      chips.push({
+        id: "pending",
+        label: "Pendientes",
+        onRemove: () => setQuickFilter("all"),
+      });
+    } else if (quickFilter === "under3m") {
+      chips.push({
+        id: "under3m",
+        label: "Menores a $3M",
+        onRemove: () => setQuickFilter("all"),
+      });
+    }
+
+    if (supplierFilter !== "all") {
+      chips.push({
+        id: "supplier",
+        label: supplierFilter,
+        onRemove: () => setSupplierFilter("all"),
+      });
+    }
+
+    return chips;
+  }, [isSearching, searchQuery, quickFilter, supplierFilter]);
+
+  function handleSearchClear() {
+    setSearchQuery("");
+  }
+
+  function clearAllFilters() {
+    handleSearchClear();
+    setQuickFilter("all");
+    setSupplierFilter("all");
+  }
 
   const handleDueDateChange = React.useCallback(
     async (payableId: string, fromDateKey: string, toDateKey: string) => {
@@ -349,68 +405,121 @@ export function PayablesClient({
         </div>
       </div>
 
-      <DashboardToolbar className="mb-2 flex flex-wrap items-center gap-4">
-        <div className="relative min-w-[200px] w-full flex-1">
-          <DashboardToolbarSearchShell>
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-primary/90" />
-            <Input
-              placeholder="Buscar factura o proveedor..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 w-full rounded-lg border-0 bg-transparent pl-11 pr-4 text-base focus-visible:ring-0"
-              aria-label="Buscar factura o proveedor"
-            />
-          </DashboardToolbarSearchShell>
+      <DashboardStickySearch visible={!heroVisible}>
+        <DashboardSearchBar
+          ref={stickySearchBarRef}
+          variant="sticky"
+          value={searchQuery}
+          onChange={setSearchQuery}
+          onClear={handleSearchClear}
+          onSubmit={() => stickySearchBarRef.current?.focus()}
+          placeholder="Buscar: factura, proveedor…"
+          ariaLabel="Buscar factura o proveedor"
+        />
+      </DashboardStickySearch>
+
+      <div ref={heroObservedRef}>
+        <DashboardSearchHero
+          ref={searchBarRef}
+          icon={Wallet}
+          title="¿Qué factura buscas?"
+          description={
+            <>
+              Proveedor o número de factura — por ejemplo{" "}
+              <span className="font-medium text-foreground/80">FE-1234</span>
+            </>
+          }
+          ariaLabel="Búsqueda de cuentas por pagar"
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onSearchClear={handleSearchClear}
+          onSearchSubmit={() => searchBarRef.current?.focus()}
+          placeholder="Buscar: factura, proveedor…"
+          searchAriaLabel="Buscar factura o proveedor"
+          status={
+            <p className="tabular-nums">
+              {hasActiveFilters ? (
+                <>
+                  {filteredPayables.length} resultado
+                  {filteredPayables.length === 1 ? "" : "s"} en{" "}
+                  {format(new Date(year, month - 1, 1), "MMMM yyyy", { locale: es })}
+                </>
+              ) : (
+                <>
+                  {localPayables.length} factura
+                  {localPayables.length === 1 ? "" : "s"} en{" "}
+                  {format(new Date(year, month - 1, 1), "MMMM yyyy", { locale: es })}
+                </>
+              )}
+            </p>
+          }
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/15 px-4 py-3 dark:bg-muted/10">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Filtrar
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              <Button
+                variant={quickFilter === "all" ? "secondary" : "ghost"}
+                size="sm"
+                className={cn(
+                  "h-9 rounded-lg px-3 text-xs",
+                  quickFilter === "all" &&
+                    "bg-primary/15 text-primary ring-1 ring-primary/30",
+                )}
+                onClick={() => setQuickFilter("all")}
+              >
+                Todos
+              </Button>
+              <Button
+                variant={quickFilter === "pending" ? "secondary" : "ghost"}
+                size="sm"
+                className={cn(
+                  "h-9 rounded-lg px-3 text-xs",
+                  quickFilter === "pending" &&
+                    "bg-primary/15 text-primary ring-1 ring-primary/30",
+                )}
+                onClick={() => setQuickFilter("pending")}
+              >
+                Pendientes
+              </Button>
+              <Button
+                variant={quickFilter === "under3m" ? "secondary" : "ghost"}
+                size="sm"
+                className={cn(
+                  "h-9 rounded-lg px-3 text-xs",
+                  quickFilter === "under3m" &&
+                    "bg-primary/15 text-primary ring-1 ring-primary/30",
+                )}
+                onClick={() => setQuickFilter(quickFilter === "under3m" ? "all" : "under3m")}
+              >
+                Menores a $3M
+              </Button>
+            </div>
+          </div>
+          <Select value={supplierFilter} onValueChange={setSupplierFilter}>
+            <SelectTrigger className="h-9 w-full rounded-lg border-border/70 bg-background/80 sm:w-[220px]">
+              <SelectValue placeholder="Todos los proveedores" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los proveedores</SelectItem>
+              {uniqueSuppliers.map((name) => (
+                <SelectItem key={name} value={name}>
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant={quickFilter === "all" ? "secondary" : "ghost"}
-            size="sm"
-            className={cn(
-              "h-9 rounded-lg",
-              quickFilter === "all" && "bg-primary/15 text-primary ring-1 ring-primary/30"
-            )}
-            onClick={() => setQuickFilter("all")}
-          >
-            Todos
-          </Button>
-          <Button
-            variant={quickFilter === "pending" ? "secondary" : "ghost"}
-            size="sm"
-            className={cn(
-              "h-9 rounded-lg",
-              quickFilter === "pending" && "bg-primary/15 text-primary ring-1 ring-primary/30"
-            )}
-            onClick={() => setQuickFilter("pending")}
-          >
-            Pendientes
-          </Button>
-          <Button
-            variant={quickFilter === "under3m" ? "secondary" : "ghost"}
-            size="sm"
-            className={cn(
-              "h-9 rounded-lg",
-              quickFilter === "under3m" && "bg-primary/15 text-primary ring-1 ring-primary/30"
-            )}
-            onClick={() => setQuickFilter(quickFilter === "under3m" ? "all" : "under3m")}
-          >
-            Menores a $3M
-          </Button>
-        </div>
-        <Select value={supplierFilter} onValueChange={setSupplierFilter}>
-          <SelectTrigger className="h-10 w-full rounded-lg border-input bg-background md:w-[220px] focus:border-primary focus:ring-2 focus:ring-primary/20">
-            <SelectValue placeholder="Todos los proveedores" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los proveedores</SelectItem>
-            {uniqueSuppliers.map((name) => (
-              <SelectItem key={name} value={name}>
-                {name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DashboardToolbar>
+        <DashboardFilterChips
+          chips={filterChips}
+          onClearAll={filterChips.length > 1 ? clearAllFilters : undefined}
+        />
+      </div>
 
       {filteredPayables.length === 0 ? (
         <motion.div

@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTimeEsCO } from "@/lib/calendar-date";
 import { formatCop } from "@/lib/format";
-import { formatInventoryQuantity } from "@/lib/inventory-quantity";
+import { getStockDisplayInfo } from "@/lib/inventory-stock-display";
 import { cn } from "@/lib/utils";
 import { SearchLottie } from "@/components/ui/search-lottie";
 import { HighlightedText } from "@/components/products/highlighted-text";
@@ -70,10 +70,19 @@ function formatPriceCop(value: number): string {
   });
 }
 
-function StockBadge({ quantity }: { quantity: number }) {
+function StockBadge({
+  quantity,
+  packaging,
+  presentation,
+}: {
+  quantity: number;
+  packaging?: string | null;
+  presentation?: string;
+}) {
   const isZero = quantity === 0;
   const isLow = quantity > 0 && quantity <= 20;
   const isPlenty = quantity > 20;
+  const stockLabel = getStockDisplayInfo(quantity, packaging, presentation).primary;
 
   return (
     <Badge
@@ -88,8 +97,8 @@ function StockBadge({ quantity }: { quantity: number }) {
     >
       <div className="flex items-center gap-1.5">
         <Package className="size-3 shrink-0 opacity-80" />
-        <span>
-          {isZero ? "Sin stock" : `Stock: ${formatInventoryQuantity(quantity)}`}
+        <span className="normal-case tracking-normal">
+          {isZero ? "Sin stock" : stockLabel}
         </span>
       </div>
     </Badge>
@@ -216,7 +225,11 @@ export function PriceList({
                         query={searchQuery}
                       />
                     </p>
-                    <StockBadge quantity={product.stock_quantity ?? 0} />
+                    <StockBadge
+                      quantity={product.stock_quantity ?? 0}
+                      packaging={product.packaging}
+                      presentation={product.presentation}
+                    />
                   </div>
                   <h3
                     className="mt-2 text-xl font-black leading-snug tracking-tight text-foreground break-words sm:text-[1.35rem]"

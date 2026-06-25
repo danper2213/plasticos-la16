@@ -19,6 +19,8 @@ import {
 import { MovementForm } from "@/components/inventory/movement-form";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { DashboardToolbar } from "@/components/layout/dashboard-toolbar";
+import { DashboardSearchBar } from "@/components/layout/dashboard-search-bar";
+import { DashboardFilterChips } from "@/components/layout/dashboard-filter-chips";
 import { triggerSuccess } from "@/lib/confetti";
 import { toast } from "sonner";
 import {
@@ -29,35 +31,23 @@ import {
   Menu,
   Package,
   RefreshCw,
-  Search,
   Trash2,
-  X,
 } from "lucide-react";
-import { parsePackagingConversion } from "@/lib/parse-packaging";
+import { formatQuantityInLargePackaging } from "@/lib/inventory-stock-display";
 import { formatInventoryQuantity } from "@/lib/inventory-quantity";
+import {
+  formatDateOnlyEsCO,
+  formatDateTimeNumericEsCO,
+  formatTimeEsCO,
+  normalizeIntlOutput,
+} from "@/lib/calendar-date";
 import type { InventoryBatchWithLines, MovementWithProduct } from "./actions";
 import { deleteInventoryBatch, deleteMovement, searchProductsForMovement } from "./actions";
 import type { ProductSearchHit } from "./actions";
 
 /** Dado cantidad (en unidad base) y packaging del producto, devuelve ej. "10 Cajas" o "2 Cajas madre" o null. */
 function formatCajasMadre(quantity: number, packaging: string | null): string | null {
-  const parsed = parsePackagingConversion(packaging);
-  if (!parsed || parsed.factor <= 0) return null;
-  const n = quantity / parsed.factor;
-  if (n < 0.001) return null;
-  const label = Number.isInteger(n) ? String(n) : n.toFixed(2);
-  const u = parsed.unitName;
-  const plural =
-    Number(n) !== 1
-      ? u === "Caja madre"
-        ? "Cajas madre"
-        : u === "Caja"
-          ? "Cajas"
-          : u === "Unidad"
-            ? "Unidades"
-            : `${u}s`
-      : u;
-  return `${label} ${plural}`;
+  return formatQuantityInLargePackaging(quantity, packaging);
 }
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
@@ -76,13 +66,16 @@ function formatDateShort(value: string | null): string {
       d.getMonth() === today.getMonth() &&
       d.getFullYear() === today.getFullYear();
     if (isToday) {
-      return "Hoy " + d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+      return `Hoy ${formatTimeEsCO(d)}`;
     }
-    return d.toLocaleDateString("es-CO", {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-    });
+    return normalizeIntlOutput(
+      d.toLocaleDateString("es-CO", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        timeZone: "America/Bogota",
+      }),
+    );
   } catch {
     return value;
   }
@@ -160,16 +153,7 @@ function MovementRowNequi({
 }
 
 function formatDate(value: string | null): string {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleDateString("es-CO", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  } catch {
-    return value;
-  }
+  return formatDateOnlyEsCO(value);
 }
 
 function getDateRange(preset: "today" | "week" | "month"): { from: string; to: string } {
@@ -191,21 +175,6 @@ interface InventoryClientProps {
   filterTo?: string;
   filterProductId?: string;
   filterProductName?: string | null;
-}
-
-function formatDateTimeShort(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("es-CO", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
 }
 
 function formatInvoiceDateLabel(dateKey: string): string {
@@ -312,7 +281,7 @@ function InventoryBatchInvoiceCard({
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end">
           <div className="text-left text-sm text-muted-foreground sm:text-right">
-            <p>Registrado: {formatDateTimeShort(batch.created_at)}</p>
+            <p>Registrado: {formatDateTimeNumericEsCO(batch.created_at)}</p>
             {batch.created_by_email ? <p className="truncate max-w-[200px]">{batch.created_by_email}</p> : null}
           </div>
           <Button
@@ -521,16 +490,19 @@ export function InventoryClient({
           <Package className="size-4" />
           Comprobantes que incluyen un producto
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-primary/80" />
-          <Input
-            placeholder="Buscar producto (comprobantes que lo incluyan, mín. 2 caracteres)"
-            className="h-9 max-w-sm rounded-lg border border-input/90 bg-background pl-9 shadow-sm transition-all focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-input"
+        <div className="relative max-w-md">
+          <DashboardSearchBar
+            variant="default"
+            align="start"
             value={productSearchQuery}
-            onChange={(e) => setProductSearchQuery(e.target.value)}
+            onChange={setProductSearchQuery}
+            onClear={() => setProductSearchQuery("")}
+            onSubmit={() => undefined}
+            placeholder="Buscar producto (mín. 2 caracteres)"
+            ariaLabel="Buscar producto en comprobantes"
           />
           {productSearchQuery.trim().length >= 2 && (
-            <div className="absolute top-full left-0 z-10 mt-1 max-h-48 w-full max-w-sm overflow-y-auto rounded-lg border border-border bg-background shadow-md">
+            <div className="absolute top-full left-0 z-10 mt-2 max-h-48 w-full min-w-[16rem] overflow-y-auto rounded-lg border border-border bg-background shadow-md">
               {productSearching ? (
                 <div className="py-3 text-center text-sm text-muted-foreground">Buscando…</div>
               ) : productSearchResults.length === 0 ? (
@@ -560,17 +532,17 @@ export function InventoryClient({
           )}
         </div>
         {hasProductFilter && filterProductName ? (
-          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3 mt-1">
-            <Badge variant="secondary" className="font-normal">
-              Filtrando por: {filterProductName}
-            </Badge>
-            <Button variant="ghost" size="sm" className="h-7 gap-1 text-muted-foreground" asChild>
-              <Link href={buildFilterUrl({ from: filterFrom, to: filterTo })}>
-                <X className="size-3.5" />
-                Ver todos los comprobantes
-              </Link>
-            </Button>
-          </div>
+          <DashboardFilterChips
+            chips={[
+              {
+                id: "product",
+                label: filterProductName,
+                onRemove: () => {
+                  router.push(buildFilterUrl({ from: filterFrom, to: filterTo }));
+                },
+              },
+            ]}
+          />
         ) : null}
       </DashboardToolbar>
 

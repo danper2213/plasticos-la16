@@ -3,11 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/utils/supabase/require-user";
 import {
-  getIlikePatternsForSearchTerm,
-  getSearchTermGroupsForServer,
   searchIntelligent,
   toSearchProduct,
 } from "@/lib/searchEngine";
+import {
+  applySupabaseSearchFilter,
+  productListSearchFields,
+} from "@/lib/supabase-search-filter";
 import type { ProductFormValues } from "./schema";
 import {
   PRODUCTS_PAGE_SIZE,
@@ -102,59 +104,13 @@ const PRODUCTS_SELECT_BASE = `
       product_categories ( name )
     `;
 
-const SEARCH_ILIKE_FIELDS = ["name", "scan_code"] as const;
-
-function getSearchIlikeFields(term: string): readonly string[] {
-  // Códigos tipo "j1", "a-12": nombre + scan_code. Números sueltos solo en nombre.
-  if (
-    /^[a-z0-9-]{1,8}$/i.test(term) &&
-    /\d/.test(term) &&
-    /[a-z-]/i.test(term)
-  ) {
-    return SEARCH_ILIKE_FIELDS;
-  }
-  return ["name"];
-}
-
 function applySearchFilter<
   T extends {
     or: (filters: string) => T;
     ilike: (column: string, pattern: string) => T;
   },
 >(query: T, search: string): T {
-  let q = query;
-  const termGroups = getSearchTermGroupsForServer(search);
-
-  for (const variants of termGroups) {
-    const orParts: string[] = [];
-
-    for (const variant of variants) {
-      const patterns = getIlikePatternsForSearchTerm(variant);
-      const fields = getSearchIlikeFields(variant);
-
-      for (const pattern of patterns) {
-        for (const field of fields) {
-          orParts.push(`${field}.ilike.${pattern}`);
-        }
-      }
-    }
-
-    if (orParts.length === 0) continue;
-
-    if (orParts.length === 1) {
-      const [filter] = orParts;
-      const match = /^(\w+)\.ilike\.(.+)$/.exec(filter);
-      if (match) {
-        q = q.ilike(match[1], match[2]);
-        continue;
-      }
-    }
-
-    // Un OR por token; encadenado con ilike/or previos = AND entre tokens.
-    q = q.or(orParts.join(","));
-  }
-
-  return q;
+  return applySupabaseSearchFilter(query, search, productListSearchFields);
 }
 
 function mapRowToProductWithRelations(row: Partial<ProductRow>): ProductWithRelations {
