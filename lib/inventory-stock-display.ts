@@ -5,6 +5,9 @@ function pluralizePackagingUnit(unitName: string, count: number): string {
   if (Math.abs(count - 1) < 1e-9) return unitName;
   if (unitName === "Caja madre") return "Cajas madre";
   if (unitName === "Caja") return "Cajas";
+  if (unitName === "Paca") return "Pacas";
+  if (unitName === "Pqt") return "Pqt";
+  if (unitName === "Cj") return "Cjs";
   if (unitName === "Unidad") return "Unidades";
   return `${unitName}s`;
 }
@@ -21,18 +24,30 @@ export type StockDisplayInfo = {
   primary: string;
   hasLargeUnit: boolean;
   unitName?: string;
-  factor?: number;
   baseQuantity: number;
 };
 
+/** Texto del empaque tal como está en el producto (ej. "Paca x200", "Cj x70"). */
+export function formatPackagingDescriptor(
+  packaging: string | null | undefined,
+): string | null {
+  const raw = typeof packaging === "string" ? packaging.trim() : "";
+  return raw || null;
+}
+
+/** Unidad de inventario para movimientos (ej. "Paca", "Cj"). */
+export function getInventoryUnitLabel(packaging: string | null | undefined): string {
+  const parsed = parsePackagingConversion(packaging);
+  return parsed?.unitName ?? "unidades";
+}
+
 /**
- * Muestra stock en presentación grande (ej. "8 Cajas") si hay empaque;
- * si no, solo en unidades base (ej. "560 unidades").
+ * Muestra stock en cajas/pacas si hay empaque parseable;
+ * si no hay empaque, usa unidades genéricas (no presentación comercial).
  */
 export function getStockDisplayInfo(
   quantity: number | null | undefined,
   packaging: string | null | undefined,
-  presentation?: string | null,
 ): StockDisplayInfo {
   if (quantity === null || quantity === undefined) {
     return {
@@ -43,14 +58,9 @@ export function getStockDisplayInfo(
   }
 
   const parsed = parsePackagingConversion(packaging);
-  if (!parsed || parsed.factor <= 1) {
-    const baseName = presentation?.trim() || "unidades";
+  if (!parsed) {
     const plural =
-      Math.abs(quantity - 1) < 1e-9
-        ? baseName
-        : baseName.endsWith("s")
-          ? baseName
-          : `${baseName}s`;
+      Math.abs(quantity - 1) < 1e-9 ? "unidad" : "unidades";
     return {
       primary: `${formatInventoryQuantity(quantity)} ${plural}`,
       hasLargeUnit: false,
@@ -58,44 +68,36 @@ export function getStockDisplayInfo(
     };
   }
 
-  const count = quantity / parsed.factor;
+  /** Cantidad en cajas/pacas; el x70/x200 del empaque no modifica este número. */
   return {
-    primary: `${formatPackCount(count)} ${pluralizePackagingUnit(parsed.unitName, count)}`,
+    primary: `${formatPackCount(quantity)} ${pluralizePackagingUnit(parsed.unitName, quantity)}`,
     hasLargeUnit: true,
     unitName: parsed.unitName,
-    factor: parsed.factor,
     baseQuantity: quantity,
   };
 }
 
-/** Convierte cantidad base a texto en presentación grande, o null si no aplica. */
+/** Convierte cantidad en unidad de inventario a texto con empaque grande, o null si no aplica. */
 export function formatQuantityInLargePackaging(
-  quantityBase: number,
+  quantity: number,
   packaging: string | null | undefined,
 ): string | null {
   const parsed = parsePackagingConversion(packaging);
-  if (!parsed || parsed.factor <= 1) return null;
-  if (quantityBase < 0.001) return null;
-  const count = quantityBase / parsed.factor;
-  return `${formatPackCount(count)} ${pluralizePackagingUnit(parsed.unitName, count)}`;
+  if (!parsed) return null;
+  if (quantity < 0.001) return null;
+  return `${formatPackCount(quantity)} ${pluralizePackagingUnit(parsed.unitName, quantity)}`;
 }
 
-/** Etiqueta corta de cantidad en la unidad de entrada del movimiento. */
+/** Etiqueta de cantidad en la unidad del empaque (pacas, cajas…). */
 export function formatMovementQuantityLabel(
-  quantityBase: number,
+  quantity: number,
   packaging: string | null | undefined,
-  presentation?: string | null,
 ): string {
-  const large = formatQuantityInLargePackaging(quantityBase, packaging);
+  const large = formatQuantityInLargePackaging(quantity, packaging);
   if (large) return large;
-  const baseName = presentation?.trim() || "unidades";
   const plural =
-    Math.abs(quantityBase - 1) < 1e-9
-      ? baseName
-      : baseName.endsWith("s")
-        ? baseName
-        : `${baseName}s`;
-  return `${formatInventoryQuantity(quantityBase)} ${plural}`;
+    Math.abs(quantity - 1) < 1e-9 ? "unidad" : "unidades";
+  return `${formatInventoryQuantity(quantity)} ${plural}`;
 }
 
 export { pluralizePackagingUnit, formatPackCount };

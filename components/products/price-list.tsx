@@ -82,7 +82,7 @@ function StockBadge({
   const isZero = quantity === 0;
   const isLow = quantity > 0 && quantity <= 20;
   const isPlenty = quantity > 20;
-  const stockLabel = getStockDisplayInfo(quantity, packaging, presentation).primary;
+  const stockLabel = getStockDisplayInfo(quantity, packaging).primary;
 
   return (
     <Badge

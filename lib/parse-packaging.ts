@@ -1,30 +1,26 @@
 /**
- * Parsea el campo "Caja madre" / packaging del producto para obtener
- * unidad de entrada y factor a unidad base.
- * Ejemplos: "Caja x60 paq" → 1 Caja = 60 paquetes; "Caja madre x10" → 1 Caja madre = 10.
+ * Extrae nombre de unidad y contenido descriptivo del empaque.
+ *
+ * Ejemplo "Cj x70": 1 Cj trae 70 unidades internas — eso es solo referencia.
+ * En inventario se cuenta en Cj: stock 10 = diez cajas, no 700 unidades sueltas.
  */
 export interface ParsedPackaging {
-  /** Nombre de la unidad (ej. "Caja", "Caja madre") */
+  /** Nombre de la unidad de inventario (ej. "Cj", "Paca", "Caja") */
   unitName: string;
-  /** Cuántas unidades base equivale 1 de esta unidad */
+  /** Contenido por unidad (ej. 70 en "Cj x70"). Solo descriptivo; no usar en stock. */
   factor: number;
-  /** Texto opcional de la unidad base para mostrar (ej. "paq" → "paquetes") */
+  /** Texto opcional del contenido (ej. "paq" → "paquetes") */
   baseLabel?: string;
 }
 
 /**
- * Intenta extraer de un texto tipo "Caja x60 paq" o "Caja madre x10":
- * - unitName: texto antes de "x" (ej. "Caja")
- * - factor: número después de "x" (ej. 60)
- * - baseLabel: resto opcional (ej. "paq")
- * Acepta "x" o "×" como separador.
+ * Parsea "Cj x70", "Paca x200", "Caja madre x10", etc.
+ * El número después de x es contenido interno, no unidad de movimiento.
  */
 export function parsePackagingConversion(text: string | null | undefined): ParsedPackaging | null {
   const raw = typeof text === "string" ? text.trim() : "";
   if (!raw) return null;
 
-  // Patrón: [Nombre opcional] x o × [número] [resto opcional]
-  // Ej: "Caja x60 paq", "Caja madre x10", "x60 paq"
   const withName = raw.match(/^(.+?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(.*)$/i);
   if (withName) {
     const unitName = withName[1].trim();
@@ -36,7 +32,6 @@ export function parsePackagingConversion(text: string | null | undefined): Parse
     }
   }
 
-  // Solo "x60" o "x 60 paq"
   const onlyFactor = raw.match(/\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(.*)$/i);
   if (onlyFactor) {
     const factor = parseFloat(onlyFactor[1].replace(",", "."));

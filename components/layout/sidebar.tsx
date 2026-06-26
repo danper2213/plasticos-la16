@@ -27,6 +27,7 @@ import {
   ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useNavigationGuardClick } from "@/components/layout/navigation-guard";
 
 export type UserRole = "admin" | "employee";
 
@@ -104,6 +105,7 @@ export function Sidebar({
   desktopExpanded = true,
 }: SidebarProps) {
   const pathname = usePathname();
+  const tryNavigate = useNavigationGuardClick();
   const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
@@ -117,6 +119,11 @@ export function Sidebar({
       return next;
     });
   }, [pathname]);
+
+  function handleNavClick(href: string, e: React.MouseEvent) {
+    if (!tryNavigate(href, e)) return;
+    onNavigateClick?.();
+  }
 
   function renderItem(item: NavItem) {
     if (isNavGroup(item)) {
@@ -167,7 +174,7 @@ export function Sidebar({
                     <Link
                       key={child.href}
                       href={child.href}
-                      onClick={onNavigateClick}
+                      onClick={(e) => handleNavClick(child.href, e)}
                       className={cn(
                         "group flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium transition-all duration-200",
                         isActive
@@ -195,7 +202,7 @@ export function Sidebar({
       <Link
         key={item.href}
         href={item.href}
-        onClick={onNavigateClick}
+        onClick={(e) => handleNavClick(item.href, e)}
         className={cn(
           "group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-all duration-200",
           isActive
@@ -225,7 +232,7 @@ export function Sidebar({
     >
       <Link
         href="/dashboard"
-        onClick={onNavigateClick}
+        onClick={(e) => handleNavClick("/dashboard", e)}
         className="mb-4 flex shrink-0 items-center gap-2 rounded-xl border border-border/80 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-900/60"
         aria-label="Ir al inicio"
       >

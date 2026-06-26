@@ -33,7 +33,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { formatQuantityInLargePackaging } from "@/lib/inventory-stock-display";
+import { formatMovementQuantityLabel } from "@/lib/inventory-stock-display";
 import { formatInventoryQuantity } from "@/lib/inventory-quantity";
 import {
   formatDateOnlyEsCO,
@@ -44,11 +44,8 @@ import {
 import type { InventoryBatchWithLines, MovementWithProduct } from "./actions";
 import { deleteInventoryBatch, deleteMovement, searchProductsForMovement } from "./actions";
 import type { ProductSearchHit } from "./actions";
-
-/** Dado cantidad (en unidad base) y packaging del producto, devuelve ej. "10 Cajas" o "2 Cajas madre" o null. */
-function formatCajasMadre(quantity: number, packaging: string | null): string | null {
-  return formatQuantityInLargePackaging(quantity, packaging);
-}
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
+import { useNavigationGuardRegistration } from "@/components/layout/navigation-guard";
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   in: "Entrada",
@@ -83,19 +80,16 @@ function formatDateShort(value: string | null): string {
 
 function MovementRowNequi({
   row,
-  formatCajasMadre,
   onDelete,
   compactMeta = false,
 }: {
   row: MovementWithProduct;
-  formatCajasMadre: (q: number, p: string | null) => string | null;
   onDelete: () => void;
   compactMeta?: boolean;
 }) {
   const type = row.movement_type;
   const isIn = type === "in";
   const isOut = type === "out";
-  const cajas = formatCajasMadre(row.quantity, row.product_packaging);
 
   const iconWrap =
     isIn
@@ -120,7 +114,8 @@ function MovementRowNequi({
       <div className="min-w-0">
         <p className="font-semibold text-foreground truncate">{row.product_name}</p>
         <p className="text-sm text-muted-foreground truncate">
-          {row.product_presentation || (MOVEMENT_TYPE_LABELS[type] ?? type)}
+          {row.product_packaging?.trim() ||
+            (MOVEMENT_TYPE_LABELS[type] ?? type)}
         </p>
         {!compactMeta ? (
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -131,12 +126,9 @@ function MovementRowNequi({
       </div>
       <div className="text-right">
         <p className="text-xl font-bold tabular-nums text-foreground">
-          {row.movement_type === "out" ? "-" : "+"}
-          {formatInventoryQuantity(row.quantity)}
+          {row.movement_type === "out" ? "−" : row.movement_type === "in" ? "+" : ""}
+          {formatMovementQuantityLabel(row.quantity, row.product_packaging)}
         </p>
-        {cajas ? (
-          <p className="text-xs text-muted-foreground">{cajas}</p>
-        ) : null}
       </div>
       <Button
         type="button"
@@ -250,12 +242,10 @@ function groupMovementsByDate(rows: MovementWithProduct[]): DailyMovementGroup[]
 
 function InventoryBatchInvoiceCard({
   batch,
-  formatCajasMadre,
   onDeleteLine,
   onDeleteBatch,
 }: {
   batch: InventoryBatchWithLines;
-  formatCajasMadre: (q: number, p: string | null) => string | null;
   onDeleteLine: (row: MovementWithProduct) => void;
   onDeleteBatch: (batch: InventoryBatchWithLines) => void;
 }) {
@@ -329,7 +319,6 @@ function InventoryBatchInvoiceCard({
               <div key={row.id} className="px-2 py-2 sm:px-3">
                 <MovementRowNequi
                   row={row}
-                  formatCajasMadre={formatCajasMadre}
                   onDelete={() => onDeleteLine(row)}
                   compactMeta
                 />
@@ -369,6 +358,7 @@ export function InventoryClient({
   const router = useRouter();
   const pathname = usePathname();
   const [formOpen, setFormOpen] = React.useState(false);
+  const [movementFormDirty, setMovementFormDirty] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [movementToDelete, setMovementToDelete] = React.useState<MovementWithProduct | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -380,7 +370,39 @@ export function InventoryClient({
   const [productSearchQuery, setProductSearchQuery] = React.useState("");
   const [productSearchResults, setProductSearchResults] = React.useState<ProductSearchHit[]>([]);
   const [productSearching, setProductSearching] = React.useState(false);
+  const [leavePromptOpen, setLeavePromptOpen] = React.useState(false);
+  const [pendingLeaveHref, setPendingLeaveHref] = React.useState<string | null>(null);
   const productSearchDebounce = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const guardEnabled = formOpen && movementFormDirty;
+
+  useUnsavedChangesGuard({ enabled: guardEnabled });
+
+  useNavigationGuardRegistration(
+    guardEnabled,
+    (href) => {
+      setPendingLeaveHref(href);
+      setLeavePromptOpen(true);
+    },
+    { allowPathPrefix: "/dashboard/inventory" },
+  );
+
+  React.useEffect(() => {
+    if (!formOpen) setMovementFormDirty(false);
+  }, [formOpen]);
+
+  function confirmLeaveInventory() {
+    setLeavePromptOpen(false);
+    const href = pendingLeaveHref;
+    setPendingLeaveHref(null);
+    setFormOpen(false);
+    if (href) router.push(href);
+  }
+
+  function cancelLeaveInventory() {
+    setPendingLeaveHref(null);
+    setLeavePromptOpen(false);
+  }
 
   React.useEffect(() => {
     setLocalFrom(filterFrom ?? "");
@@ -520,8 +542,8 @@ export function InventoryClient({
                         className="block px-3 py-2 text-left text-sm hover:bg-muted/50"
                       >
                         <span className="font-medium">{p.name}</span>
-                        {p.presentation ? (
-                          <span className="ml-1 text-muted-foreground">({p.presentation})</span>
+                        {p.packaging ? (
+                          <span className="ml-1 text-muted-foreground">({p.packaging})</span>
                         ) : null}
                       </Link>
                     </li>
@@ -675,7 +697,6 @@ export function InventoryClient({
                     <li key={batch.id}>
                       <InventoryBatchInvoiceCard
                         batch={batch}
-                        formatCajasMadre={formatCajasMadre}
                         onDeleteLine={(row) => openDeleteDialog(row)}
                         onDeleteBatch={openBatchDeleteDialog}
                       />
@@ -711,7 +732,6 @@ export function InventoryClient({
                         <li key={row.id}>
                           <MovementRowNequi
                             row={row}
-                            formatCajasMadre={formatCajasMadre}
                             onDelete={() => openDeleteDialog(row)}
                           />
                         </li>
@@ -777,10 +797,42 @@ export function InventoryClient({
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={leavePromptOpen}
+        onOpenChange={(open) => {
+          if (!open) cancelLeaveInventory();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Salir del inventario?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Estás registrando movimientos con datos sin guardar. Si salís del módulo ahora, se
+              perderá lo que cargaste.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelLeaveInventory}>
+              Seguir editando
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmLeaveInventory();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Descartar y salir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <MovementForm
         open={formOpen}
         onOpenChange={setFormOpen}
         onSuccess={handleFormSuccess}
+        onDirtyChange={setMovementFormDirty}
       />
     </div>
   );

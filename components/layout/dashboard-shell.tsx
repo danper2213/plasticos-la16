@@ -4,6 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { Sidebar, type UserRole } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { NavigationGuardProvider } from "@/components/layout/navigation-guard";
 import { cn } from "@/lib/utils";
 
 interface DashboardShellProps {
@@ -16,8 +17,9 @@ export function DashboardShell({ userRole, userEmail, children }: DashboardShell
   const [sidebarExpanded, setSidebarExpanded] = React.useState(true);
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar userRole={userRole} desktopExpanded={sidebarExpanded} />
+    <NavigationGuardProvider>
+      <div className="min-h-screen bg-background">
+        <Sidebar userRole={userRole} desktopExpanded={sidebarExpanded} />
       <div
         className={cn(
           "min-h-screen bg-background dark:bg-[#121212]",
@@ -54,6 +56,7 @@ export function DashboardShell({ userRole, userEmail, children }: DashboardShell
           </footer>
         </main>
       </div>
-    </div>
+      </div>
+    </NavigationGuardProvider>
   );
 }

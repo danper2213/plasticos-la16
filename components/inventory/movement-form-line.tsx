@@ -3,20 +3,17 @@
 import * as React from "react";
 import { useFormContext } from "react-hook-form";
 import {
-  ArrowLeftRight,
   Package,
-  Hash,
-  CircleDollarSign,
   Trash2,
   Minus,
   Plus,
   ArrowDownLeft,
   ArrowUpRight,
   RefreshCw,
-  Warehouse,
   AlertTriangle,
   ChevronDown,
-  CheckCircle2,
+  ArrowRight,
+  Search,
 } from "lucide-react";
 import {
   FormControl,
@@ -27,30 +24,26 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { DashboardSearchBar } from "@/components/layout/dashboard-search-bar";
 import {
   MOVEMENT_TYPES,
   type BatchInventoryMovementFormValues,
   type MovementType,
 } from "@/app/dashboard/inventory/schema";
-import { searchProductsForMovement } from "@/app/dashboard/inventory/actions";
+import { searchProductsForMovement, getProductStockQuantity } from "@/app/dashboard/inventory/actions";
 import type { ProductSearchHit } from "@/app/dashboard/inventory/actions";
-import { parsePackagingConversion } from "@/lib/parse-packaging";
-import {
-  formatInventoryQuantity,
-  normalizeInventoryQuantity,
-} from "@/lib/inventory-quantity";
 import {
   formatMovementQuantityLabel,
+  formatPackagingDescriptor,
+  getInventoryUnitLabel,
   getStockDisplayInfo,
 } from "@/lib/inventory-stock-display";
+import { parseLineQuantity } from "@/lib/inventory-movement-preview";
+import { normalizeInventoryQuantity } from "@/lib/inventory-quantity";
+import { usesLargeUnitInventory } from "@/lib/inventory-units";
 import { validateMovementLine } from "@/lib/inventory-movement-validation";
 import { formatCop } from "@/lib/format";
-import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-
-const inputClassName =
-  "rounded-lg h-10 border-input bg-background focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary transition-colors";
+import { toast } from "sonner";
 
 const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
   in: "Entrada",
@@ -58,10 +51,18 @@ const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
   adjustment: "Ajuste",
 };
 
-interface DerivedUnit {
-  id: string;
-  name: string;
-  factor_to_base: number;
+function readLineQuantity(value: unknown): number {
+  const n = parseLineQuantity(value);
+  return n > 0 ? n : 1;
+}
+
+function commitLineQuantity(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  return normalizeInventoryQuantity(value);
+}
+
+function productMetaLabel(p: ProductSearchHit): string {
+  return [p.supplier_name, formatPackagingDescriptor(p.packaging)].filter(Boolean).join(" · ");
 }
 
 export interface MovementFormLineProps {
@@ -70,10 +71,8 @@ export interface MovementFormLineProps {
   dialogOpen: boolean;
   canRemove: boolean;
   onRemove: () => void;
-  /** Saldo simulado antes/después de esta línea (mismo producto en varias líneas acumula). */
   linePreview: { balanceBefore: number; balanceAfter: number; violates: boolean };
   onRegisterProductStock: (productId: string, stock: number | null) => void;
-  /** Varias líneas: mostrar resumen comprimido cuando no es la activa. */
   showCollapseChrome: boolean;
   isCollapsed: boolean;
   onActivateLine: () => void;
@@ -94,8 +93,9 @@ export function MovementFormLine({
   const form = useFormContext<BatchInventoryMovementFormValues>();
   const { setValue, getValues } = form;
   const productId = form.watch(`lines.${index}.product_id`);
-  const movementType = form.watch(`lines.${index}.movement_type`);
+  const movementType = form.watch(`lines.${index}.movement_type`) as MovementType;
   const lineQuantity = form.watch(`lines.${index}.quantity`) as number | undefined;
+  const unitCost = form.watch(`lines.${index}.historical_unit_cost`) as number | undefined;
 
   const compact = showCollapseChrome && isCollapsed;
 
@@ -103,22 +103,25 @@ export function MovementFormLine({
   const [searchResults, setSearchResults] = React.useState<ProductSearchHit[]>([]);
   const [selectedProduct, setSelectedProduct] = React.useState<ProductSearchHit | null>(null);
   const [searching, setSearching] = React.useState(false);
+  const [stockLoading, setStockLoading] = React.useState(false);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
 
-  const [units, setUnits] = React.useState<DerivedUnit[]>([]);
-  const [selectedUnit, setSelectedUnit] = React.useState<DerivedUnit | null>(null);
-  const [quantityEntered, setQuantityEntered] = React.useState<number>(1);
-  const [parsedBaseLabel, setParsedBaseLabel] = React.useState<string | null>(null);
+  const usesLargePackaging = usesLargeUnitInventory(selectedProduct?.packaging);
+  const entryUnitLabel = getInventoryUnitLabel(selectedProduct?.packaging);
+  const packagingLabel = formatPackagingDescriptor(selectedProduct?.packaging);
 
   React.useEffect(() => {
     if (!productId) {
       setSelectedProduct(null);
-      setUnits([]);
-      setSelectedUnit(null);
-      setQuantityEntered(1);
-      setParsedBaseLabel(null);
     }
   }, [productId]);
+
+  React.useEffect(() => {
+    if (!dialogOpen || selectedProduct || compact) return;
+    const timer = window.setTimeout(() => searchInputRef.current?.focus(), 80);
+    return () => window.clearTimeout(timer);
+  }, [dialogOpen, selectedProduct, compact, index]);
 
   React.useEffect(() => {
     const q = searchQuery.trim();
@@ -141,554 +144,474 @@ export function MovementFormLine({
 
   React.useEffect(() => {
     if (!selectedProduct?.id) {
-      setUnits([]);
-      setSelectedUnit(null);
-      setQuantityEntered(1);
-      setValue(`lines.${index}.quantity`, 1, { shouldValidate: true });
-      setParsedBaseLabel(null);
+      if (!productId) {
+        setValue(`lines.${index}.quantity`, 1, { shouldValidate: true });
+      }
       return;
     }
 
-    const parsed = parsePackagingConversion(selectedProduct.packaging);
-    if (parsed) {
-      const baseName = selectedProduct.presentation?.trim() || "Unidad";
-      const fromPackaging: DerivedUnit[] = [
-        { id: "base", name: baseName, factor_to_base: 1 },
-        { id: "pack", name: parsed.unitName, factor_to_base: parsed.factor },
-      ];
-      setUnits(fromPackaging);
-      setSelectedUnit(fromPackaging[1]);
-      setQuantityEntered(1);
-      setValue(`lines.${index}.quantity`, normalizeInventoryQuantity(1 * parsed.factor), {
-        shouldValidate: true,
-      });
-      setParsedBaseLabel(parsed.baseLabel ?? null);
-      return;
-    }
-
-    setUnits([]);
-    setSelectedUnit(null);
-    setQuantityEntered(1);
     setValue(`lines.${index}.quantity`, 1, { shouldValidate: true });
-    setParsedBaseLabel(null);
-  }, [selectedProduct?.id, selectedProduct?.packaging, selectedProduct?.presentation, index, setValue]);
+  }, [selectedProduct?.id, selectedProduct?.packaging, productId, index, setValue]);
 
-  /** Sincroniza cantidad en unidad base al formulario. */
-  React.useEffect(() => {
-    if (!selectedProduct?.id) return;
-    const packUnit = units.find((u) => u.factor_to_base > 1);
-    const factor = packUnit?.factor_to_base ?? selectedUnit?.factor_to_base ?? 1;
-    const q = Number.isFinite(quantityEntered) && quantityEntered > 0 ? quantityEntered : 0;
-    const finalQty = q <= 0 ? 0 : normalizeInventoryQuantity(q * factor);
-    const path = `lines.${index}.quantity` as const;
-    const curr = getValues(path);
-    if (curr === finalQty) return;
-    setValue(path, finalQty, { shouldValidate: true });
-  }, [quantityEntered, selectedUnit, units, selectedProduct?.id, index, getValues, setValue]);
-
-  function handleSelectProduct(p: ProductSearchHit) {
+  async function handleSelectProduct(p: ProductSearchHit) {
     setSelectedProduct(p);
     setValue(`lines.${index}.product_id`, p.id, { shouldValidate: true });
     setValue(`lines.${index}.historical_unit_cost`, p.cost, { shouldValidate: true });
-    onRegisterProductStock(p.id, p.stock_quantity ?? null);
     setSearchResults([]);
     setSearchQuery("");
+    setStockLoading(true);
+    try {
+      const fresh = await getProductStockQuantity(p.id);
+      onRegisterProductStock(p.id, fresh ?? 0);
+    } finally {
+      setStockLoading(false);
+    }
   }
 
   function handleClearProduct() {
     setSelectedProduct(null);
     setValue(`lines.${index}.product_id`, "", { shouldValidate: true });
     setValue(`lines.${index}.historical_unit_cost`, 0, { shouldValidate: true });
-    setUnits([]);
-    setSelectedUnit(null);
-    setQuantityEntered(1);
+    setValue(`lines.${index}.quantity`, 1, { shouldValidate: true });
   }
 
-  const baseUnitName =
-    parsedBaseLabel ?? units.find((u) => u.factor_to_base === 1)?.name ?? "unidades";
-  const largeUnit = units.find((u) => u.factor_to_base > 1) ?? null;
-  const entryUnit = largeUnit ?? selectedUnit;
-  const usesLargePackaging = Boolean(largeUnit);
+  function handleMovementTypeChange(
+    type: MovementType,
+    onChange: (value: MovementType) => void,
+  ) {
+    if (type === "out" && selectedProduct && !usesLargePackaging) {
+      toast.error(
+        "Las salidas se registran solo en caja/paca. Este producto no tiene empaque grande configurado.",
+      );
+      return;
+    }
+    onChange(type);
+    setValue(`lines.${index}.movement_type`, type, { shouldValidate: true });
+  }
 
   const stockDisplay = getStockDisplayInfo(
     selectedProduct ? linePreview.balanceBefore : null,
     selectedProduct?.packaging,
-    selectedProduct?.presentation,
   );
 
-  const balanceAfterLabel = selectedProduct
-    ? formatMovementQuantityLabel(
-        linePreview.balanceAfter,
-        selectedProduct.packaging,
-        selectedProduct.presentation,
-      )
-    : null;
+  const quantityBase = parseLineQuantity(lineQuantity);
 
-  const maxOutBase =
-    movementType === "out" ? Math.max(0, linePreview.balanceBefore) : Number.POSITIVE_INFINITY;
+  const balanceBefore = linePreview.balanceBefore;
+  const balanceAfter = linePreview.balanceAfter;
+  const violatesStock = linePreview.violates;
 
-  const maxOutLabel =
-    movementType === "out" && selectedProduct && Number.isFinite(maxOutBase)
-      ? formatMovementQuantityLabel(
-          maxOutBase,
-          selectedProduct.packaging,
-          selectedProduct.presentation,
-        )
-      : null;
-
-  const quantityBase =
-    typeof lineQuantity === "number" && Number.isFinite(lineQuantity) ? lineQuantity : 0;
+  const maxOut =
+    movementType === "out" ? Math.max(0, balanceBefore) : Number.POSITIVE_INFINITY;
 
   const lineValidation =
     selectedProduct && productId
       ? validateMovementLine(
           movementType,
           quantityBase,
-          linePreview.balanceBefore,
+          balanceBefore,
           selectedProduct.packaging,
-          selectedProduct.presentation,
         )
       : null;
 
-  const entryFactor = entryUnit?.factor_to_base ?? 1;
-  const maxEnteredOut =
-    movementType === "out" && Number.isFinite(maxOutBase)
-      ? maxOutBase / Math.max(entryFactor, 1e-12)
-      : Number.POSITIVE_INFINITY;
   const atMaxOut =
     movementType === "out" &&
-    Number.isFinite(maxEnteredOut) &&
-    quantityEntered >= maxEnteredOut - 1e-9;
+    Number.isFinite(maxOut) &&
+    quantityBase >= maxOut - 1e-9;
 
   const comboboxKey = `${lineKey}-${dialogOpen ? "open" : "closed"}`;
 
-  function adjustQuantityStep(deltaEntered: number) {
-    const factor = entryUnit?.factor_to_base ?? 1;
-    let nextEntered = Math.max(0, quantityEntered + deltaEntered);
-    if (movementType === "out" && deltaEntered > 0 && Number.isFinite(maxOutBase)) {
-      const maxEntered = maxOutBase / Math.max(factor, 1e-12);
-      nextEntered = Math.min(nextEntered, maxEntered);
+  function adjustQuantityStep(delta: number) {
+    const current = readLineQuantity(getValues(`lines.${index}.quantity`));
+    let next = Math.max(0, current + delta);
+    if (movementType === "out" && delta > 0 && Number.isFinite(maxOut)) {
+      next = Math.min(next, maxOut);
     }
-    setQuantityEntered(nextEntered);
+    setValue(`lines.${index}.quantity`, commitLineQuantity(next), {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
   }
 
+  const qtyLabel =
+    selectedProduct && quantityBase > 0
+      ? formatMovementQuantityLabel(quantityBase, selectedProduct.packaging)
+      : null;
+
+  const afterLabel = selectedProduct
+    ? formatMovementQuantityLabel(balanceAfter, selectedProduct.packaging)
+    : null;
+
+  const showPreview = Boolean(selectedProduct && productId && quantityBase > 0);
+
+  const previewTone =
+    movementType === "in"
+      ? "border-emerald-500/30 bg-emerald-500/5"
+      : movementType === "out"
+        ? violatesStock
+          ? "border-destructive/40 bg-destructive/5"
+          : "border-border bg-muted/40"
+      : "border-amber-500/30 bg-amber-500/5";
+
   const compactQuantityLabel = selectedProduct
-    ? formatMovementQuantityLabel(
-        typeof lineQuantity === "number" ? lineQuantity : 0,
-        selectedProduct.packaging,
-        selectedProduct.presentation,
-      )
+    ? formatMovementQuantityLabel(parseLineQuantity(lineQuantity), selectedProduct.packaging)
     : "—";
 
   return (
     <div
       className={cn(
-        "rounded-xl border bg-muted/20 transition-shadow",
-        compact ? "p-2" : "p-4 space-y-4",
-        linePreview.violates || lineValidation?.severity === "error"
-          ? "border-destructive/60 ring-2 ring-destructive/20"
-          : lineValidation?.severity === "ok" && movementType === "out"
-            ? "border-emerald-500/35 ring-1 ring-emerald-500/20"
-            : "border-border"
+        "rounded-xl border bg-card/50 transition-shadow",
+        compact ? "p-2" : "p-3 space-y-3",
+        violatesStock || lineValidation?.severity === "error"
+          ? "border-destructive/50"
+          : "border-border",
       )}
-      onFocusCapture={
-        !compact && showCollapseChrome ? () => onActivateLine() : undefined
-      }
+      onFocusCapture={!compact && showCollapseChrome ? () => onActivateLine() : undefined}
     >
       {compact ? (
         <div className="flex items-stretch gap-2">
           <button
             type="button"
-            className={cn(
-              "flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-border/80 bg-background/70 px-3 py-2.5 text-left transition-colors hover:bg-muted/60",
-              linePreview.violates && "border-destructive/50 bg-destructive/5"
-            )}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/80 bg-background px-2.5 py-2 text-left hover:bg-muted/50"
             onClick={onActivateLine}
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-xs font-bold text-muted-foreground">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] font-bold">
               {index + 1}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-foreground">
-                {selectedProduct?.name ?? "Seleccioná un producto"}
-              </p>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {MOVEMENT_TYPE_LABELS[movementType as MovementType] ?? movementType} ·{" "}
-                {compactQuantityLabel}
-                {linePreview.violates ? " · saldo negativo" : ""}
+              <p className="truncate text-sm font-medium">{selectedProduct?.name ?? "Producto"}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {MOVEMENT_TYPE_LABELS[movementType]} · {compactQuantityLabel}
+                {showPreview && afterLabel ? ` → ${afterLabel}` : ""}
               </p>
             </div>
-            {linePreview.violates ? (
-              <AlertTriangle className="size-4 shrink-0 text-destructive" aria-hidden />
-            ) : null}
-            <ChevronDown className="size-4 shrink-0 text-muted-foreground rotate-[-90deg]" aria-hidden />
+            <ChevronDown className="size-4 shrink-0 -rotate-90 text-muted-foreground" />
           </button>
-          {canRemove ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-auto min-h-[44px] w-10 shrink-0 rounded-lg border-destructive/30 text-destructive hover:bg-destructive/10"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRemove();
-              }}
-              title="Quitar línea"
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div
-        className={cn("space-y-4", compact && "hidden")}
-        aria-hidden={compact}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-semibold text-foreground">Producto {index + 1}</p>
           {canRemove ? (
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              className="size-9 shrink-0 text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className={cn("space-y-3", compact && "hidden")} aria-hidden={compact}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Línea {index + 1}
+          </span>
+          {canRemove ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 text-muted-foreground hover:text-destructive"
               onClick={onRemove}
-              title="Quitar línea"
             >
               <Trash2 className="size-4" />
             </Button>
           ) : null}
         </div>
 
-      <FormField
-        control={form.control}
-        name={`lines.${index}.product_id`}
-        render={({ field, fieldState }) => (
-          <FormItem>
-            <FormControl>
-              <input
-                type="hidden"
-                ref={field.ref}
-                value={typeof field.value === "string" ? field.value : ""}
-                onChange={(e) => field.onChange(e.target.value)}
-                onBlur={field.onBlur}
-              />
-            </FormControl>
-            <FormLabel className="text-muted-foreground flex items-center gap-2">
-              <Package className="size-4 text-primary shrink-0" aria-hidden />
-              Producto
-            </FormLabel>
-            {selectedProduct ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 rounded-lg h-10 border border-border bg-muted/30 px-3">
-                  <span className="flex-1 truncate text-sm font-medium">
-                    {selectedProduct.name}
-                    {selectedProduct.presentation ? (
-                      <span className="text-muted-foreground font-normal">
-                        {" "}
-                        ({selectedProduct.presentation})
-                      </span>
-                    ) : null}
+        <FormField
+          control={form.control}
+          name={`lines.${index}.product_id`}
+          render={({ field, fieldState }) => (
+            <FormItem className="space-y-1.5">
+              <FormControl>
+                <input
+                  type="hidden"
+                  ref={field.ref}
+                  value={typeof field.value === "string" ? field.value : ""}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  onBlur={field.onBlur}
+                />
+              </FormControl>
+              {selectedProduct ? (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-2.5 py-2 min-h-10">
+                  <Package className="size-4 shrink-0 text-primary" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium leading-tight">
+                      {selectedProduct.name}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {productMetaLabel(selectedProduct) || "Sin empaque configurado"}
+                    </p>
+                  </div>
+                  <span className="hidden shrink-0 text-xs font-medium text-primary sm:inline">
+                    {stockLoading ? "Actualizando stock…" : stockDisplay.primary}
                   </span>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="shrink-0 h-8 text-muted-foreground hover:text-foreground"
+                    className="h-8 shrink-0 px-2 text-xs"
                     onClick={handleClearProduct}
                   >
                     Cambiar
                   </Button>
                 </div>
-
-                <div
-                  className={cn(
-                    "rounded-xl border-2 px-4 py-3",
-                    linePreview.violates
-                      ? "border-destructive/40 bg-destructive/5"
-                      : "border-primary/30 bg-gradient-to-br from-primary/[0.12] to-primary/[0.04]",
-                  )}
-                >
-                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    <Warehouse className="size-3.5 shrink-0 text-primary" aria-hidden />
-                    Stock en bodega
+              ) : (
+                <div className="space-y-2">
+                  <div className="relative w-full">
+                    <Search
+                      className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden
+                    />
+                    <Input
+                      ref={searchInputRef}
+                      type="search"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Escribí el nombre del producto…"
+                      autoComplete="off"
+                      className="h-11 w-full rounded-xl border-border bg-background pl-10 text-center text-base placeholder:text-center placeholder:text-muted-foreground/70"
+                      aria-label="Buscar producto"
+                    />
                   </div>
-                  <p className="mt-1 text-2xl font-black tabular-nums tracking-tight text-foreground sm:text-3xl">
-                    {stockDisplay.primary}
-                  </p>
-                  {movementType === "out" && maxOutLabel ? (
-                    <p className="mt-1.5 text-xs text-muted-foreground">
-                      Máximo para salida:{" "}
-                      <span className="font-semibold text-foreground">{maxOutLabel}</span>
-                    </p>
-                  ) : null}
-                  {selectedProduct.packaging && usesLargePackaging ? (
-                    <p className="mt-1 text-[11px] text-muted-foreground/90">
-                      Registrás movimientos en{" "}
-                      <span className="font-medium text-foreground/90">
-                        {largeUnit?.name ?? "presentación grande"}
-                      </span>
-                      {largeUnit && largeUnit.factor_to_base > 1
-                        ? ` (1 = ${formatInventoryQuantity(largeUnit.factor_to_base)} ${baseUnitName})`
-                        : null}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <div className="relative max-w-md">
-                  <DashboardSearchBar
-                    variant="default"
-                    align="start"
-                    value={searchQuery}
-                    onChange={setSearchQuery}
-                    onClear={() => setSearchQuery("")}
-                    onSubmit={() => undefined}
-                    placeholder="Buscar por nombre (mín. 2 caracteres)"
-                    ariaLabel="Buscar producto"
-                  />
-                </div>
-                {searchQuery.trim().length >= 2 && (
-                  <div className="rounded-lg border border-border bg-background max-h-48 overflow-y-auto">
-                    {searching ? (
-                      <div className="py-4 text-center text-sm text-muted-foreground">
-                        Buscando…
-                      </div>
-                    ) : searchResults.length === 0 ? (
-                      <div className="py-4 text-center text-sm text-muted-foreground">
-                        No hay resultados. Pruebe otro término.
-                      </div>
-                    ) : (
-                      <ul className="py-1">
-                        {searchResults.map((p) => (
-                          <li key={p.id}>
-                            <button
-                              type="button"
-                              className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 flex flex-col gap-0.5"
-                              onClick={() => handleSelectProduct(p)}
-                            >
-                              <span className="font-medium">{p.name}</span>
-                              {p.presentation ? (
-                                <span className="text-muted-foreground text-xs">
-                                  {p.presentation}
-                                </span>
-                              ) : null}
-                              {p.stock_quantity !== null && p.stock_quantity !== undefined ? (
-                                <span className="text-xs text-primary/90">
-                                  Bodega:{" "}
-                                  {
-                                    getStockDisplayInfo(
-                                      p.stock_quantity,
-                                      p.packaging,
-                                      p.presentation,
-                                    ).primary
-                                  }
-                                </span>
-                              ) : null}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            <FormMessage>{fieldState.error?.message}</FormMessage>
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={form.control}
-        name={`lines.${index}.movement_type`}
-        render={({ field, fieldState }) => (
-          <FormItem>
-            <FormLabel className="text-muted-foreground flex items-center gap-2">
-              <ArrowLeftRight className="size-4 text-primary shrink-0" aria-hidden />
-              Tipo de movimiento
-            </FormLabel>
-            <FormControl>
-              <div className="grid grid-cols-3 gap-2">
-                {MOVEMENT_TYPES.map((type) => {
-                  const active = field.value === type;
-                  const Icon = type === "in" ? ArrowDownLeft : type === "out" ? ArrowUpRight : RefreshCw;
-                  return (
-                    <Button
-                      key={type + comboboxKey}
-                      type="button"
-                      variant={active ? "default" : "outline"}
-                      className={cn(
-                        "h-auto flex-col gap-1 py-3 rounded-xl border-2 transition-all",
-                        active && type === "in" && "border-emerald-500/50 shadow-sm",
-                        active && type === "out" && "border-red-500/50 shadow-sm",
-                        active && type === "adjustment" && "border-amber-500/50 shadow-sm"
+                  {searchQuery.trim().length >= 2 ? (
+                    <div className="max-h-36 overflow-y-auto rounded-lg border border-border bg-background">
+                      {searching ? (
+                        <p className="py-3 text-center text-xs text-muted-foreground">Buscando…</p>
+                      ) : searchResults.length === 0 ? (
+                        <p className="py-3 text-center text-xs text-muted-foreground">Sin resultados</p>
+                      ) : (
+                        <ul>
+                          {searchResults.map((p) => (
+                            <li key={p.id}>
+                              <button
+                                type="button"
+                                className="w-full px-2.5 py-2 text-left hover:bg-muted/50 border-b border-border/50 last:border-0"
+                                onClick={() => handleSelectProduct(p)}
+                              >
+                                <p className="text-sm font-medium leading-snug">{p.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {productMetaLabel(p)}
+                                  {p.stock_quantity != null
+                                    ? ` · ${getStockDisplayInfo(p.stock_quantity, p.packaging).primary}`
+                                    : ""}
+                                </p>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
                       )}
-                      onClick={() => field.onChange(type)}
-                    >
-                      <Icon className="size-5" aria-hidden />
-                      <span className="text-xs font-semibold">{MOVEMENT_TYPE_LABELS[type]}</span>
-                    </Button>
-                  );
-                })}
-              </div>
-            </FormControl>
-            <FormMessage>{fieldState.error?.message}</FormMessage>
-          </FormItem>
-        )}
-      />
+                    </div>
+                  ) : null}
+                </div>
+              )}
+              <FormMessage className="text-xs">{fieldState.error?.message}</FormMessage>
+            </FormItem>
+          )}
+        />
 
-      <FormField
-        control={form.control}
-        name={`lines.${index}.quantity`}
-        render={({ fieldState }) => (
-          <FormItem>
-            <FormLabel className="text-muted-foreground flex items-center gap-2">
-              <Hash className="size-4 text-primary shrink-0" aria-hidden />
-              Cantidad
-              {entryUnit ? (
-                <span className="font-normal text-muted-foreground">
-                  (en {entryUnit.name})
-                </span>
-              ) : null}
-            </FormLabel>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex gap-1 shrink-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 rounded-lg"
-                  onClick={() => adjustQuantityStep(-1)}
-                  title="Restar 1"
-                >
-                  <Minus className="size-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 rounded-lg"
-                  onClick={() => adjustQuantityStep(1)}
-                  title="Sumar 1"
-                  disabled={atMaxOut}
-                >
-                  <Plus className="size-4" />
-                </Button>
-              </div>
-              <FormControl>
-                <Input
-                  type="number"
-                  min={0}
-                  step="any"
-                  className={cn(
-                    inputClassName,
-                    "max-w-[10rem] text-lg font-semibold tabular-nums",
-                    lineValidation?.severity === "error" &&
-                      "border-destructive ring-2 ring-destructive/25",
-                  )}
-                  value={quantityEntered === 0 ? "" : String(quantityEntered)}
-                  onChange={(e) => {
-                    const v = e.target.value.trim().replace(",", ".");
-                    if (v === "" || v === "-" || v === "." || v === "-.") {
-                      setQuantityEntered(0);
-                      return;
-                    }
-                    const n = Number(v);
-                    setQuantityEntered(Number.isFinite(n) ? Math.max(0, n) : 0);
-                  }}
-                  placeholder="0"
-                  aria-invalid={lineValidation?.severity === "error" || fieldState.invalid}
-                />
-              </FormControl>
-              {entryUnit && usesLargePackaging ? (
-                <span className="text-sm font-medium text-muted-foreground">
-                  {entryUnit.name}
-                </span>
-              ) : null}
+        {selectedProduct ? (
+          <>
+            <input
+              type="hidden"
+              {...form.register(`lines.${index}.historical_unit_cost`, { valueAsNumber: true })}
+            />
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end">
+              <FormField
+                control={form.control}
+                name={`lines.${index}.movement_type`}
+                render={({ field, fieldState }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormControl>
+                      <input
+                        type="hidden"
+                        ref={field.ref}
+                        onBlur={field.onBlur}
+                        value={typeof field.value === "string" ? field.value : "in"}
+                        onChange={(e) => field.onChange(e.target.value as MovementType)}
+                      />
+                    </FormControl>
+                    <FormLabel className="text-xs text-muted-foreground">Movimiento</FormLabel>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {MOVEMENT_TYPES.map((type) => {
+                        const active = movementType === type;
+                        const Icon =
+                          type === "in"
+                            ? ArrowDownLeft
+                            : type === "out"
+                              ? ArrowUpRight
+                              : RefreshCw;
+                        const outDisabled = type === "out" && !usesLargePackaging;
+                        return (
+                          <Button
+                            key={type + comboboxKey}
+                            type="button"
+                            variant={active ? "default" : "outline"}
+                            size="sm"
+                            disabled={outDisabled}
+                            title={
+                              outDisabled
+                                ? "Salida solo en caja/paca (configurá empaque en el producto)"
+                                : undefined
+                            }
+                            className={cn(
+                              "h-9 gap-1 rounded-lg px-2 text-xs font-semibold",
+                              active && type === "in" && "bg-emerald-600 hover:bg-emerald-600/90",
+                              active && type === "out" && "bg-red-600 hover:bg-red-600/90",
+                              active && type === "adjustment" && "bg-amber-600 hover:bg-amber-600/90",
+                            )}
+                            onClick={() => handleMovementTypeChange(type, field.onChange)}
+                          >
+                            <Icon className="size-3.5 shrink-0" />
+                            {MOVEMENT_TYPE_LABELS[type]}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <FormMessage className="text-xs">{fieldState.error?.message}</FormMessage>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name={`lines.${index}.quantity`}
+                render={({ field, fieldState }) => {
+                  const qty = readLineQuantity(field.value);
+                  const showEmpty = typeof field.value === "number" && field.value === 0;
+                  return (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel className="text-xs text-muted-foreground">
+                      Cantidad
+                      <span className="font-normal"> ({entryUnitLabel})</span>
+                    </FormLabel>
+                    <div className="flex h-9 items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-9 shrink-0 rounded-lg"
+                        onClick={() => adjustQuantityStep(-1)}
+                      >
+                        <Minus className="size-4" />
+                      </Button>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="any"
+                          ref={field.ref}
+                          className={cn(
+                            "h-9 flex-1 min-w-0 rounded-lg text-center text-base font-semibold tabular-nums",
+                            lineValidation?.severity === "error" && "border-destructive",
+                          )}
+                          value={showEmpty ? "" : String(qty)}
+                          onChange={(e) => {
+                            const v = e.target.value.trim().replace(",", ".");
+                            if (v === "" || v === "-" || v === ".") {
+                              field.onChange(0);
+                              return;
+                            }
+                            const n = Number(v);
+                            field.onChange(Number.isFinite(n) ? Math.max(0, n) : 0);
+                          }}
+                          onBlur={() => {
+                            field.onBlur();
+                            field.onChange(commitLineQuantity(readLineQuantity(field.value)));
+                          }}
+                          aria-invalid={lineValidation?.severity === "error" || fieldState.invalid}
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-9 shrink-0 rounded-lg"
+                        onClick={() => adjustQuantityStep(1)}
+                        disabled={atMaxOut}
+                      >
+                        <Plus className="size-4" />
+                      </Button>
+                    </div>
+                    <FormMessage className="text-xs">{fieldState.error?.message}</FormMessage>
+                  </FormItem>
+                  );
+                }}
+              />
             </div>
-            {selectedProduct && productId && lineValidation ? (
+
+            {showPreview && !stockLoading ? (
               <div
                 className={cn(
-                  "rounded-lg border px-3 py-2.5 text-sm",
-                  lineValidation.severity === "error" &&
-                    "border-destructive/50 bg-destructive/10 text-destructive",
-                  lineValidation.severity === "warning" &&
-                    "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200",
-                  lineValidation.severity === "ok" &&
-                    movementType === "out" &&
-                    "border-emerald-500/35 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100",
+                  "flex flex-col gap-1 rounded-lg border px-3 py-2.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-1",
+                  previewTone,
                 )}
                 role="status"
                 aria-live="polite"
               >
-                <p className="flex items-start gap-2 font-medium">
-                  {lineValidation.severity === "error" ? (
-                    <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden />
-                  ) : lineValidation.severity === "ok" && movementType === "out" ? (
-                    <CheckCircle2 className="size-4 shrink-0 mt-0.5" aria-hidden />
-                  ) : null}
-                  <span>{lineValidation.reason}</span>
-                </p>
+                <span className="text-xs text-muted-foreground sm:sr-only">Vista previa</span>
+                <span className="font-medium tabular-nums">{stockDisplay.primary}</span>
+                <ArrowRight className="hidden size-3.5 text-muted-foreground sm:block" aria-hidden />
+                <span
+                  className={cn(
+                    "font-semibold tabular-nums",
+                    movementType === "in" && "text-emerald-700 dark:text-emerald-400",
+                    movementType === "out" &&
+                      (violatesStock
+                        ? "text-destructive"
+                        : "text-foreground"),
+                    movementType === "adjustment" && "text-amber-800 dark:text-amber-400",
+                  )}
+                >
+                  {movementType === "in" && qtyLabel ? `+${qtyLabel}` : null}
+                  {movementType === "out" && qtyLabel ? `−${qtyLabel}` : null}
+                  {movementType === "adjustment" && qtyLabel ? `→ ${qtyLabel}` : null}
+                </span>
+                <ArrowRight className="hidden size-3.5 text-muted-foreground sm:block" aria-hidden />
+                <span className="text-xs text-muted-foreground sm:mr-1">Quedan</span>
+                <span
+                  className={cn(
+                    "font-bold tabular-nums",
+                    violatesStock ? "text-destructive" : "text-foreground",
+                  )}
+                >
+                  {afterLabel}
+                </span>
               </div>
             ) : null}
-            {selectedProduct && productId ? (
-              <div className="space-y-2 rounded-lg border border-border/80 bg-background/60 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span className="font-medium text-foreground">Saldo tras esta línea</span>
-                  <span
-                    className={cn(
-                      "tabular-nums font-bold text-base",
-                      linePreview.violates ? "text-destructive" : "text-foreground",
-                    )}
-                  >
-                    {balanceAfterLabel}
-                  </span>
-                </div>
-                {movementType === "out" && linePreview.balanceBefore > 0 && !linePreview.violates ? (
-                  <Progress
-                    value={Math.max(0, linePreview.balanceAfter)}
-                    max={Math.max(linePreview.balanceBefore, 1)}
-                    className="h-2 bg-muted"
-                  />
-                ) : null}
-              </div>
-            ) : null}
-            <FormMessage>{fieldState.error?.message}</FormMessage>
-          </FormItem>
-        )}
-      />
 
-      {selectedProduct ? (
-        <FormField
-          control={form.control}
-          name={`lines.${index}.historical_unit_cost`}
-          render={({ field }) => (
-            <FormItem className="mb-0">
-              <FormControl>
-                <input
-                  type="hidden"
-                  ref={field.ref}
-                  onBlur={field.onBlur}
-                  onChange={(e) => field.onChange(Number(e.target.value))}
-                  value={Number(field.value ?? 0)}
-                />
-              </FormControl>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/25 px-3 py-2.5 text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <CircleDollarSign className="size-4 shrink-0 text-primary/80" aria-hidden />
-                  Costo unitario (referencia)
+            {lineValidation?.severity === "error" || lineValidation?.severity === "warning" ? (
+              <p
+                className={cn(
+                  "flex items-start gap-1.5 text-xs leading-snug",
+                  lineValidation.severity === "error" ? "text-destructive" : "text-amber-800 dark:text-amber-300",
+                )}
+              >
+                <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
+                {lineValidation.reason}
+              </p>
+            ) : null}
+
+            <p className="text-[11px] text-muted-foreground text-right">
+              Costo ref. {formatCop(Number(unitCost ?? 0))}
+              {packagingLabel ? (
+                <span className="ml-2">· Empaque: {packagingLabel}</span>
+              ) : null}
+              {usesLargePackaging && movementType === "out" ? (
+                <span className="ml-2">· Movimiento en {entryUnitLabel}</span>
+              ) : null}
+              {usesLargePackaging ? (
+                <span className="ml-2 block sm:inline">
+                  · 1 {entryUnitLabel} = 1 unidad de stock (el ×70 no se usa en el cálculo)
                 </span>
-                <span className="font-semibold tabular-nums text-foreground">
-                  {formatCop(Number(field.value ?? 0))}
-                </span>
-              </div>
-            </FormItem>
-          )}
-        />
-      ) : null}
+              ) : null}
+            </p>
+          </>
+        ) : null}
       </div>
     </div>
   );

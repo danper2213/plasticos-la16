@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "supabase": "supabase",
     "db:push": "supabase db push",
     "db:reset": "supabase db reset"
@@ -50,6 +52,7 @@
     "eslint-config-next": "16.1.6",
     "supabase": "^2.19.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }
