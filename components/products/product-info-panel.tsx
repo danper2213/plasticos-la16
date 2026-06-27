@@ -10,7 +10,9 @@ export const productCardStyles = {
     "border-b border-border/70 bg-muted/30 px-5 py-4 dark:bg-muted/20",
   body: "flex flex-col gap-3 p-5",
   footer:
-    "flex justify-end gap-1.5 border-t border-border/70 bg-muted/20 px-5 py-3 dark:bg-muted/15",
+    "flex items-center justify-end border-t border-border/40 bg-gradient-to-b from-transparent to-muted/20 px-4 py-2.5 backdrop-blur-[2px] sm:px-5",
+  footerToolbar:
+    "inline-flex items-center gap-0.5 rounded-xl border border-border/50 bg-background/70 p-0.5 shadow-sm dark:bg-background/40",
   label:
     "text-[10px] font-bold uppercase tracking-wider text-muted-foreground",
   value: "text-sm font-bold leading-tight text-foreground",

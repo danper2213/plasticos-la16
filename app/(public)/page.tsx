@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/server";
 import { Hero } from "@/components/public/Hero";
 import { SocialFeed, type SocialPost } from "@/components/public/SocialFeed";
@@ -62,6 +65,60 @@ interface PublicSupplierRow {
   website_url: string | null;
 }
 
+const LANDING_CATALOG_SELECT = `
+      id,
+      name,
+      presentation,
+      stock_quantity,
+      product_categories ( name )
+    `;
+
+/**
+ * Catálogo en landing: prioriza productos marcados para la web (`featured_on_landing`).
+ * Si la columna no existe en la base (migración pendiente), cae a una muestra de 12 filas.
+ */
+async function fetchLandingCatalogProducts(supabase: SupabaseClient): Promise<{
+  data: PublicProductRow[] | null;
+  error: { message?: string; code?: string } | null;
+}> {
+  const featured = await supabase
+    .from("products")
+    .select(LANDING_CATALOG_SELECT)
+    .eq("is_active", true)
+    .eq("featured_on_landing", true)
+    .order("name", { ascending: true })
+    .limit(48);
+
+  if (!featured.error) {
+    return { data: (featured.data ?? []) as unknown as PublicProductRow[], error: null };
+  }
+
+  const msg = featured.error.message?.toLowerCase() ?? "";
+  const code = (featured.error as { code?: string }).code;
+  const missingFeaturedColumn =
+    code === "42703" ||
+    msg.includes("featured_on_landing") ||
+    msg.includes("does not exist") ||
+    msg.includes("column");
+
+  if (!missingFeaturedColumn) {
+    console.error("Landing products:", featured.error);
+    return { data: null, error: featured.error };
+  }
+
+  const sample = await supabase
+    .from("products")
+    .select(LANDING_CATALOG_SELECT)
+    .eq("is_active", true)
+    .order("name", { ascending: true })
+    .limit(12);
+
+  return {
+    data: (sample.data ?? []) as unknown as PublicProductRow[],
+    error: sample.error,
+  };
+}
+
 /** Eslogan sobre el video del hero (edita cuando lo tengas definido). Deja "" para ocultarlo. */
 const HERO_SLOGAN =
   "LIDERES EN CALIDAD, EXPERTOS EN SERVICIO";
@@ -86,21 +143,7 @@ export default async function HomePage() {
       .select("name")
       .order("name", { ascending: true })
       .limit(8),
-    supabase
-      .from("products")
-      .select(
-        `
-      id,
-      name,
-      presentation,
-      stock_quantity,
-      product_categories ( name )
-    `,
-      )
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      // Reducir payload inicial para mejorar tiempo de carga en móvil.
-      .limit(1500),
+    fetchLandingCatalogProducts(supabase),
     supabase
       .from("social_posts")
       .select("id, caption, media_url, media_type, created_at")
@@ -187,6 +230,23 @@ export default async function HomePage() {
       />
 
       <CatalogPreview products={products} whatsappUrl={socialSettings.whatsapp_url} />
+
+      <ScrollFadeSection className="relative -mt-4 bg-transparent pb-14 sm:-mt-6 sm:pb-20">
+        <div className={LANDING_PAGE_GUTTER}>
+          <div className="flex justify-center px-1">
+            <Link
+              href="/productos"
+              className="group inline-flex items-center gap-2.5 rounded-full border border-zinc-600/90 bg-zinc-900/50 px-6 py-3 text-sm font-semibold text-zinc-100 shadow-sm backdrop-blur-sm transition hover:border-blue-500/70 hover:bg-zinc-800/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+            >
+              Ver catálogo completo
+              <ArrowRight
+                className="size-4 shrink-0 text-blue-400 transition group-hover:translate-x-0.5 group-hover:text-blue-300"
+                aria-hidden
+              />
+            </Link>
+          </div>
+        </div>
+      </ScrollFadeSection>
 
       <SocialFeed posts={socialPosts} />
 

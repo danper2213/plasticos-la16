@@ -21,9 +21,66 @@ export function normalizeIntlOutput(value: string): string {
   return value.replace(/[\u00a0\u202f]/g, " ");
 }
 
+/** YYYY-MM-DD del calendario en Colombia (servidor o cliente). */
+export function dateOnlyColombia(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-CA", { timeZone: COLOMBIA_TZ });
+}
+
+/** Fecha de hoy en Colombia como YYYY-MM-DD. */
+export function todayDateColombia(now: Date = new Date()): string {
+  return dateOnlyColombia(now);
+}
+
+/** Fecha larga en es-CO desde YYYY-MM-DD o ISO (sin desfase por UTC). */
+export function formatDateLongEsCO(value: string | null | undefined): string {
+  if (!value) return "—";
+  const head = value.includes("T") ? dateOnlyColombia(value) : value.slice(0, 10);
+  const m = YMD.exec(head);
+  if (!m) return value;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const day = Number(m[3]);
+  const local = new Date(y, mo - 1, day);
+  const today = new Date();
+  const isToday =
+    local.getDate() === today.getDate() &&
+    local.getMonth() === today.getMonth() &&
+    local.getFullYear() === today.getFullYear();
+  if (isToday) {
+    return `Hoy · ${local.toLocaleDateString(ES_CO_LOCALE, {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })}`;
+  }
+  return local.toLocaleDateString(ES_CO_LOCALE, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 /**
- * Muestra una fecha solo-día (columna `date` o prefijo YYYY-MM-DD) en es-CO.
+ * Fecha visible del comprobante: alinea movement_date con created_at cuando
+ * hay desfase por registros viejos guardados con toISOString() (UTC).
  */
+export function resolveInventoryBatchDisplayDate(
+  movementDate: string,
+  createdAt: string | null | undefined,
+): string {
+  const movementDay = movementDate.slice(0, 10);
+  const registeredDay = createdAt ? dateOnlyColombia(createdAt) : movementDay;
+  if (registeredDay && movementDay !== registeredDay) {
+    return registeredDay;
+  }
+  return movementDay;
+}
+
+/** Muestra una fecha solo-día (columna `date` o prefijo YYYY-MM-DD) en es-CO. */
 export function formatDateOnlyEsCO(value: string | null | undefined): string {
   if (!value) return "—";
   const head = value.includes("T") ? value.slice(0, 10) : value.slice(0, 10);

@@ -13,12 +13,22 @@ import {
 import { lineStockDelta } from "@/lib/inventory-stock-delta";
 import { toStockNumber } from "@/lib/inventory-quantity";
 import { buildLinePreviews } from "@/lib/inventory-movement-preview";
+import { todayDateColombia } from "@/lib/calendar-date";
 
 function inventoryStockLog(message: string, detail?: Record<string, unknown>): string {
-  const line = detail ? `${message} ${JSON.stringify(detail)}` : message;
-  console.log(`[inventory-stock] ${line}`);
-  return line;
+  return detail ? `${message} ${JSON.stringify(detail)}` : message;
 }
+
+export type BatchLineStockImpact = {
+  movementId: string;
+  productId: string;
+  productName: string;
+  productPackaging: string | null;
+  movementType: string;
+  quantity: number;
+  stockBefore: number;
+  stockAfter: number;
+};
 
 async function countMovementsForBatch(
   supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
@@ -44,6 +54,8 @@ export interface MovementRow {
   created_at?: string;
   created_by_user_id: string | null;
   created_by_email: string | null;
+  stock_before?: number | null;
+  stock_after?: number | null;
   products:
     | { name: string; presentation: string; packaging: string | null }
     | { name: string; presentation: string; packaging: string | null }[]
@@ -87,7 +99,7 @@ export interface ProductSearchHit {
   supplier_name: string | null;
 }
 
-const MOVEMENTS_SELECT_WITH_USER = `
+const MOVEMENTS_CORE = `
   id,
   product_id,
   movement_type,
@@ -96,24 +108,77 @@ const MOVEMENTS_SELECT_WITH_USER = `
   notes,
   movement_date,
   batch_id,
-  created_at,
+  created_at
+`;
+
+const MOVEMENTS_SELECT_WITH_USER = `
+  ${MOVEMENTS_CORE},
   created_by_user_id,
   created_by_email,
   products ( name, presentation, packaging )
 `;
 
-const MOVEMENTS_SELECT_LEGACY = `
-  id,
-  product_id,
-  movement_type,
-  quantity,
-  historical_unit_cost,
-  notes,
-  movement_date,
-  batch_id,
-  created_at,
+const MOVEMENTS_SELECT_WITH_USER_SNAPSHOT = `
+  ${MOVEMENTS_CORE},
+  created_by_user_id,
+  created_by_email,
+  stock_before,
+  stock_after,
   products ( name, presentation, packaging )
 `;
+
+const MOVEMENTS_SELECT_LEGACY = `
+  ${MOVEMENTS_CORE},
+  products ( name, presentation, packaging )
+`;
+
+const BATCHES_MOVEMENTS_CORE = `
+      id,
+      product_id,
+      movement_type,
+      quantity,
+      historical_unit_cost,
+      notes,
+      movement_date,
+      batch_id,
+      created_at,
+      created_by_user_id,
+      created_by_email,
+      products ( name, presentation, packaging )
+`;
+
+const BATCHES_SELECT = `
+    id,
+    movement_date,
+    notes,
+    created_at,
+    created_by_user_id,
+    created_by_email,
+    inventory_movements (
+${BATCHES_MOVEMENTS_CORE}
+    )
+  `;
+
+const BATCHES_SELECT_LEGACY = `
+    id,
+    movement_date,
+    notes,
+    created_at,
+    created_by_user_id,
+    created_by_email,
+    inventory_movements (
+      id,
+      product_id,
+      movement_type,
+      quantity,
+      historical_unit_cost,
+      notes,
+      movement_date,
+      batch_id,
+      created_at,
+      products ( name, presentation, packaging )
+    )
+  `;
 
 function mapMovementRow(
   row: MovementRow & { batch_id?: string | null },
@@ -135,6 +200,8 @@ function mapMovementRow(
     created_at: row.created_at,
     created_by_user_id: withUserColumns ? (row.created_by_user_id ?? null) : null,
     created_by_email: withUserColumns ? (row.created_by_email ?? null) : null,
+    stock_before: row.stock_before ?? null,
+    stock_after: row.stock_after ?? null,
     product_name: name ?? "—",
     product_presentation: presentation ?? "",
     product_packaging: packaging ?? null,
@@ -258,37 +325,25 @@ export async function getInventoryBatches(options?: {
     batchIds = ids;
   }
 
-  const select = `
-    id,
-    movement_date,
-    notes,
-    created_at,
-    created_by_user_id,
-    created_by_email,
-    inventory_movements (
-      id,
-      product_id,
-      movement_type,
-      quantity,
-      historical_unit_cost,
-      notes,
-      movement_date,
-      batch_id,
-      created_at,
-      created_by_user_id,
-      created_by_email,
-      products ( name, presentation, packaging )
-    )
-  `;
+  const runBatchesQuery = (selectStr: string) => {
+    let q = supabase
+      .from("inventory_movement_batches")
+      .select(selectStr)
+      .order("created_at", { ascending: false });
+    if (options?.dateFrom) q = q.gte("movement_date", options.dateFrom);
+    if (options?.dateTo) q = q.lte("movement_date", options.dateTo);
+    if (batchIds) q = q.in("id", batchIds);
+    return q;
+  };
 
-  let q = supabase.from("inventory_movement_batches").select(select).order("created_at", { ascending: false });
-  if (options?.dateFrom) q = q.gte("movement_date", options.dateFrom);
-  if (options?.dateTo) q = q.lte("movement_date", options.dateTo);
-  if (batchIds) q = q.in("id", batchIds);
-
-  const { data, error } = await q;
+  let { data, error } = await runBatchesQuery(BATCHES_SELECT);
   if (error) {
-    console.error("getInventoryBatches error:", error);
+    const fallback = await runBatchesQuery(BATCHES_SELECT_LEGACY);
+    data = fallback.data;
+    error = fallback.error;
+  }
+  if (error) {
+    console.error("getInventoryBatches error:", error.message ?? error);
     return [];
   }
 
@@ -314,6 +369,161 @@ export async function getInventoryBatches(options?: {
       lines,
     };
   });
+}
+
+/** Reconstruye el saldo antes/después de cada línea al momento del comprobante. */
+export async function getBatchStockImpact(
+  batchId: string,
+): Promise<
+  | { success: true; lines: BatchLineStockImpact[] }
+  | { success: false; error: string }
+> {
+  if (!batchId) return { success: false, error: "Comprobante inválido" };
+
+  const { supabase } = await requireUser();
+
+  const { data: batch, error: batchErr } = await supabase
+    .from("inventory_movement_batches")
+    .select("id, created_at")
+    .eq("id", batchId)
+    .maybeSingle();
+  if (batchErr || !batch) {
+    return { success: false, error: "Comprobante no encontrado" };
+  }
+
+  const batchCreatedAt = (batch as { created_at: string }).created_at;
+
+  const { data: movements, error: movErr } = await supabase
+    .from("inventory_movements")
+    .select(MOVEMENTS_SELECT_WITH_USER_SNAPSHOT)
+    .eq("batch_id", batchId)
+    .order("created_at", { ascending: true });
+
+  let movementRows: MovementRow[] | null = (movements ?? null) as unknown as MovementRow[] | null;
+  let movementQueryErr = movErr;
+
+  if (movErr) {
+    const fallback = await supabase
+      .from("inventory_movements")
+      .select(MOVEMENTS_SELECT_WITH_USER)
+      .eq("batch_id", batchId)
+      .order("created_at", { ascending: true });
+    movementRows = (fallback.data ?? null) as unknown as MovementRow[] | null;
+    movementQueryErr = fallback.error;
+  }
+
+  if (movementQueryErr) {
+    const legacy = await supabase
+      .from("inventory_movements")
+      .select(MOVEMENTS_SELECT_LEGACY)
+      .eq("batch_id", batchId)
+      .order("created_at", { ascending: true });
+    if (legacy.error) {
+      return { success: false, error: legacy.error.message };
+    }
+    movementRows = (legacy.data ?? null) as unknown as MovementRow[] | null;
+  }
+
+  const lines = (movementRows ?? []).map((row) =>
+    mapMovementRow(row as MovementRow, true),
+  );
+  if (lines.length === 0) {
+    return { success: true, lines: [] };
+  }
+
+  const hasSnapshots = lines.every(
+    (line) => line.stock_before != null && line.stock_after != null,
+  );
+  if (hasSnapshots) {
+    return {
+      success: true,
+      lines: lines.map((line) => ({
+        movementId: line.id,
+        productId: line.product_id,
+        productName: line.product_name,
+        productPackaging: line.product_packaging,
+        movementType: line.movement_type,
+        quantity: line.quantity,
+        stockBefore: toStockNumber(line.stock_before),
+        stockAfter: toStockNumber(line.stock_after),
+      })),
+    };
+  }
+
+  const productIds = [...new Set(lines.map((l) => l.product_id))];
+
+  const { data: products, error: prodErr } = await supabase
+    .from("products")
+    .select("id, stock_quantity")
+    .in("id", productIds);
+  if (prodErr) {
+    return { success: false, error: prodErr.message };
+  }
+
+  const currentStock: Record<string, number> = {};
+  for (const p of products ?? []) {
+    const row = p as { id: string; stock_quantity: number | null };
+    currentStock[row.id] = toStockNumber(row.stock_quantity);
+  }
+
+  const { data: laterMovements, error: laterErr } = await supabase
+    .from("inventory_movements")
+    .select("product_id, movement_type, quantity, batch_id")
+    .in("product_id", productIds)
+    .gt("created_at", batchCreatedAt);
+  if (laterErr) {
+    return { success: false, error: laterErr.message };
+  }
+
+  const laterDeltaByProduct = new Map<string, number>();
+  for (const m of laterMovements ?? []) {
+    const row = m as {
+      product_id: string;
+      movement_type: string;
+      quantity: number;
+      batch_id: string | null;
+    };
+    if (row.batch_id === batchId) continue;
+    const d = lineStockDelta(row);
+    laterDeltaByProduct.set(row.product_id, (laterDeltaByProduct.get(row.product_id) ?? 0) + d);
+  }
+
+  const batchDeltaByProduct = new Map<string, number>();
+  for (const line of lines) {
+    const d = lineStockDelta(line);
+    batchDeltaByProduct.set(line.product_id, (batchDeltaByProduct.get(line.product_id) ?? 0) + d);
+  }
+
+  const stockBeforeBatch: Record<string, number> = {};
+  for (const pid of productIds) {
+    const current = currentStock[pid] ?? 0;
+    const later = laterDeltaByProduct.get(pid) ?? 0;
+    const batchDelta = batchDeltaByProduct.get(pid) ?? 0;
+    stockBeforeBatch[pid] = current - later - batchDelta;
+  }
+
+  const previews = buildLinePreviews(
+    lines.map((l) => ({
+      product_id: l.product_id,
+      movement_type: l.movement_type,
+      quantity: l.quantity,
+    })),
+    stockBeforeBatch,
+  );
+
+  return {
+    success: true,
+    lines: lines.map((line, i) => ({
+      movementId: line.id,
+      productId: line.product_id,
+      productName: line.product_name,
+      productPackaging: line.product_packaging,
+      movementType: line.movement_type,
+      quantity: line.quantity,
+      stockBefore: previews[i]?.balanceBefore ?? 0,
+      stockAfter: previews[i]?.balanceAfter ?? 0,
+    })),
+  };
 }
 
 /** Nombre de un producto por id (para mostrar en historial cuando no hay movimientos). */
@@ -627,8 +837,22 @@ export async function createMovementsBatch(data: BatchInventoryMovementFormValue
     return { success: false as const, error: stockOk.error, debugLog };
   }
 
-  const movement_date = new Date().toISOString().slice(0, 10);
+  const movement_date = todayDateColombia();
   const notes = parsed.data.global_notes?.trim() || null;
+
+  const uniqueProductIds = [...new Set(parsed.data.lines.map((l) => l.product_id))];
+  const stockByProduct: Record<string, number> = {};
+  for (const pid of uniqueProductIds) {
+    const { data: row } = await supabase
+      .from("products")
+      .select("stock_quantity")
+      .eq("id", pid)
+      .maybeSingle();
+    stockByProduct[pid] = toStockNumber(
+      (row as { stock_quantity: number | null } | null)?.stock_quantity,
+    );
+  }
+  const linePreviews = buildLinePreviews(parsed.data.lines, stockByProduct);
 
   let batchRes = await supabase
     .from("inventory_movement_batches")
@@ -698,7 +922,7 @@ export async function createMovementsBatch(data: BatchInventoryMovementFormValue
   const batchId = (batchRes.data as { id: string }).id;
   dbg("lote creado", { batchId });
 
-  const rowsWithUser = parsed.data.lines.map((line) => ({
+  const rowsWithUser = parsed.data.lines.map((line, index) => ({
     batch_id: batchId,
     product_id: line.product_id,
     movement_type: line.movement_type,
@@ -706,6 +930,8 @@ export async function createMovementsBatch(data: BatchInventoryMovementFormValue
     historical_unit_cost: line.historical_unit_cost,
     notes,
     movement_date,
+    stock_before: linePreviews[index]?.balanceBefore ?? null,
+    stock_after: linePreviews[index]?.balanceAfter ?? null,
     created_by_user_id: user.id,
     created_by_email: user.email ?? null,
   }));
@@ -718,7 +944,7 @@ export async function createMovementsBatch(data: BatchInventoryMovementFormValue
       filasYaEnLote: existingCount,
     });
     if (existingCount === 0) {
-      const rowsLegacy = parsed.data.lines.map((line) => ({
+      const rowsLegacy = parsed.data.lines.map((line, index) => ({
         batch_id: batchId,
         product_id: line.product_id,
         movement_type: line.movement_type,
@@ -726,12 +952,30 @@ export async function createMovementsBatch(data: BatchInventoryMovementFormValue
         historical_unit_cost: line.historical_unit_cost,
         notes,
         movement_date,
+        stock_before: linePreviews[index]?.balanceBefore ?? null,
+        stock_after: linePreviews[index]?.balanceAfter ?? null,
       }));
       result = await supabase.from("inventory_movements").insert(rowsLegacy);
       dbg("insert movimientos (legacy)", {
         ok: !result.error,
         error: result.error?.message ?? null,
       });
+      if (result.error) {
+        const rowsMinimal = parsed.data.lines.map((line) => ({
+          batch_id: batchId,
+          product_id: line.product_id,
+          movement_type: line.movement_type,
+          quantity: line.quantity,
+          historical_unit_cost: line.historical_unit_cost,
+          notes,
+          movement_date,
+        }));
+        result = await supabase.from("inventory_movements").insert(rowsMinimal);
+        dbg("insert movimientos (sin snapshot stock)", {
+          ok: !result.error,
+          error: result.error?.message ?? null,
+        });
+      }
     } else {
       dbg("NO reinsertamos: el lote ya tiene movimientos (evita duplicar stock)");
     }
