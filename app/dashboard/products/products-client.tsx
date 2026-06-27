@@ -6,15 +6,8 @@ import {
   buildProductsListPath,
   type ProductsListUrlState,
 } from "@/lib/products-list-url";
-import { Building2, Layers, Package } from "lucide-react";
+import { Layers, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,13 +24,10 @@ import { PriceList } from "@/components/products/price-list";
 import {
   ProductSearchBar,
 } from "@/components/products/product-search-bar";
-import {
-  ProductsFilterChips,
-  type ActiveFilterChip,
-} from "@/components/products/products-filter-chips";
+import type { ActiveFilterChip } from "@/components/products/products-filter-chips";
+import { ProductsListFilterDialog } from "@/components/products/products-list-filter-dialog";
 import { ProductsSearchHero } from "@/components/products/products-search-hero";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   buildProductsPageCacheKey,
@@ -58,12 +48,6 @@ import {
 import type { ProductsStockFilter } from "./list-types";
 
 type StockFilter = ProductsStockFilter;
-
-const STOCK_FILTERS: { value: StockFilter; label: string }[] = [
-  { value: "all", label: "Todos" },
-  { value: "no_stock", label: "Sin Stock" },
-  { value: "with_stock", label: "Con Stock" },
-];
 
 const SEARCH_DEBOUNCE_MS = 350;
 const LOADING_DELAY_MS = 150;
@@ -99,6 +83,7 @@ export function ProductsClient({
   const [productToDelete, setProductToDelete] = useState<ProductWithRelations | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [forcedSearch, setForcedSearch] = useState<string | undefined>(undefined);
+  const [listFilterOpen, setListFilterOpen] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS);
   const activeSearch = forcedSearch !== undefined ? forcedSearch : debouncedSearch;
@@ -132,7 +117,29 @@ export function ProductsClient({
       ? suppliers.find((supplier) => supplier.id === supplierFilter)?.name
       : undefined;
 
-  const activeStockLabel = STOCK_FILTERS.find((f) => f.value === stockFilter)?.label;
+  const activeStockLabel =
+    stockFilter === "no_stock"
+      ? "Sin stock"
+      : stockFilter === "with_stock"
+        ? "Con stock"
+        : undefined;
+
+  const listFilterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (supplierFilter !== "all" && activeSupplierName) parts.push(activeSupplierName);
+    if (categoryFilter !== "all" && activeCategoryName) parts.push(activeCategoryName);
+    if (stockFilter !== "all" && activeStockLabel) parts.push(activeStockLabel);
+    if (parts.length === 0) return null;
+    if (parts.length === 1) return parts[0]!;
+    return `${parts.length} filtros`;
+  }, [
+    supplierFilter,
+    activeSupplierName,
+    categoryFilter,
+    activeCategoryName,
+    stockFilter,
+    activeStockLabel,
+  ]);
 
   const isSearching = searchQuery.trim().length > 0;
 
@@ -378,6 +385,13 @@ export function ProductsClient({
     setPage(1);
   }
 
+  function clearListFilters() {
+    setSupplierFilter("all");
+    setCategoryFilter("all");
+    setStockFilter("all");
+    setPage(1);
+  }
+
   function clearAllFilters() {
     handleSearchClear();
     setSupplierFilter("all");
@@ -514,83 +528,39 @@ export function ProductsClient({
             isLoading={isLoading}
             isSearching={isSearching}
             hasActiveFilters={hasActiveFilters}
+            onOpenListFilters={() => setListFilterOpen(true)}
+            hasListFilters={hasActiveFilters}
+            listFilterLabel={listFilterSummary}
+            filterChips={filterChips}
+            onClearAllFilters={
+              filterChips.length > 1 ? clearAllFilters : undefined
+            }
           />
         </div>
 
-        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/15 px-4 py-3 dark:bg-muted/10">
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Filtrar
-              </span>
-            <Select
-              value={supplierFilter}
-              onValueChange={(value) => {
-                setSupplierFilter(value);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="h-9 w-full rounded-lg border-border/70 bg-background/80 sm:w-[180px]">
-                <div className="flex items-center gap-2 truncate">
-                  <Building2 className="size-3.5 shrink-0 text-primary" aria-hidden />
-                  <SelectValue placeholder="Proveedor" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los proveedores</SelectItem>
-                {suppliers.map((supplier) => (
-                  <SelectItem key={supplier.id} value={supplier.id}>
-                    {supplier.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={categoryFilter}
-              onValueChange={(value) => {
-                setCategoryFilter(value);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="h-9 w-full rounded-lg border-border/70 bg-background/80 sm:w-[160px]">
-                <SelectValue placeholder="Categoría" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas las categorías</SelectItem>
-                {categories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {STOCK_FILTERS.map(({ value, label }) => (
-                <Button
-                  key={value}
-                  variant={stockFilter === value ? "secondary" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-9 rounded-lg px-3 text-xs",
-                    stockFilter === value &&
-                      "bg-primary/15 text-primary ring-1 ring-primary/30",
-                  )}
-                  onClick={() => {
-                    setStockFilter(value);
-                    setPage(1);
-                  }}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <ProductsFilterChips
-            chips={filterChips}
-            onClearAll={filterChips.length > 1 ? clearAllFilters : undefined}
-          />
-        </div>
+        <ProductsListFilterDialog
+          open={listFilterOpen}
+          onOpenChange={setListFilterOpen}
+          suppliers={suppliers}
+          categories={categories}
+          supplierFilter={supplierFilter}
+          categoryFilter={categoryFilter}
+          stockFilter={stockFilter}
+          onSupplierChange={(value) => {
+            setSupplierFilter(value);
+            setPage(1);
+          }}
+          onCategoryChange={(value) => {
+            setCategoryFilter(value);
+            setPage(1);
+          }}
+          onStockChange={(value) => {
+            setStockFilter(value);
+            setPage(1);
+          }}
+          onClearListFilters={clearListFilters}
+          hasListFilters={hasActiveFilters}
+        />
 
         <PriceList
           products={listState.products}

@@ -4,25 +4,22 @@ import { useEffect, useMemo, useState } from "react";
 import { MapPinned, MessageCircle, Navigation } from "lucide-react";
 import { ScrollFadeSection } from "@/components/public/ScrollFadeSection";
 import { cn } from "@/lib/utils";
-
-const BOGOTA_TZ = "America/Bogota";
+import {
+  BUSINESS_CITY,
+  BUSINESS_CITY_REGION_COUNTRY,
+  BUSINESS_MAP_DIRECTIONS,
+  BUSINESS_MAP_EMBED,
+  BUSINESS_MAP_SEARCH,
+  BUSINESS_NEARBY_LANDMARK,
+  BUSINESS_STREET,
+  BUSINESS_TIMEZONE,
+  BUSINESS_VENUE,
+  BUSINESS_WAZE_URL,
+} from "@/lib/business-location";
 
 /** Mismo padding horizontal que `LANDING_PAGE_GUTTER`; ancho máximo pedido para esta sección. */
 const SECTION_FRAME =
   "mx-auto w-full max-w-7xl px-3 sm:px-4 lg:px-5";
-
-const STORE_MAP_EMBED =
-  "https://maps.google.com/maps?q=Pl%C3%A1sticos%20la%2016%2C%20Galeria%20La%20Concordia%2C%20Cl%2016%20%2314%20Esquina%20Local%2045%2C%20Florencia%2C%20Caquet%C3%A1&t=&z=17&ie=UTF8&iwloc=&output=embed";
-
-const STORE_MAP_SEARCH =
-  "https://www.google.com/maps/search/?api=1&query=Pl%C3%A1sticos%20la%2016%2C%20Galeria%20La%20Concordia%2C%20Cl%2016%20%2314%20Esquina%20Local%2045%2C%20Florencia%2C%20Caquet%C3%A1";
-
-const STORE_DIRECTIONS =
-  "https://www.google.com/maps/dir/?api=1&destination=Pl%C3%A1sticos%20la%2016%2C%20Galeria%20La%20Concordia%2C%20Cl%2016%20%2314%20Esquina%20Local%2045%2C%20Florencia%2C%20Caquet%C3%A1";
-
-const WAZE_URL = `https://waze.com/ul?q=${encodeURIComponent(
-  "Plásticos La 16, Galería La Concordia, Cl 16 #14 Local 45, Florencia, Caquetá",
-)}&navigate=yes`;
 
 const WEEKDAY_TO_INDEX: Record<string, number> = {
   Sun: 0,
@@ -36,7 +33,7 @@ const WEEKDAY_TO_INDEX: Record<string, number> = {
 
 function getBogotaDayAndMinutes(date: Date): { day: number; minutes: number } {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: BOGOTA_TZ,
+    timeZone: BUSINESS_TIMEZONE,
     hour: "numeric",
     minute: "numeric",
     hour12: false,
@@ -87,7 +84,7 @@ export interface LocationSectionProps {
 
 export function LocationSection({
   whatsappUrl,
-  nearbyLandmark = "la Galería La Concordia y el corredor comercial del centro de Florencia",
+  nearbyLandmark = BUSINESS_NEARBY_LANDMARK,
   className,
 }: LocationSectionProps) {
   const [openStatus, setOpenStatus] = useState<"unknown" | "open" | "closed">(
@@ -123,7 +120,7 @@ export function LocationSection({
           <div className="relative min-h-[280px] overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 shadow-lg lg:min-h-[min(520px,55vh)]">
             <iframe
               title="Mapa de Plásticos La 16"
-              src={STORE_MAP_EMBED}
+              src={BUSINESS_MAP_EMBED}
               className="absolute inset-0 h-full w-full border-0 [filter:invert(90%)_hue-rotate(180deg)_saturate(0.7)_contrast(1.06)]"
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
@@ -142,7 +139,7 @@ export function LocationSection({
                   id="location-section-title"
                   className="mt-2 text-2xl font-bold leading-tight tracking-tight text-white sm:text-3xl"
                 >
-                  Visítanos en el corazón de Florencia
+                  Visítanos en el corazón de {BUSINESS_CITY}
                 </h2>
               </div>
 
@@ -152,13 +149,13 @@ export function LocationSection({
                 </p>
                 <address className="mt-2 not-italic">
                   <p className="text-lg font-semibold leading-snug text-zinc-100 sm:text-xl">
-                    Galería La Concordia
+                    {BUSINESS_VENUE}
                   </p>
                   <p className="mt-1 text-base leading-relaxed text-zinc-300 sm:text-lg">
-                    Cl. 16 #14 esquina, Local 45
+                    {BUSINESS_STREET}
                   </p>
                   <p className="mt-1 text-sm text-zinc-400 sm:text-base">
-                    Florencia, Caquetá — Colombia
+                    {BUSINESS_CITY_REGION_COUNTRY}
                   </p>
                 </address>
               </div>
@@ -230,7 +227,7 @@ export function LocationSection({
               </p>
               <div className="flex flex-wrap gap-2.5 sm:gap-3">
                 <a
-                  href={WAZE_URL}
+                  href={BUSINESS_WAZE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex flex-1 min-w-[8.5rem] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
@@ -240,7 +237,7 @@ export function LocationSection({
                   Waze
                 </a>
                 <a
-                  href={STORE_DIRECTIONS}
+                  href={BUSINESS_MAP_DIRECTIONS}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex flex-1 min-w-[8.5rem] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
@@ -261,7 +258,7 @@ export function LocationSection({
                 </a>
               </div>
               <a
-                href={STORE_MAP_SEARCH}
+                href={BUSINESS_MAP_SEARCH}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-center text-xs font-medium text-blue-400 transition hover:text-blue-300 sm:text-left"

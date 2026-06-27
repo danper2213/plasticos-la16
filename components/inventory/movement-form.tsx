@@ -72,9 +72,17 @@ interface MovementFormProps {
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  /** Tipo de movimiento preseleccionado al abrir (p. ej. desde el hero). */
+  initialMovementType?: MovementLineFormValues["movement_type"];
 }
 
-export function MovementForm({ open, onOpenChange, onSuccess, onDirtyChange }: MovementFormProps) {
+export function MovementForm({
+  open,
+  onOpenChange,
+  onSuccess,
+  onDirtyChange,
+  initialMovementType = "in",
+}: MovementFormProps) {
   const [stockMap, setStockMap] = React.useState<Record<string, StockMapEntry>>({});
   const [activeSection, setActiveSection] = React.useState<"lines" | "notes">("lines");
   /** Con varias líneas, solo una expandida; el resto se muestra comprimido. */
@@ -163,12 +171,12 @@ export function MovementForm({ open, onOpenChange, onSuccess, onDirtyChange }: M
     submitRequestIdRef.current = crypto.randomUUID();
     form.reset({
       global_notes: "",
-      lines: [emptyLine()],
+      lines: [{ ...emptyLine(), movement_type: initialMovementType }],
     });
     setStockMap({});
     setActiveSection("lines");
     setFocusedLineIndex(0);
-  }, [open, form]);
+  }, [open, form, initialMovementType]);
 
   React.useEffect(() => {
     if (fields.length <= 1) {
@@ -228,15 +236,7 @@ export function MovementForm({ open, onOpenChange, onSuccess, onDirtyChange }: M
       ...values,
       idempotency_key: submitRequestIdRef.current ?? values.idempotency_key,
     };
-    console.group("[MovementForm] Registrar movimiento");
-    console.log("Payload enviado:", JSON.stringify(payload, null, 2));
     const result = await createMovementsBatch(payload);
-    if (result.debugLog?.length) {
-      console.log("Log del servidor (también en terminal npm run dev):");
-      result.debugLog.forEach((line) => console.log(" ", line));
-    }
-    console.log("Respuesta:", result);
-    console.groupEnd();
     if (result.success) {
       triggerSuccess();
       const n = result.count;

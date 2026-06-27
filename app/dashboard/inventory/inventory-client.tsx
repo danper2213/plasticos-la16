@@ -2,10 +2,8 @@
 
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
-import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,18 +15,22 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { MovementForm } from "@/components/inventory/movement-form";
-import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
-import { DashboardToolbar } from "@/components/layout/dashboard-toolbar";
-import { DashboardSearchBar } from "@/components/layout/dashboard-search-bar";
-import { DashboardFilterChips } from "@/components/layout/dashboard-filter-chips";
+import { InventoryMovementHero } from "@/components/inventory/inventory-movement-hero";
+import type { InventoryMovementPreset } from "@/components/inventory/inventory-movement-hero";
+import { InventoryBatchCard } from "@/components/inventory/inventory-batch-card";
+import { InventoryBatchDetailModal } from "@/components/inventory/inventory-batch-detail-modal";
+import { InventoryProductFilterDialog } from "@/components/inventory/inventory-product-filter-dialog";
+import { InventoryDateFilterDialog } from "@/components/inventory/inventory-date-filter-dialog";
+import {
+  InventoryPanel,
+  InventorySectionHeader,
+} from "@/components/inventory/inventory-ui";
 import { triggerSuccess } from "@/lib/confetti";
 import { toast } from "sonner";
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  Calendar,
   FileText,
-  Menu,
   Package,
   RefreshCw,
   Trash2,
@@ -37,9 +39,9 @@ import { formatMovementQuantityLabel } from "@/lib/inventory-stock-display";
 import { formatInventoryQuantity } from "@/lib/inventory-quantity";
 import {
   formatDateOnlyEsCO,
-  formatDateTimeNumericEsCO,
   formatTimeEsCO,
   normalizeIntlOutput,
+  todayDateColombia,
 } from "@/lib/calendar-date";
 import type { InventoryBatchWithLines, MovementWithProduct } from "./actions";
 import { deleteInventoryBatch, deleteMovement, searchProductsForMovement } from "./actions";
@@ -99,7 +101,7 @@ function MovementRowNequi({
         : "bg-amber-500/15 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400";
 
   return (
-    <div className="grid grid-cols-[auto_minmax(0,280px)_auto_auto] items-center gap-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm transition-shadow hover:shadow-md sm:gap-6">
+    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-xl border border-border/50 bg-background/40 p-3 shadow-sm backdrop-blur-sm transition-all hover:border-primary/20 hover:shadow-md sm:gap-4 sm:p-4 dark:bg-zinc-950/30">
       <div
         className={`flex size-12 shrink-0 items-center justify-center rounded-full ${iconWrap}`}
       >
@@ -150,14 +152,30 @@ function formatDate(value: string | null): string {
 
 function getDateRange(preset: "today" | "week" | "month"): { from: string; to: string } {
   const today = new Date();
-  const to = today.toISOString().slice(0, 10);
+  const to = todayDateColombia(today);
   if (preset === "today") {
     return { from: to, to };
   }
   const from = new Date(today);
   if (preset === "week") from.setDate(from.getDate() - 6);
   else from.setMonth(from.getMonth() - 1);
-  return { from: from.toISOString().slice(0, 10), to };
+  return { from: todayDateColombia(from), to };
+}
+
+function getDateFilterSummary(filterFrom?: string, filterTo?: string): string | null {
+  if (!filterFrom && !filterTo) return null;
+  const today = getDateRange("today");
+  const week = getDateRange("week");
+  const month = getDateRange("month");
+  if (filterFrom === today.from && (!filterTo || filterTo === today.to)) return "Hoy";
+  if (filterFrom === week.from && filterTo === week.to) return "Últimos 7 días";
+  if (filterFrom === month.from && filterTo === month.to) return "Últimos 30 días";
+  if (filterFrom && filterTo) {
+    return `${formatDateOnlyEsCO(filterFrom)} – ${formatDateOnlyEsCO(filterTo)}`;
+  }
+  if (filterFrom) return `Desde ${formatDateOnlyEsCO(filterFrom)}`;
+  if (filterTo) return `Hasta ${formatDateOnlyEsCO(filterTo)}`;
+  return null;
 }
 
 interface InventoryClientProps {
@@ -167,28 +185,6 @@ interface InventoryClientProps {
   filterTo?: string;
   filterProductId?: string;
   filterProductName?: string | null;
-}
-
-function formatInvoiceDateLabel(dateKey: string): string {
-  try {
-    const d = new Date(`${dateKey}T12:00:00`);
-    const today = new Date();
-    const isToday =
-      d.getDate() === today.getDate() &&
-      d.getMonth() === today.getMonth() &&
-      d.getFullYear() === today.getFullYear();
-    if (isToday) {
-      return `Hoy · ${d.toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}`;
-    }
-    return d.toLocaleDateString("es-CO", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  } catch {
-    return dateKey;
-  }
 }
 
 type DailyMovementGroup = {
@@ -240,113 +236,6 @@ function groupMovementsByDate(rows: MovementWithProduct[]): DailyMovementGroup[]
     });
 }
 
-function InventoryBatchInvoiceCard({
-  batch,
-  onDeleteLine,
-  onDeleteBatch,
-}: {
-  batch: InventoryBatchWithLines;
-  onDeleteLine: (row: MovementWithProduct) => void;
-  onDeleteBatch: (batch: InventoryBatchWithLines) => void;
-}) {
-  const [expanded, setExpanded] = React.useState(false);
-  const refShort = batch.id.replace(/-/g, "").slice(0, 10).toUpperCase();
-
-  return (
-    <article className="overflow-hidden rounded-2xl border-2 border-border bg-card shadow-sm">
-      <header className="flex flex-col gap-3 border-b border-border bg-muted/25 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="flex min-w-0 flex-1 gap-3">
-          <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
-            <FileText className="size-6" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Comprobante de inventario
-            </p>
-            <p className="text-lg font-bold text-foreground leading-tight">
-              {formatInvoiceDateLabel(batch.movement_date.slice(0, 10))}
-            </p>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">Ref. {refShort}</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end">
-          <div className="text-left text-sm text-muted-foreground sm:text-right">
-            <p>Registrado: {formatDateTimeNumericEsCO(batch.created_at)}</p>
-            {batch.created_by_email ? <p className="truncate max-w-[200px]">{batch.created_by_email}</p> : null}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="size-10 shrink-0 rounded-xl border-2"
-            onClick={() => setExpanded((e) => !e)}
-            aria-expanded={expanded}
-            aria-controls={`invoice-body-${batch.id}`}
-            title={expanded ? "Ocultar detalle" : "Ver detalle del comprobante"}
-          >
-            <Menu className="size-5" />
-            <span className="sr-only">{expanded ? "Contraer" : "Desplegar"} comprobante</span>
-          </Button>
-        </div>
-      </header>
-
-      {!expanded ? (
-        <div
-          id={`invoice-summary-${batch.id}`}
-          className="flex flex-col gap-2 border-b border-border bg-muted/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
-            <span className="text-muted-foreground">
-              {batch.lines.length} producto{batch.lines.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Usá el botón menú (arriba a la derecha) para ver líneas, notas y acciones.
-          </p>
-        </div>
-      ) : null}
-
-      {expanded ? (
-        <div id={`invoice-body-${batch.id}`}>
-          {batch.notes ? (
-            <div className="border-b border-border bg-muted/10 px-4 py-2.5 text-sm text-foreground">
-              <span className="font-medium text-muted-foreground">Notas: </span>
-              {batch.notes}
-            </div>
-          ) : null}
-          <div className="divide-y divide-border/80">
-            {batch.lines.map((row) => (
-              <div key={row.id} className="px-2 py-2 sm:px-3">
-                <MovementRowNequi
-                  row={row}
-                  onDelete={() => onDeleteLine(row)}
-                  compactMeta
-                />
-              </div>
-            ))}
-          </div>
-          <footer className="flex flex-col gap-3 border-t border-border bg-muted/15 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
-              <span className="text-muted-foreground">
-                {batch.lines.length} línea{batch.lines.length === 1 ? "" : "s"}
-              </span>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10 sm:w-auto"
-              onClick={() => onDeleteBatch(batch)}
-            >
-              Eliminar comprobante
-            </Button>
-          </footer>
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
 export function InventoryClient({
   batches,
   legacyMovements,
@@ -358,6 +247,7 @@ export function InventoryClient({
   const router = useRouter();
   const pathname = usePathname();
   const [formOpen, setFormOpen] = React.useState(false);
+  const [formInitialType, setFormInitialType] = React.useState<InventoryMovementPreset>("in");
   const [movementFormDirty, setMovementFormDirty] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [movementToDelete, setMovementToDelete] = React.useState<MovementWithProduct | null>(null);
@@ -365,6 +255,10 @@ export function InventoryClient({
   const [batchDeleteOpen, setBatchDeleteOpen] = React.useState(false);
   const [batchToDelete, setBatchToDelete] = React.useState<InventoryBatchWithLines | null>(null);
   const [isDeletingBatch, setIsDeletingBatch] = React.useState(false);
+  const [batchDetailOpen, setBatchDetailOpen] = React.useState(false);
+  const [batchDetail, setBatchDetail] = React.useState<InventoryBatchWithLines | null>(null);
+  const [productFilterOpen, setProductFilterOpen] = React.useState(false);
+  const [dateFilterOpen, setDateFilterOpen] = React.useState(false);
   const [localFrom, setLocalFrom] = React.useState(filterFrom ?? "");
   const [localTo, setLocalTo] = React.useState(filterTo ?? "");
   const [productSearchQuery, setProductSearchQuery] = React.useState("");
@@ -428,6 +322,11 @@ export function InventoryClient({
     };
   }, [productSearchQuery]);
 
+  function openRegisterForm(preset: InventoryMovementPreset = "in") {
+    setFormInitialType(preset);
+    setFormOpen(true);
+  }
+
   function handleFormSuccess() {
     router.refresh();
   }
@@ -462,6 +361,11 @@ export function InventoryClient({
     }
   }
 
+  function openBatchDetail(batch: InventoryBatchWithLines) {
+    setBatchDetail(batch);
+    setBatchDetailOpen(true);
+  }
+
   function openBatchDeleteDialog(batch: InventoryBatchWithLines) {
     setBatchToDelete(batch);
     setBatchDeleteOpen(true);
@@ -484,186 +388,76 @@ export function InventoryClient({
   }
 
   const hasDateFilter = Boolean(filterFrom || filterTo);
+  const dateFilterSummary = getDateFilterSummary(filterFrom, filterTo);
   const hasProductFilter = Boolean(filterProductId);
   const legacyDailyGroups = React.useMemo(
     () => groupMovementsByDate(legacyMovements),
     [legacyMovements]
   );
   const hasAnyData = batches.length > 0 || legacyMovements.length > 0;
+  const movementLineCount =
+    batches.reduce((sum, b) => sum + b.lines.length, 0) + legacyMovements.length;
 
   return (
     <div className="space-y-6">
-      <DashboardPageHeader
-        icon={Package}
-        title="Inventario P16"
-        description="Comprobantes por guardado (varios productos) y histórico sin comprobante."
-        actions={
-          <Button
-            onClick={() => setFormOpen(true)}
-            className="h-11 w-fit rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25 sm:w-auto"
-          >
-            + Registrar movimientos
-          </Button>
+      <InventoryMovementHero
+        batchCount={batches.length}
+        movementLineCount={movementLineCount}
+        onRegister={openRegisterForm}
+        activePreset={formOpen ? formInitialType : null}
+        onOpenProductFilter={() => setProductFilterOpen(true)}
+        hasProductFilter={hasProductFilter}
+        productFilterName={filterProductName}
+        onOpenDateFilter={() => setDateFilterOpen(true)}
+        hasDateFilter={hasDateFilter}
+        dateFilterLabel={dateFilterSummary}
+      />
+
+      <InventoryProductFilterDialog
+        open={productFilterOpen}
+        onOpenChange={setProductFilterOpen}
+        searchQuery={productSearchQuery}
+        onSearchQueryChange={setProductSearchQuery}
+        onSearchClear={() => setProductSearchQuery("")}
+        searching={productSearching}
+        results={productSearchResults}
+        buildProductFilterHref={(productId) =>
+          buildFilterUrl({ from: filterFrom, to: filterTo, productId })
         }
       />
 
-      <DashboardToolbar className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          <Package className="size-4" />
-          Comprobantes que incluyen un producto
-        </div>
-        <div className="relative max-w-md">
-          <DashboardSearchBar
-            variant="default"
-            align="start"
-            value={productSearchQuery}
-            onChange={setProductSearchQuery}
-            onClear={() => setProductSearchQuery("")}
-            onSubmit={() => undefined}
-            placeholder="Buscar producto (mín. 2 caracteres)"
-            ariaLabel="Buscar producto en comprobantes"
-          />
-          {productSearchQuery.trim().length >= 2 && (
-            <div className="absolute top-full left-0 z-10 mt-2 max-h-48 w-full min-w-[16rem] overflow-y-auto rounded-lg border border-border bg-background shadow-md">
-              {productSearching ? (
-                <div className="py-3 text-center text-sm text-muted-foreground">Buscando…</div>
-              ) : productSearchResults.length === 0 ? (
-                <div className="py-3 text-center text-sm text-muted-foreground">Sin resultados.</div>
-              ) : (
-                <ul className="py-1">
-                  {productSearchResults.map((p) => (
-                    <li key={p.id}>
-                      <Link
-                        href={buildFilterUrl({
-                          from: filterFrom,
-                          to: filterTo,
-                          productId: p.id,
-                        })}
-                        className="block px-3 py-2 text-left text-sm hover:bg-muted/50"
-                      >
-                        <span className="font-medium">{p.name}</span>
-                        {p.packaging ? (
-                          <span className="ml-1 text-muted-foreground">({p.packaging})</span>
-                        ) : null}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
-        {hasProductFilter && filterProductName ? (
-          <DashboardFilterChips
-            chips={[
-              {
-                id: "product",
-                label: filterProductName,
-                onRemove: () => {
-                  router.push(buildFilterUrl({ from: filterFrom, to: filterTo }));
-                },
-              },
-            ]}
-          />
-        ) : null}
-      </DashboardToolbar>
-
-      <DashboardToolbar className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          <Calendar className="size-4" />
-          Fecha del comprobante
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant={!hasDateFilter && !hasProductFilter ? "default" : "outline"}
-            size="sm"
-            asChild
-          >
-            <Link href={buildFilterUrl({ productId: filterProductId })}>Todo</Link>
-          </Button>
-          <Button
-            variant={filterFrom === getDateRange("today").from ? "default" : "outline"}
-            size="sm"
-            asChild
-          >
-            <Link
-              href={buildFilterUrl({
-                ...getDateRange("today"),
-                productId: filterProductId,
-              })}
-            >
-              Hoy
-            </Link>
-          </Button>
-          <Button
-            variant={filterFrom === getDateRange("week").from ? "default" : "outline"}
-            size="sm"
-            asChild
-          >
-            <Link
-              href={buildFilterUrl({
-                ...getDateRange("week"),
-                productId: filterProductId,
-              })}
-            >
-              Últimos 7 días
-            </Link>
-          </Button>
-          <Button
-            variant={filterFrom === getDateRange("month").from ? "default" : "outline"}
-            size="sm"
-            asChild
-          >
-            <Link
-              href={buildFilterUrl({
-                ...getDateRange("month"),
-                productId: filterProductId,
-              })}
-            >
-              Últimos 30 días
-            </Link>
-          </Button>
-          <form
-            className="flex flex-wrap items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              router.push(
-                buildFilterUrl({
-                  from: localFrom || undefined,
-                  to: localTo || undefined,
-                  productId: filterProductId,
-                })
-              );
-            }}
-          >
-            <Input
-              type="date"
-              className="h-9 w-40"
-              value={localFrom}
-              onChange={(e) => setLocalFrom(e.target.value)}
-              placeholder="Desde"
-            />
-            <Input
-              type="date"
-              className="h-9 w-40"
-              value={localTo}
-              onChange={(e) => setLocalTo(e.target.value)}
-              placeholder="Hasta"
-            />
-            <Button type="submit" variant="secondary" size="sm" className="h-9">
-              Aplicar
-            </Button>
-          </form>
-        </div>
-      </DashboardToolbar>
+      <InventoryDateFilterDialog
+        open={dateFilterOpen}
+        onOpenChange={setDateFilterOpen}
+        filterFrom={filterFrom}
+        filterTo={filterTo}
+        filterProductId={filterProductId}
+        localFrom={localFrom}
+        localTo={localTo}
+        onLocalFromChange={setLocalFrom}
+        onLocalToChange={setLocalTo}
+        onApplyCustomRange={() => {
+          router.push(
+            buildFilterUrl({
+              from: localFrom || undefined,
+              to: localTo || undefined,
+              productId: filterProductId,
+            }),
+          );
+        }}
+        buildFilterUrl={buildFilterUrl}
+        getDateRange={getDateRange}
+        hasDateFilter={hasDateFilter}
+        hasProductFilter={hasProductFilter}
+      />
 
       <div className="space-y-3">
         {!hasAnyData ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 py-16 text-center">
-            <div className="flex size-16 items-center justify-center rounded-full bg-muted/50 text-muted-foreground">
+          <InventoryPanel variant="dashed" className="flex flex-col items-center px-6 py-16 text-center">
+            <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-emerald-500/10 text-primary ring-1 ring-primary/15">
               <Package className="size-8" />
             </div>
-            <p className="mt-4 font-medium text-foreground">
+            <p className="mt-4 font-semibold text-foreground">
               {hasProductFilter
                 ? "No hay comprobantes que incluyan este producto"
                 : hasDateFilter
@@ -677,46 +471,48 @@ export function InventoryClient({
             </p>
             {!hasProductFilter && !hasDateFilter ? (
               <Button
-                className="mt-4 rounded-xl"
-                onClick={() => setFormOpen(true)}
+                className="mt-4 rounded-xl bg-gradient-to-r from-emerald-600 to-primary shadow-md shadow-primary/15"
+                onClick={() => openRegisterForm()}
               >
                 + Registrar movimientos
               </Button>
             ) : null}
-          </div>
+          </InventoryPanel>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-6">
             {batches.length > 0 ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <FileText className="size-4" />
-                  Comprobantes de inventario
-                </div>
-                <ul className="space-y-4">
+              <InventoryPanel className="p-5 sm:p-6">
+                <InventorySectionHeader
+                  icon={FileText}
+                  title="Comprobantes de inventario"
+                  badge={
+                    <Badge variant="secondary" className="font-normal tabular-nums">
+                      {batches.length}
+                    </Badge>
+                  }
+                  className="mb-4"
+                />
+                <ul className="space-y-3">
                   {batches.map((batch) => (
                     <li key={batch.id}>
-                      <InventoryBatchInvoiceCard
-                        batch={batch}
-                        onDeleteLine={(row) => openDeleteDialog(row)}
-                        onDeleteBatch={openBatchDeleteDialog}
-                      />
+                      <InventoryBatchCard batch={batch} onOpen={openBatchDetail} />
                     </li>
                   ))}
                 </ul>
-              </div>
+              </InventoryPanel>
             ) : null}
 
             {legacyDailyGroups.length > 0 ? (
-              <div className="space-y-3">
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-900 dark:text-amber-200/90">
+              <div className="space-y-4">
+                <InventoryPanel
+                  variant="muted"
+                  className="border-amber-500/20 bg-amber-500/[0.04] px-4 py-3 text-sm text-amber-950 dark:text-amber-200/90"
+                >
                   <strong className="font-medium">Histórico sin comprobante.</strong> Movimientos
                   registrados antes del formato factura; siguen agrupados por día.
-                </div>
+                </InventoryPanel>
                 {legacyDailyGroups.map((group) => (
-                  <section
-                    key={group.dateKey}
-                    className="rounded-2xl border border-border/70 bg-muted/10 p-4 space-y-3"
-                  >
+                  <InventoryPanel key={group.dateKey} variant="muted" className="space-y-3 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className="capitalize font-medium">
@@ -737,7 +533,7 @@ export function InventoryClient({
                         </li>
                       ))}
                     </ul>
-                  </section>
+                  </InventoryPanel>
                 ))}
               </div>
             ) : null}
@@ -828,11 +624,26 @@ export function InventoryClient({
         </AlertDialogContent>
       </AlertDialog>
 
+      <InventoryBatchDetailModal
+        open={batchDetailOpen}
+        onOpenChange={setBatchDetailOpen}
+        batch={batchDetail}
+        onDeleteLine={(row) => {
+          setBatchDetailOpen(false);
+          openDeleteDialog(row);
+        }}
+        onDeleteBatch={(batch) => {
+          setBatchDetailOpen(false);
+          openBatchDeleteDialog(batch);
+        }}
+      />
+
       <MovementForm
         open={formOpen}
         onOpenChange={setFormOpen}
         onSuccess={handleFormSuccess}
         onDirtyChange={setMovementFormDirty}
+        initialMovementType={formInitialType}
       />
     </div>
   );

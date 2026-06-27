@@ -26,6 +26,8 @@ type DashboardSearchBarProps = {
   ariaLabel?: string;
   variant?: "default" | "hero" | "sticky";
   align?: "center" | "start";
+  /** Mantiene la barra expandida (p. ej. hero de productos). */
+  alwaysExpanded?: boolean;
 };
 
 export const DashboardSearchBar = forwardRef<
@@ -41,6 +43,7 @@ export const DashboardSearchBar = forwardRef<
     ariaLabel = "Buscar",
     variant = "default",
     align = "center",
+    alwaysExpanded = false,
   },
   ref,
 ) {
@@ -51,7 +54,7 @@ export const DashboardSearchBar = forwardRef<
   const isSticky = variant === "sticky";
 
   const hasQuery = value.trim().length > 0;
-  const expanded = isSticky || focused || hasQuery;
+  const expanded = isSticky || alwaysExpanded || focused || hasQuery;
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 
@@ -100,7 +103,9 @@ export const DashboardSearchBar = forwardRef<
   const expandedMaxWidth = isSticky
     ? "max-w-3xl"
     : isHero
-      ? "max-w-xl"
+      ? alwaysExpanded
+        ? "max-w-full"
+        : "max-w-xl"
       : "max-w-md";
   const iconSize = isSticky ? "size-4" : isHero ? "size-6" : "size-5";
   const iconLeft = isSticky ? "left-3.5" : isHero ? "left-5" : "left-4";

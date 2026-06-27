@@ -305,46 +305,49 @@ export function PriceList({
                 </div>
 
                 <footer className={productCardStyles.footer}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 rounded-lg text-muted-foreground hover:bg-background/80 hover:text-foreground"
-                    aria-label="Editar producto"
-                    onClick={() => onEdit(product)}
-                  >
-                    <Pencil className="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 rounded-lg text-muted-foreground hover:bg-background/80 hover:text-foreground"
-                    aria-label="Simular precio"
-                    onClick={() => onSimulate(product)}
-                  >
-                    <Calculator className="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 rounded-lg text-muted-foreground hover:bg-background/80 hover:text-foreground"
-                    aria-label="Etiqueta QR para imprimir"
-                    asChild
-                  >
-                    <Link
-                      href={`/dashboard/products/etiqueta?id=${encodeURIComponent(product.id)}`}
+                  <div className={productCardStyles.footerToolbar}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 rounded-lg text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                      aria-label="Editar producto"
+                      onClick={() => onEdit(product)}
                     >
-                      <QrCode className="size-4" />
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    aria-label="Eliminar producto"
-                    onClick={() => onDelete(product)}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 rounded-lg text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                      aria-label="Simular precio"
+                      onClick={() => onSimulate(product)}
+                    >
+                      <Calculator className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 rounded-lg text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                      aria-label="Etiqueta QR para imprimir"
+                      asChild
+                    >
+                      <Link
+                        href={`/dashboard/products/etiqueta?id=${encodeURIComponent(product.id)}`}
+                      >
+                        <QrCode className="size-4" />
+                      </Link>
+                    </Button>
+                    <span className="mx-0.5 h-5 w-px bg-border/60" aria-hidden />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      aria-label="Eliminar producto"
+                      onClick={() => onDelete(product)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
                 </footer>
               </article>
             ))}

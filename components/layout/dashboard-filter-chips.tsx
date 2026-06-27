@@ -1,8 +1,8 @@
 "use client";
 
 import { X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export type ActiveFilterChip = {
   id: string;
@@ -22,17 +22,20 @@ export function DashboardFilterChips({
   if (chips.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-        Activos
-      </span>
+    <div
+      className="flex flex-wrap items-center gap-2 rounded-xl border border-border/40 bg-background/40 p-2 backdrop-blur-sm"
+      role="list"
+      aria-label="Filtros activos"
+    >
       {chips.map((chip) => (
-        <Badge
+        <span
           key={chip.id}
-          variant="secondary"
-          className="gap-1 rounded-lg border border-primary/20 bg-primary/10 py-1 pl-2.5 pr-1 text-xs font-medium text-foreground"
+          role="listitem"
+          className={cn(
+            "inline-flex max-w-full items-center gap-1 rounded-lg border border-primary/20 bg-primary/10 py-1 pl-2.5 pr-1 text-xs font-medium text-foreground shadow-sm shadow-primary/5",
+          )}
         >
-          {chip.label}
+          <span className="truncate">{chip.label}</span>
           <button
             type="button"
             className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-primary/15 hover:text-foreground"
@@ -41,14 +44,14 @@ export function DashboardFilterChips({
           >
             <X className="size-3" aria-hidden />
           </button>
-        </Badge>
+        </span>
       ))}
       {chips.length > 1 && onClearAll ? (
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 rounded-lg px-2 text-xs text-muted-foreground"
+          className="h-7 rounded-lg px-2.5 text-xs text-muted-foreground hover:text-foreground"
           onClick={onClearAll}
         >
           Limpiar todo
