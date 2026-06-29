@@ -3,11 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  buildProductsListPath,
   type ProductsListUrlState,
 } from "@/lib/products-list-url";
-import { Layers, Package } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,9 +31,9 @@ import {
   clearProductsListCache,
   productsPageCache,
 } from "@/lib/products-list-cache";
-import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { DashboardStickySearch } from "@/components/layout/dashboard-sticky-search";
 import { useDashboardSearchFocus } from "@/hooks/use-dashboard-search-focus";
+import { useProductsListUrlSync } from "@/hooks/use-products-list-url-sync";
 import {
   deleteProduct,
   getProductsPage,
@@ -46,6 +43,7 @@ import {
   type ProductsPageResult,
 } from "./actions";
 import type { ProductsStockFilter } from "./list-types";
+import { logProductsSearch } from "@/lib/products-search-debug";
 
 type StockFilter = ProductsStockFilter;
 
@@ -86,7 +84,8 @@ export function ProductsClient({
   const [listFilterOpen, setListFilterOpen] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS);
-  const activeSearch = forcedSearch !== undefined ? forcedSearch : debouncedSearch;
+  const activeSearchRaw = forcedSearch !== undefined ? forcedSearch : debouncedSearch;
+  const activeSearch = activeSearchRaw.trim();
 
   const skipInitialFetch = useRef(true);
   const cacheSeeded = useRef(false);
@@ -204,27 +203,22 @@ export function ProductsClient({
   ]);
 
   useEffect(() => {
-    if (forcedSearch !== undefined && forcedSearch === debouncedSearch) {
+    if (forcedSearch !== undefined && forcedSearch.trim() === debouncedSearch.trim()) {
+      logProductsSearch("forcedSearch cleared (debounce caught up)", {
+        forcedSearch,
+        debouncedSearch,
+      });
       setForcedSearch(undefined);
     }
   }, [debouncedSearch, forcedSearch]);
 
-  useEffect(() => {
-    const nextPath = buildProductsListPath({
-      search: activeSearch,
-      page,
-      stockFilter,
-      categoryId: categoryFilter,
-      supplierId: supplierFilter,
-    });
-    const currentPath =
-      typeof window !== "undefined"
-        ? `${window.location.pathname}${window.location.search}`
-        : "";
-    if (currentPath && currentPath !== nextPath) {
-      router.replace(nextPath, { scroll: false });
-    }
-  }, [activeSearch, page, stockFilter, categoryFilter, supplierFilter, router]);
+  useProductsListUrlSync({
+    search: activeSearch,
+    page,
+    stockFilter,
+    categoryId: categoryFilter,
+    supplierId: supplierFilter,
+  });
 
   useEffect(() => {
     if (cacheSeeded.current) return;
@@ -308,6 +302,17 @@ export function ProductsClient({
     let cancelled = false;
     let loadingTimer: ReturnType<typeof setTimeout> | null = null;
 
+    logProductsSearch("fetch scheduled", {
+      reqId,
+      page,
+      activeSearch,
+      filterKey,
+      filtersChanged,
+      searchQuery,
+      debouncedSearch,
+      forcedSearch,
+    });
+
     void (async () => {
       const cacheKey = buildProductsPageCacheKey({
         page,
@@ -319,10 +324,13 @@ export function ProductsClient({
       const cached = productsPageCache.get(cacheKey);
 
       if (cached) {
+        logProductsSearch("fetch cache hit", { reqId, cacheKey, totalCount: cached.totalCount });
         setListState(cached);
         setIsLoading(false);
         return;
       }
+
+      logProductsSearch("fetch start (server action)", { reqId, cacheKey });
 
       loadingTimer = setTimeout(() => {
         if (!cancelled && reqId === requestIdRef.current) {
@@ -332,11 +340,25 @@ export function ProductsClient({
 
       try {
         const result = await fetchProductsPage(page, activeSearch);
-        if (cancelled || reqId !== requestIdRef.current) return;
+        if (cancelled || reqId !== requestIdRef.current) {
+          logProductsSearch("fetch stale (ignored)", {
+            reqId,
+            currentReqId: requestIdRef.current,
+            cancelled,
+          });
+          return;
+        }
+        logProductsSearch("fetch done", {
+          reqId,
+          totalCount: result.totalCount,
+          page: result.page,
+          products: result.products.length,
+        });
         setListState(result);
         setPage(result.page);
-      } catch {
+      } catch (error) {
         if (!cancelled && reqId === requestIdRef.current) {
+          logProductsSearch("fetch error", { reqId, error });
           toast.error("No se pudo cargar la lista de productos");
         }
       } finally {
@@ -364,11 +386,13 @@ export function ProductsClient({
   ]);
 
   function handleSearchQueryChange(value: string) {
+    logProductsSearch("input change", { value, length: value.length });
     setSearchQuery(value);
     if (page !== 1) setPage(1);
   }
 
   function handleSearchClear() {
+    logProductsSearch("clear");
     setSearchQuery("");
     setForcedSearch("");
     setPage(1);
@@ -376,6 +400,7 @@ export function ProductsClient({
 
   function handleSearchSubmit() {
     const trimmed = searchQuery.trim();
+    logProductsSearch("submit (Enter / chip)", { trimmed, bypassDebounce: true });
     setForcedSearch(trimmed);
     setPage(1);
   }
@@ -488,21 +513,6 @@ export function ProductsClient({
   return (
     <>
       <div className="space-y-6">
-        <DashboardPageHeader
-          icon={Layers}
-          title="Lista de Precios"
-          description="Consulta precios, proveedores y stock de productos activos."
-          actions={
-            <Button
-              onClick={openNewProductForm}
-              className="h-11 gap-2 rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25"
-            >
-              <Package className="size-4" />
-              Nuevo Producto
-            </Button>
-          }
-        />
-
         <DashboardStickySearch visible={!heroVisible}>
           <ProductSearchBar
             ref={stickySearchBarRef}
@@ -535,6 +545,7 @@ export function ProductsClient({
             onClearAllFilters={
               filterChips.length > 1 ? clearAllFilters : undefined
             }
+            onNewProduct={openNewProductForm}
           />
         </div>
 

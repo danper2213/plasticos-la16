@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOut } from "@/app/actions/auth";
+import { useHydrated } from "@/hooks/use-hydrated";
 
 interface HeaderProps {
   userEmail: string | null;
@@ -31,11 +32,12 @@ interface HeaderProps {
 
 export function Header({ userEmail, userRole, sidebarExpanded = true, onToggleSidebar }: HeaderProps) {
   const [sheetOpen, setSheetOpen] = React.useState(false);
+  const hydrated = useHydrated();
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border/80 bg-background/90 px-4 shadow-[0_1px_0_0_hsl(var(--border)/0.35)] backdrop-blur-md supports-[backdrop-filter]:bg-background/75 dark:bg-[#121212]/92 dark:shadow-[0_1px_0_0_rgba(39,39,42,0.6)] dark:supports-[backdrop-filter]:bg-[#121212]/80 lg:gap-4 lg:px-6">
       <div className="flex shrink-0 items-center">
-        {/* Mobile menu: Sheet with Sidebar */}
+        {hydrated ? (
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
             <Button
@@ -56,6 +58,19 @@ export function Header({ userEmail, userRole, sidebarExpanded = true, onToggleSi
             <Sidebar userRole={userRole} variant="mobile" onNavigateClick={() => setSheetOpen(false)} />
           </SheetContent>
         </Sheet>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-slate-600 hover:bg-slate-100/90 hover:text-slate-900 lg:hidden dark:text-zinc-300 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-50"
+            aria-label="Abrir menú"
+            type="button"
+            tabIndex={-1}
+            aria-hidden
+          >
+            <Menu className="size-5" />
+          </Button>
+        )}
 
         {onToggleSidebar ? (
           <Button
@@ -78,6 +93,7 @@ export function Header({ userEmail, userRole, sidebarExpanded = true, onToggleSi
 
       <div className="flex flex-1 items-center justify-end gap-2">
         <ThemeToggle />
+        {hydrated ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -109,6 +125,19 @@ export function Header({ userEmail, userRole, sidebarExpanded = true, onToggleSi
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full text-slate-600 hover:bg-slate-100/90 hover:text-slate-900 dark:text-zinc-300 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-50"
+            aria-label="User menu"
+            type="button"
+            tabIndex={-1}
+            aria-hidden
+          >
+            <User className="size-5" />
+          </Button>
+        )}
       </div>
     </header>
   );

@@ -1,14 +1,19 @@
 "use client";
 
 import { forwardRef } from "react";
-import { motion } from "framer-motion";
-import { Barcode, Filter, ScanLine, Sparkles, Zap } from "lucide-react";
+import { Barcode, Filter, Package, ScanLine, Sparkles, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchLottie } from "@/components/ui/search-lottie";
 import {
   DashboardSearchBar,
   type DashboardSearchBarHandle,
 } from "@/components/layout/dashboard-search-bar";
+import {
+  DashboardFeatureHeroBadge,
+  DashboardFeatureHeroPanel,
+  DashboardFeatureHeroShell,
+  DashboardFeatureHeroTitle,
+} from "@/components/layout/dashboard-feature-hero-shell";
 import { cn } from "@/lib/utils";
 import {
   ProductsFilterChips,
@@ -21,6 +26,8 @@ const QUICK_SEARCHES = [
   { label: "portacomida", hint: "Nombre" },
   { label: "12oz", hint: "Tamaño" },
 ] as const;
+
+const SEARCH_EXAMPLE_TERMS = QUICK_SEARCHES.map(({ label }) => label);
 
 type ProductsSearchHeroProps = {
   searchQuery: string;
@@ -39,6 +46,7 @@ type ProductsSearchHeroProps = {
   listFilterLabel?: string | null;
   filterChips?: ActiveFilterChip[];
   onClearAllFilters?: () => void;
+  onNewProduct?: () => void;
 };
 
 function StatusPill({
@@ -70,10 +78,7 @@ function StatusPill({
 
   if (isSearching || hasActiveFilters) {
     return (
-      <motion.span
-        key="searching"
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
+      <span
         className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/15 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm shadow-primary/10"
       >
         <Zap className="size-3.5" aria-hidden />
@@ -82,7 +87,7 @@ function StatusPill({
           {isSearching ? " · por relevancia" : ""}
           {totalPages > 1 ? ` · pág. ${page}/${totalPages}` : ""}
         </span>
-      </motion.span>
+      </span>
     );
   }
 
@@ -117,6 +122,7 @@ export const ProductsSearchHero = forwardRef<DashboardSearchBarHandle, ProductsS
       listFilterLabel = null,
       filterChips = [],
       onClearAllFilters,
+      onNewProduct,
     },
     ref,
   ) {
@@ -129,71 +135,34 @@ export const ProductsSearchHero = forwardRef<DashboardSearchBarHandle, ProductsS
     }
 
     return (
-      <section
-        className="relative overflow-hidden rounded-3xl border border-primary/20 shadow-xl shadow-primary/5"
-        aria-label="Búsqueda de productos"
-      >
-        {/* Fondo animado */}
-        <div
-          className="absolute inset-0 bg-gradient-to-br from-primary/[0.14] via-background to-violet-500/[0.08] dark:from-primary/20 dark:via-zinc-950 dark:to-violet-950/30"
-          aria-hidden
-        />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.35] dark:opacity-[0.2]"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 20% 30%, hsl(var(--primary) / 0.25) 0%, transparent 45%), radial-gradient(circle at 85% 70%, rgb(139 92 246 / 0.18) 0%, transparent 40%)",
-          }}
-          aria-hidden
-        />
-        <motion.div
-          className="pointer-events-none absolute -left-24 top-1/4 size-72 rounded-full bg-primary/20 blur-3xl"
-          animate={{ x: [0, 30, 0], y: [0, -20, 0], opacity: [0.4, 0.65, 0.4] }}
-          transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-          aria-hidden
-        />
-        <motion.div
-          className="pointer-events-none absolute -right-16 bottom-0 size-64 rounded-full bg-violet-500/15 blur-3xl"
-          animate={{ x: [0, -25, 0], opacity: [0.25, 0.45, 0.25] }}
-          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-          aria-hidden
-        />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.04] dark:opacity-[0.06]"
-          style={{
-            backgroundImage:
-              "linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)",
-            backgroundSize: "32px 32px",
-          }}
-          aria-hidden
-        />
-
-        <div className="relative grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-10 lg:p-10">
-          {/* Copy + sugerencias */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-            className="text-left"
-          >
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-primary">
+      <DashboardFeatureHeroShell
+        ariaLabel="Búsqueda de productos"
+        left={
+          <>
+            <DashboardFeatureHeroBadge>
               <Sparkles className="size-3.5" aria-hidden />
               Búsqueda inteligente
-            </div>
+            </DashboardFeatureHeroBadge>
 
-            <h2 className="mt-4 text-3xl font-black leading-[1.1] tracking-tight sm:text-4xl">
-              <span className="bg-gradient-to-br from-foreground via-foreground to-primary bg-clip-text text-transparent">
-                Encuentra cualquier
-              </span>
-              <br />
-              <span className="bg-gradient-to-r from-primary via-blue-500 to-violet-500 bg-clip-text text-transparent">
-                producto al instante
-              </span>
-            </h2>
+            <DashboardFeatureHeroTitle
+              line1="Encuentra cualquier"
+              line2="producto al instante"
+            />
 
             <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
               Nombre, código de escaneo o medida. Escribí o tocá una sugerencia para empezar.
             </p>
+
+            {onNewProduct ? (
+              <Button
+                type="button"
+                onClick={onNewProduct}
+                className="mt-5 h-11 gap-2 rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25"
+              >
+                <Package className="size-4" aria-hidden />
+                Nuevo Producto
+              </Button>
+            ) : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
               {QUICK_SEARCHES.map(({ label, hint }) => (
@@ -227,81 +196,66 @@ export const ProductsSearchHero = forwardRef<DashboardSearchBarHandle, ProductsS
                 /
               </kbd>
             </p>
-          </motion.div>
-
-          {/* Panel de búsqueda */}
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
-            className="relative"
-          >
-            <div
-              className="pointer-events-none absolute -inset-1 rounded-[1.35rem] bg-gradient-to-r from-primary/40 via-blue-500/30 to-violet-500/40 opacity-60 blur-xl dark:opacity-40"
-              aria-hidden
+          </>
+        }
+        right={
+          <DashboardFeatureHeroPanel>
+            <DashboardSearchBar
+              ref={ref}
+              variant="hero"
+              align="start"
+              alwaysExpanded
+              value={searchQuery}
+              onChange={onSearchQueryChange}
+              onClear={onSearchClear}
+              onSubmit={onSearchSubmit}
+              placeholder="Buscar por nombre, código o medida…"
+              rotatingPlaceholder={SEARCH_EXAMPLE_TERMS}
+              ariaLabel="Buscar productos"
             />
-            <div className="relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-background/55 p-4 shadow-2xl shadow-primary/10 backdrop-blur-xl dark:bg-zinc-950/55 sm:p-5">
-              <div
-                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent"
-                aria-hidden
-              />
 
-              <DashboardSearchBar
-                ref={ref}
-                variant="hero"
-                align="start"
-                alwaysExpanded
-                value={searchQuery}
-                onChange={onSearchQueryChange}
-                onClear={onSearchClear}
-                onSubmit={onSearchSubmit}
-                placeholder="Buscar: portacomida, j1, 12oz…"
-                ariaLabel="Buscar productos"
-              />
-
-              {showStatus ? (
-                <div className="mt-4 space-y-3" role="status" aria-live="polite">
-                  <div className="flex flex-wrap items-center justify-start gap-2">
-                    <StatusPill
-                      isLoading={isLoading}
-                      isSearching={isSearching}
-                      hasActiveFilters={hasActiveFilters}
-                      totalCount={totalCount}
-                      totalPages={totalPages}
-                      page={page}
-                      totalRegistered={totalRegistered}
-                    />
-                    {onOpenListFilters ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={onOpenListFilters}
-                        className={cn(
-                          "h-8 rounded-full border-border/60 bg-background/50 px-3 text-xs backdrop-blur-sm",
-                          hasListFilters &&
-                            "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15",
-                        )}
-                      >
-                        <Filter className="size-3.5" aria-hidden />
-                        {hasListFilters
-                          ? (listFilterLabel ?? "Filtros activos")
-                          : "Filtrar lista"}
-                      </Button>
-                    ) : null}
-                  </div>
-                  {filterChips.length > 0 ? (
-                    <ProductsFilterChips
-                      chips={filterChips}
-                      onClearAll={onClearAllFilters}
-                    />
+            {showStatus ? (
+              <div className="mt-4 space-y-3" role="status" aria-live="polite">
+                <div className="flex flex-wrap items-center justify-start gap-2">
+                  <StatusPill
+                    isLoading={isLoading}
+                    isSearching={isSearching}
+                    hasActiveFilters={hasActiveFilters}
+                    totalCount={totalCount}
+                    totalPages={totalPages}
+                    page={page}
+                    totalRegistered={totalRegistered}
+                  />
+                  {onOpenListFilters ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={onOpenListFilters}
+                      className={cn(
+                        "h-8 rounded-full border-border/60 bg-background/50 px-3 text-xs backdrop-blur-sm",
+                        hasListFilters &&
+                          "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15",
+                      )}
+                    >
+                      <Filter className="size-3.5" aria-hidden />
+                      {hasListFilters
+                        ? (listFilterLabel ?? "Filtros activos")
+                        : "Filtrar lista"}
+                    </Button>
                   ) : null}
                 </div>
-              ) : null}
-            </div>
-          </motion.div>
-        </div>
-      </section>
+                {filterChips.length > 0 ? (
+                  <ProductsFilterChips
+                    chips={filterChips}
+                    onClearAll={onClearAllFilters}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+          </DashboardFeatureHeroPanel>
+        }
+      />
     );
   },
 );

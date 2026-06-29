@@ -29,9 +29,11 @@ import { triggerSuccess } from "@/lib/confetti";
 import { toast } from "sonner";
 import {
   ArrowDownLeft,
+  ArrowLeftRight,
   ArrowUpRight,
   FileText,
   Package,
+  Plus,
   RefreshCw,
   Trash2,
 } from "lucide-react";
@@ -48,6 +50,8 @@ import { deleteInventoryBatch, deleteMovement, searchProductsForMovement } from 
 import type { ProductSearchHit } from "./actions";
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 import { useNavigationGuardRegistration } from "@/components/layout/navigation-guard";
+import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
+import type { ActiveFilterChip } from "@/components/layout/dashboard-filter-chips";
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   in: "Entrada",
@@ -390,6 +394,45 @@ export function InventoryClient({
   const hasDateFilter = Boolean(filterFrom || filterTo);
   const dateFilterSummary = getDateFilterSummary(filterFrom, filterTo);
   const hasProductFilter = Boolean(filterProductId);
+  const hasActiveFilters = hasDateFilter || hasProductFilter;
+
+  const filterChips = React.useMemo((): ActiveFilterChip[] => {
+    const chips: ActiveFilterChip[] = [];
+    if (hasProductFilter && filterProductId) {
+      chips.push({
+        id: "product",
+        label: filterProductName?.trim()
+          ? `Producto: ${filterProductName.trim()}`
+          : "Producto filtrado",
+        onRemove: () =>
+          router.push(buildFilterUrl({ from: filterFrom, to: filterTo })),
+      });
+    }
+    if (hasDateFilter) {
+      chips.push({
+        id: "date",
+        label: dateFilterSummary ? `Fecha: ${dateFilterSummary}` : "Rango de fechas",
+        onRemove: () =>
+          router.push(buildFilterUrl({ productId: filterProductId })),
+      });
+    }
+    return chips;
+  }, [
+    hasProductFilter,
+    filterProductId,
+    filterProductName,
+    hasDateFilter,
+    dateFilterSummary,
+    filterFrom,
+    filterTo,
+    router,
+    pathname,
+  ]);
+
+  function clearAllFilters() {
+    router.push(pathname);
+  }
+
   const legacyDailyGroups = React.useMemo(
     () => groupMovementsByDate(legacyMovements),
     [legacyMovements]
@@ -400,6 +443,21 @@ export function InventoryClient({
 
   return (
     <div className="space-y-6">
+      <DashboardPageHeader
+        icon={ArrowLeftRight}
+        title="Inventario"
+        description="Registrá entradas, salidas y ajustes. Cada guardado queda como comprobante con stock en cajas."
+        actions={
+          <Button
+            onClick={() => openRegisterForm()}
+            className="h-11 gap-2 rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25"
+          >
+            <Plus className="size-4" />
+            Registrar movimientos
+          </Button>
+        }
+      />
+
       <InventoryMovementHero
         batchCount={batches.length}
         movementLineCount={movementLineCount}
@@ -411,6 +469,9 @@ export function InventoryClient({
         onOpenDateFilter={() => setDateFilterOpen(true)}
         hasDateFilter={hasDateFilter}
         dateFilterLabel={dateFilterSummary}
+        filterChips={filterChips}
+        onClearAllFilters={filterChips.length > 1 ? clearAllFilters : undefined}
+        hasActiveFilters={hasActiveFilters}
       />
 
       <InventoryProductFilterDialog
@@ -454,7 +515,7 @@ export function InventoryClient({
       <div className="space-y-3">
         {!hasAnyData ? (
           <InventoryPanel variant="dashed" className="flex flex-col items-center px-6 py-16 text-center">
-            <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-emerald-500/10 text-primary ring-1 ring-primary/15">
+            <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-violet-500/10 text-primary ring-1 ring-primary/15">
               <Package className="size-8" />
             </div>
             <p className="mt-4 font-semibold text-foreground">
@@ -471,7 +532,7 @@ export function InventoryClient({
             </p>
             {!hasProductFilter && !hasDateFilter ? (
               <Button
-                className="mt-4 rounded-xl bg-gradient-to-r from-emerald-600 to-primary shadow-md shadow-primary/15"
+                className="mt-4 rounded-xl bg-primary shadow-md shadow-primary/15 hover:bg-primary/92"
                 onClick={() => openRegisterForm()}
               >
                 + Registrar movimientos

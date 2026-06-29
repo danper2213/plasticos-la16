@@ -157,6 +157,22 @@
   );
 }
 
+/* Barra de búsqueda hero: brillo que recorre el campo */
+@keyframes search-bar-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-bar-shimmer-track {
+    display: none;
+  }
+}
+
 /* Landing pública: textura sutil sobre gradientes (modo oscuro) */
 .landing-noise-overlay {
   pointer-events: none;

@@ -11,6 +11,7 @@ import {
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SearchBarTypewriterPlaceholder } from "@/components/ui/search-bar-typewriter-placeholder";
 import { cn } from "@/lib/utils";
 
 export type DashboardSearchBarHandle = {
@@ -23,6 +24,8 @@ type DashboardSearchBarProps = {
   onClear: () => void;
   onSubmit: () => void;
   placeholder?: string;
+  /** Ejemplos que rotan en el placeholder cuando el campo está vacío. */
+  rotatingPlaceholder?: readonly string[];
   ariaLabel?: string;
   variant?: "default" | "hero" | "sticky";
   align?: "center" | "start";
@@ -40,6 +43,7 @@ export const DashboardSearchBar = forwardRef<
     onClear,
     onSubmit,
     placeholder = "Buscar…",
+    rotatingPlaceholder,
     ariaLabel = "Buscar",
     variant = "default",
     align = "center",
@@ -57,6 +61,8 @@ export const DashboardSearchBar = forwardRef<
   const expanded = isSticky || alwaysExpanded || focused || hasQuery;
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
+  const showAnimatedPlaceholder =
+    Boolean(rotatingPlaceholder?.length) && expanded && !hasQuery && !focused;
 
   useImperativeHandle(
     ref,
@@ -133,6 +139,7 @@ export const DashboardSearchBar = forwardRef<
                   "w-full border-primary/35 bg-primary/[0.08] shadow-md shadow-primary/10 ring-2 ring-primary/20 dark:bg-primary/[0.14]",
                   isHero && "rounded-2xl ring-primary/25",
                   isSticky && "rounded-lg bg-muted/80 dark:bg-muted/50",
+                  showAnimatedPlaceholder && isHero && "ring-primary/30",
                 )
               : cn(
                   "cursor-pointer border-border/70 bg-muted/70 hover:border-primary/30 hover:bg-muted/90 hover:shadow-md hover:shadow-primary/5 dark:bg-muted/50 dark:hover:bg-muted/65",
@@ -142,6 +149,14 @@ export const DashboardSearchBar = forwardRef<
           )}
           onClick={handleContainerClick}
         >
+          {showAnimatedPlaceholder && isHero ? (
+            <div
+              className="search-bar-shimmer-track pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit] motion-reduce:hidden"
+              aria-hidden
+            >
+              <div className="absolute inset-y-0 w-1/3 animate-[search-bar-shimmer_2.8s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-primary/12 to-transparent" />
+            </div>
+          ) : null}
           <Search
             className={cn(
               "pointer-events-none absolute top-1/2 z-10 -translate-y-1/2 text-primary transition-all duration-300 ease-out motion-reduce:transition-none",
@@ -159,14 +174,17 @@ export const DashboardSearchBar = forwardRef<
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder={showAnimatedPlaceholder ? " " : placeholder}
             tabIndex={expanded ? 0 : -1}
             className={cn(
               barHeight,
               "border-0 shadow-none transition-all duration-300 ease-out focus-visible:ring-0 motion-reduce:transition-none",
               expanded
                 ? cn(
-                    "w-full bg-transparent opacity-100 placeholder:text-muted-foreground/80",
+                    "relative z-[1] w-full bg-transparent opacity-100",
+                    showAnimatedPlaceholder
+                      ? "placeholder:text-transparent"
+                      : "placeholder:text-muted-foreground/80",
                     inputPadding,
                   )
                 : "pointer-events-none w-0 min-w-0 bg-transparent p-0 opacity-0",
@@ -176,6 +194,20 @@ export const DashboardSearchBar = forwardRef<
             aria-keyshortcuts="/ Control+/ Control+Shift+K"
             autoComplete="off"
           />
+          {showAnimatedPlaceholder ? (
+            <div
+              className={cn(
+                "pointer-events-none absolute top-1/2 z-[5] flex -translate-y-1/2 items-center truncate text-muted-foreground/80",
+                isSticky ? "left-10 pr-10 text-sm" : isHero ? "left-14 pr-12 text-base" : "left-12 pr-11 text-base",
+              )}
+              aria-hidden
+            >
+              <SearchBarTypewriterPlaceholder
+                terms={rotatingPlaceholder ?? []}
+                termClassName="text-foreground/80"
+              />
+            </div>
+          ) : null}
           {expanded && hasQuery ? (
             <Button
               type="button"

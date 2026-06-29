@@ -1,19 +1,28 @@
 "use client";
 
-import { motion } from "framer-motion";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Calendar,
   ClipboardList,
   FileText,
   Filter,
-  Plus,
   RefreshCw,
   Search,
   Sparkles,
-  Calendar,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DashboardFeatureHeroBadge,
+  DashboardFeatureHeroPanel,
+  DashboardFeatureHeroShell,
+  DashboardFeatureHeroTitle,
+} from "@/components/layout/dashboard-feature-hero-shell";
+import {
+  DashboardFilterChips,
+  type ActiveFilterChip,
+} from "@/components/layout/dashboard-filter-chips";
 import { cn } from "@/lib/utils";
 
 export type InventoryMovementPreset = "in" | "out" | "adjustment";
@@ -23,31 +32,28 @@ const QUICK_ACTIONS: Array<{
   label: string;
   hint: string;
   icon: typeof ArrowDownLeft;
-  styles: string;
+  activeRing: string;
 }> = [
   {
     type: "in",
     label: "Entrada",
-    hint: "Ingreso a bodega",
+    hint: "Ingreso",
     icon: ArrowDownLeft,
-    styles:
-      "hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:shadow-emerald-500/10 data-[active=true]:border-emerald-500/50 data-[active=true]:bg-emerald-500/15 data-[active=true]:ring-emerald-500/25",
+    activeRing: "border-emerald-500/50 bg-emerald-500/15 ring-emerald-500/25",
   },
   {
     type: "out",
     label: "Salida",
-    hint: "Egreso de bodega",
+    hint: "Egreso",
     icon: ArrowUpRight,
-    styles:
-      "hover:border-red-500/40 hover:bg-red-500/10 hover:shadow-red-500/10 data-[active=true]:border-red-500/50 data-[active=true]:bg-red-500/15 data-[active=true]:ring-red-500/25",
+    activeRing: "border-red-500/50 bg-red-500/15 ring-red-500/25",
   },
   {
     type: "adjustment",
     label: "Ajuste",
-    hint: "Corrección de stock",
+    hint: "Corrección",
     icon: RefreshCw,
-    styles:
-      "hover:border-amber-500/40 hover:bg-amber-500/10 hover:shadow-amber-500/10 data-[active=true]:border-amber-500/50 data-[active=true]:bg-amber-500/15 data-[active=true]:ring-amber-500/25",
+    activeRing: "border-amber-500/50 bg-amber-500/15 ring-amber-500/25",
   },
 ];
 
@@ -62,6 +68,9 @@ type InventoryMovementHeroProps = {
   onOpenDateFilter?: () => void;
   hasDateFilter?: boolean;
   dateFilterLabel?: string | null;
+  filterChips?: ActiveFilterChip[];
+  onClearAllFilters?: () => void;
+  hasActiveFilters?: boolean;
 };
 
 export function InventoryMovementHero({
@@ -75,75 +84,34 @@ export function InventoryMovementHero({
   onOpenDateFilter,
   hasDateFilter = false,
   dateFilterLabel = null,
+  filterChips = [],
+  onClearAllFilters,
+  hasActiveFilters = false,
 }: InventoryMovementHeroProps) {
+  const hasListFilters = hasProductFilter || hasDateFilter;
+
   return (
-    <section
-      className="relative overflow-hidden rounded-3xl border border-primary/20 shadow-xl shadow-primary/5"
-      aria-label="Registrar movimientos de inventario"
-    >
-      <div
-        className="absolute inset-0 bg-gradient-to-br from-emerald-500/[0.08] via-background to-primary/[0.12] dark:from-emerald-950/30 dark:via-zinc-950 dark:to-primary/20"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.35] dark:opacity-[0.2]"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 15% 40%, rgb(16 185 129 / 0.2) 0%, transparent 42%), radial-gradient(circle at 88% 65%, hsl(var(--primary) / 0.22) 0%, transparent 40%)",
-        }}
-        aria-hidden
-      />
-      <motion.div
-        className="pointer-events-none absolute -left-20 top-1/3 size-72 rounded-full bg-emerald-500/15 blur-3xl"
-        animate={{ x: [0, 25, 0], y: [0, -15, 0], opacity: [0.35, 0.55, 0.35] }}
-        transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
-        aria-hidden
-      />
-      <motion.div
-        className="pointer-events-none absolute -right-12 bottom-0 size-60 rounded-full bg-primary/15 blur-3xl"
-        animate={{ x: [0, -20, 0], opacity: [0.2, 0.4, 0.2] }}
-        transition={{ duration: 11, repeat: Infinity, ease: "easeInOut" }}
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.04] dark:opacity-[0.06]"
-        style={{
-          backgroundImage:
-            "linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)",
-          backgroundSize: "32px 32px",
-        }}
-        aria-hidden
-      />
-
-      <div className="relative grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-10 lg:p-10">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-          className="text-left"
-        >
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+    <DashboardFeatureHeroShell
+      ariaLabel="Registrar movimientos de inventario"
+      left={
+        <>
+          <DashboardFeatureHeroBadge>
             <Sparkles className="size-3.5" aria-hidden />
-            Comprobante de inventario
-          </div>
+            Control de inventario
+          </DashboardFeatureHeroBadge>
 
-          <h2 className="mt-4 text-3xl font-black leading-[1.1] tracking-tight sm:text-4xl">
-            <span className="bg-gradient-to-br from-foreground via-foreground to-emerald-600 bg-clip-text text-transparent dark:to-emerald-400">
-              Registrá entradas,
-            </span>
-            <br />
-            <span className="bg-gradient-to-r from-emerald-600 via-primary to-blue-500 bg-clip-text text-transparent dark:from-emerald-400">
-              salidas o ajustes
-            </span>
-          </h2>
+          <DashboardFeatureHeroTitle
+            line1="Registrá entradas,"
+            line2="salidas o ajustes"
+          />
 
           <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
             Cada guardado genera un comprobante con uno o varios productos. Elegí el tipo de
-            movimiento o empezá directo.
+            movimiento o usá el botón del encabezado.
           </p>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            {QUICK_ACTIONS.map(({ type, label, hint, icon: Icon, styles }) => (
+            {QUICK_ACTIONS.map(({ type, label, hint, icon: Icon, activeRing }) => (
               <button
                 key={type}
                 type="button"
@@ -151,13 +119,12 @@ export function InventoryMovementHero({
                 onClick={() => onRegister(type)}
                 className={cn(
                   "group inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition-all",
-                  "border-border/60 bg-background/60 backdrop-blur-sm hover:shadow-md",
-                  "data-[active=true]:ring-1",
-                  styles,
+                  "border-border/60 bg-background/60 backdrop-blur-sm hover:border-primary/40 hover:bg-primary/10 hover:shadow-md hover:shadow-primary/10",
+                  activePreset === type && cn("ring-1", activeRing),
                 )}
               >
                 <Icon
-                  className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground group-data-[active=true]:text-foreground"
+                  className="size-3.5 shrink-0 text-primary/70 group-hover:text-primary"
                   aria-hidden
                 />
                 <span className="font-medium text-foreground">{label}</span>
@@ -172,52 +139,37 @@ export function InventoryMovementHero({
             <ClipboardList className="size-3.5 shrink-0" aria-hidden />
             Podés agregar varias líneas en un solo comprobante
           </p>
-        </motion.div>
+        </>
+      }
+      right={
+        <DashboardFeatureHeroPanel>
+          <div className="flex flex-col gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Historial y filtros
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Filtrá comprobantes por producto o fecha. El stock se actualiza al registrar.
+              </p>
+            </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.5, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
-          className="relative"
-        >
-          <div
-            className="pointer-events-none absolute -inset-1 rounded-[1.35rem] bg-gradient-to-r from-emerald-500/35 via-primary/30 to-blue-500/35 opacity-60 blur-xl dark:opacity-40"
-            aria-hidden
-          />
-          <div className="relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-background/55 p-5 shadow-2xl shadow-primary/10 backdrop-blur-xl dark:bg-zinc-950/55 sm:p-6">
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent"
-              aria-hidden
-            />
-
-            <div className="flex flex-col gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Nuevo movimiento
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Abrí el formulario, cargá productos y guardá. El stock se actualiza al instante.
-                </p>
-              </div>
-
-              <Button
-                type="button"
-                size="lg"
-                onClick={() => onRegister()}
-                className="h-14 w-full rounded-xl border-0 bg-gradient-to-r from-emerald-600 to-primary text-base font-bold text-primary-foreground shadow-lg shadow-emerald-500/20 hover:from-emerald-600/92 hover:to-primary/92 hover:shadow-xl hover:shadow-emerald-500/25"
-              >
-                <Plus className="size-5" aria-hidden />
-                Registrar movimientos
-              </Button>
-
-              <div className="flex flex-wrap items-center gap-2" role="status">
-                <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm">
-                  <FileText className="size-3.5 shrink-0 text-primary" aria-hidden />
+            <div className="space-y-3" role="status" aria-live="polite">
+              <div className="flex flex-wrap items-center justify-start gap-2">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs backdrop-blur-sm",
+                    hasActiveFilters
+                      ? "border-primary/30 bg-primary/15 font-semibold text-primary shadow-sm shadow-primary/10"
+                      : "border-border/60 bg-background/50 text-muted-foreground",
+                  )}
+                >
+                  <Zap className="size-3.5" aria-hidden />
                   <span className="tabular-nums">
                     {batchCount} comprobante{batchCount === 1 ? "" : "s"}
                     {movementLineCount > 0
                       ? ` · ${movementLineCount} línea${movementLineCount === 1 ? "" : "s"}`
                       : ""}
+                    {hasActiveFilters ? " · filtrado" : ""}
                   </span>
                 </span>
                 {onOpenDateFilter ? (
@@ -233,7 +185,7 @@ export function InventoryMovementHero({
                     )}
                   >
                     <Calendar className="size-3.5" aria-hidden />
-                    {hasDateFilter ? (dateFilterLabel ?? "Fecha filtrada") : "Filtrar por fecha"}
+                    {hasDateFilter ? (dateFilterLabel ?? "Fecha") : "Filtrar por fecha"}
                   </Button>
                 ) : null}
                 {onOpenProductFilter ? (
@@ -251,21 +203,30 @@ export function InventoryMovementHero({
                     {hasProductFilter ? (
                       <>
                         <Filter className="size-3.5" aria-hidden />
-                        {productFilterName ?? "Producto filtrado"}
+                        {productFilterName ?? "Producto"}
                       </>
                     ) : (
                       <>
                         <Search className="size-3.5" aria-hidden />
-                        Buscar por producto
+                        Filtrar por producto
                       </>
                     )}
                   </Button>
                 ) : null}
               </div>
+
+              {filterChips.length > 0 ? (
+                <DashboardFilterChips chips={filterChips} onClearAll={onClearAllFilters} />
+              ) : hasListFilters ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <FileText className="size-3.5 shrink-0 text-primary/70" aria-hidden />
+                  Filtros activos en el listado
+                </div>
+              ) : null}
             </div>
           </div>
-        </motion.div>
-      </div>
-    </section>
+        </DashboardFeatureHeroPanel>
+      }
+    />
   );
 }
