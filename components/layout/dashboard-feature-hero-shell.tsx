@@ -7,6 +7,8 @@ type DashboardFeatureHeroShellProps = {
   ariaLabel: string;
   left: ReactNode;
   right: ReactNode;
+  /** Fila opcional bajo el grid principal (métricas, etc.). */
+  below?: ReactNode;
 };
 
 /** Fondo y layout del hero de búsqueda / acciones (Lista de Precios, Inventario, etc.). */
@@ -14,6 +16,7 @@ export function DashboardFeatureHeroShell({
   ariaLabel,
   left,
   right,
+  below,
 }: DashboardFeatureHeroShellProps) {
   return (
     <section
@@ -73,6 +76,17 @@ export function DashboardFeatureHeroShell({
           {right}
         </motion.div>
       </div>
+
+      {below ? (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
+          className="relative border-t border-primary/10 px-6 pb-6 pt-6 sm:px-8 lg:px-10"
+        >
+          {below}
+        </motion.div>
+      ) : null}
     </section>
   );
 }

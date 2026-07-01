@@ -47,19 +47,19 @@ export function MonthPaginator({ basePath = DEFAULT_BASE_PATH }: MonthPaginatorP
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:justify-start">
       <Button
         variant="outline"
         size="sm"
         onClick={goToPrev}
         aria-label="Mes anterior"
-        className="border-border hover:border-primary/50 hover:bg-primary/10"
+        className="h-9 rounded-xl border-border/60 bg-background/60 backdrop-blur-sm hover:border-primary/40 hover:bg-primary/10"
       >
         <ChevronLeft className="size-4" />
-        <span className="ml-1 hidden sm:inline">Mes anterior</span>
+        <span className="ml-1 hidden sm:inline">Anterior</span>
       </Button>
 
-      <span className="min-w-[140px] text-center text-sm font-medium text-muted-foreground">
+      <span className="min-w-[9rem] rounded-full border border-border/60 bg-background/50 px-3 py-1.5 text-center text-xs font-semibold tabular-nums text-foreground backdrop-blur-sm sm:min-w-[10rem] sm:text-sm">
         {label}
       </span>
 
@@ -68,9 +68,9 @@ export function MonthPaginator({ basePath = DEFAULT_BASE_PATH }: MonthPaginatorP
         size="sm"
         onClick={goToNext}
         aria-label="Mes siguiente"
-        className="border-border hover:border-primary/50 hover:bg-primary/10"
+        className="h-9 rounded-xl border-border/60 bg-background/60 backdrop-blur-sm hover:border-primary/40 hover:bg-primary/10"
       >
-        <span className="mr-1 hidden sm:inline">Mes siguiente</span>
+        <span className="mr-1 hidden sm:inline">Siguiente</span>
         <ChevronRight className="size-4" />
       </Button>
     </div>
