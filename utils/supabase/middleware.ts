@@ -1,5 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
+
+export type MiddlewareUserRole = "admin" | "employee";
 
 /**
  * Updates Supabase auth session cookies (refresh token if needed) and returns
@@ -30,5 +33,21 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  return { response: supabaseResponse, user };
+  return { response: supabaseResponse, user, supabase };
+}
+
+export async function getMiddlewareUserRole(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<MiddlewareUserRole> {
+  const { data } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (data?.role === "admin" || data?.role === "employee") {
+    return data.role;
+  }
+  return "employee";
 }

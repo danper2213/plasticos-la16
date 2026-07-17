@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { createClient } from "@/utils/supabase/server";
+import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
 
 type SitemapProductRow = {
   slug: string;
@@ -26,9 +27,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("products")
+    .from(PUBLIC_PRODUCTS_TABLE)
     .select("slug, updated_at")
-    .eq("is_active", true)
     .not("slug", "is", null)
     .order("updated_at", { ascending: false });
 

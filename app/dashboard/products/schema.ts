@@ -41,3 +41,11 @@ export const productSchema = z.object({
   });
 
 export type ProductFormValues = z.input<typeof productSchema>;
+
+export const productIdSchema = z.string().uuid("Identificador de producto no válido");
+
+export const categoryNameSchema = z
+  .string()
+  .trim()
+  .min(1, "El nombre de la categoría es obligatorio")
+  .max(100, "El nombre no puede superar 100 caracteres");

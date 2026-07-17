@@ -8,11 +8,11 @@ import { cn } from "@/lib/utils";
 import type { PublicSocialSettings } from "@/utils/public-settings";
 
 const NAV_LINKS = [
-  { href: "#inicio", label: "Inicio" },
-  { href: "#quienes-somos", label: "Quiénes somos" },
-  { href: "#catalogo", label: "Catálogo" },
-  { href: "#destacados", label: "Destacados" },
-  { href: "#ubicacion", label: "Ubicación" },
+  { href: "/#inicio", label: "Inicio" },
+  { href: "/#quienes-somos", label: "Quiénes somos" },
+  { href: "/productos", label: "Catálogo" },
+  { href: "/#destacados", label: "Destacados" },
+  { href: "/#ubicacion", label: "Ubicación" },
 ] as const;
 
 interface NavbarProps {
@@ -57,7 +57,7 @@ export function Navbar({ socialSettings }: NavbarProps) {
       >
         <div className="flex items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-3.5">
           <Link
-            href="#inicio"
+            href="/"
             className="flex shrink-0 items-center gap-2 rounded-full outline-none ring-blue-600 transition hover:opacity-90 focus-visible:ring-2"
             onClick={closeMenu}
           >
@@ -75,13 +75,13 @@ export function Navbar({ socialSettings }: NavbarProps) {
 
           <div className="hidden items-center gap-8 md:flex">
             {NAV_LINKS.map((item) => (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
                 className="text-sm font-medium text-zinc-300 transition hover:text-white"
               >
                 {item.label}
-              </a>
+              </Link>
             ))}
           </div>
 
@@ -125,14 +125,14 @@ export function Navbar({ socialSettings }: NavbarProps) {
         >
           <div className="flex flex-col gap-1 rounded-2xl bg-zinc-950/50 py-2">
             {NAV_LINKS.map((item) => (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
                 className="px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800/60 hover:text-white"
                 onClick={closeMenu}
               >
                 {item.label}
-              </a>
+              </Link>
             ))}
           </div>
           <div className="mt-3 flex flex-col gap-2">

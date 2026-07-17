@@ -1,8 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/utils/supabase/require-user";
-import type { SamitClosureFormValues } from "./schema";
+import { requireAdmin } from "@/utils/supabase/require-user";
+import { samitClosureIdSchema, samitClosureSchema } from "./schema";
+
+function formatZodError(error: { issues: { message: string }[] }): string {
+  return error.issues.map((i) => i.message).join(" · ") || "Datos no válidos";
+}
 
 export interface SamitClosure {
   id: string;
@@ -19,7 +23,7 @@ export async function getSamitClosures(
   month: number,
   year: number
 ): Promise<SamitClosure[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const end = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
@@ -40,7 +44,7 @@ export async function getSamitClosures(
 
 /** Último total para sugerir saldo inicial en un registro nuevo. */
 export async function getLatestSamitTotalForSuggestion(): Promise<number> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const { data, error } = await supabase
     .from("samit_closures")
     .select("total")
@@ -52,8 +56,13 @@ export async function getLatestSamitTotalForSuggestion(): Promise<number> {
   return Number(data.total) || 0;
 }
 
-export async function createSamitClosure(data: SamitClosureFormValues) {
-  const { supabase } = await requireUser();
+export async function createSamitClosure(input: unknown) {
+  const parsed = samitClosureSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
+  const { supabase } = await requireAdmin();
   const total =
     (data.initial_balance ?? 0) + (data.sales_total ?? 0) - (data.payments_total ?? 0);
 
@@ -73,8 +82,12 @@ export async function createSamitClosure(data: SamitClosureFormValues) {
 }
 
 export async function deleteSamitClosure(id: string) {
-  const { supabase } = await requireUser();
-  const { error } = await supabase.from("samit_closures").delete().eq("id", id);
+  const parsed = samitClosureIdSchema.safeParse(id);
+  if (!parsed.success) {
+    return { success: false as const, error: "Identificador de cierre SAMIT no válido" };
+  }
+  const { supabase } = await requireAdmin();
+  const { error } = await supabase.from("samit_closures").delete().eq("id", parsed.data);
 
   if (error) {
     return { success: false as const, error: error.message };

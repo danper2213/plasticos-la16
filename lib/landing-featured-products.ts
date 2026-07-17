@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
 
 export type LandingFeaturedProduct = {
   id: string;
@@ -91,7 +92,7 @@ export async function getLandingFeaturedProducts(
 
   try {
     const { data, error } = await supabase
-      .from("products")
+      .from(PUBLIC_PRODUCTS_TABLE)
       .select(
         `
       id,
@@ -101,7 +102,6 @@ export async function getLandingFeaturedProducts(
       product_categories ( name )
     `,
       )
-      .eq("is_active", true)
       .eq("featured_on_landing", true)
       .not("image_url", "is", null)
       .order("featured_sort_order", { ascending: true })

@@ -44,18 +44,13 @@ import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 import { listUsersWithRoles, createUser, updateUserRole, deleteUser } from "./actions";
 import type { UserWithRole } from "./actions";
 import type { AppRole } from "@/utils/supabase/require-user";
-import { z } from "zod";
+import { createUserSchema } from "./schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { z } from "zod";
 
 const inputClassName =
   "rounded-lg h-10 border-input bg-background focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary transition-colors";
-
-const createUserSchema = z.object({
-  email: z.string().email("Ingrese un correo válido."),
-  password: z.string().min(6, "Mínimo 6 caracteres."),
-  role: z.enum(["admin", "employee"]),
-});
 
 type CreateUserFormValues = z.infer<typeof createUserSchema>;
 

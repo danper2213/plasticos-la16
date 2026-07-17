@@ -53,3 +53,5 @@ export const supplierSchema = z
   );
 
 export type SupplierFormValues = z.input<typeof supplierSchema>;
+
+export const supplierIdSchema = z.string().uuid("Identificador de proveedor no válido");

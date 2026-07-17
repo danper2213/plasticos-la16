@@ -10,7 +10,13 @@ import {
   applySupabaseSearchFilter,
   productListSearchFields,
 } from "@/lib/supabase-search-filter";
-import type { ProductFormValues } from "./schema";
+import { detectImageMimeFromBytes } from "@/lib/verify-upload-bytes";
+import { buildProductSlug } from "@/lib/product-slug";
+import {
+  categoryNameSchema,
+  productIdSchema,
+  productSchema,
+} from "./schema";
 import {
   PRODUCTS_PAGE_SIZE,
   type ProductsListFilters,
@@ -18,6 +24,10 @@ import {
 } from "./list-types";
 
 export type { ProductsListFilters, ProductsStockFilter } from "./list-types";
+
+function formatZodError(error: { issues: { message: string }[] }): string {
+  return error.issues.map((i) => i.message).join(" · ") || "Datos no válidos";
+}
 
 export type ProductsPageResult = {
   products: ProductWithRelations[];
@@ -471,14 +481,18 @@ export async function getCategories(): Promise<CategoryOption[]> {
 }
 
 export async function createCategory(name: string) {
-  const trimmed = name?.trim();
-  if (!trimmed) {
-    return { success: false as const, error: "El nombre de la categoría es obligatorio", id: undefined };
+  const parsed = categoryNameSchema.safeParse(name);
+  if (!parsed.success) {
+    return {
+      success: false as const,
+      error: formatZodError(parsed.error),
+      id: undefined,
+    };
   }
   const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("product_categories")
-    .insert({ name: trimmed })
+    .insert({ name: parsed.data })
     .select("id")
     .single();
 
@@ -529,6 +543,14 @@ export async function uploadProductImage(formData: FormData) {
       };
     }
 
+    const detectedMime = await detectImageMimeFromBytes(file);
+    if (!detectedMime || detectedMime !== mime) {
+      return {
+        success: false as const,
+        error: "El archivo no es una imagen válida o no coincide con su tipo declarado.",
+      };
+    }
+
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
     const ext =
       mime === "image/png"
@@ -572,7 +594,12 @@ export async function uploadProductImage(formData: FormData) {
   }
 }
 
-export async function createProduct(data: ProductFormValues) {
+export async function createProduct(input: unknown) {
+  const parsed = productSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
   const { supabase } = await requireUser();
   const imageUrl = data.image_url?.trim() || null;
   const featured =
@@ -596,21 +623,52 @@ export async function createProduct(data: ProductFormValues) {
     updated_at: nowIso,
   };
 
-  let { error } = await supabase.from("products").insert(withLanding);
+  let { data: created, error } = await supabase
+    .from("products")
+    .insert(withLanding)
+    .select("id")
+    .single();
   if (error?.message?.toLowerCase().includes("column")) {
-    const fb = await supabase.from("products").insert({ ...base, updated_at: nowIso });
+    const fb = await supabase
+      .from("products")
+      .insert({ ...base, updated_at: nowIso })
+      .select("id")
+      .single();
+    created = fb.data;
     error = fb.error;
   }
 
   if (error) {
     return { success: false as const, error: error.message };
   }
+
+  if (created?.id) {
+    const slug = buildProductSlug(data.name, data.presentation, created.id);
+    const { error: slugError } = await supabase
+      .from("products")
+      .update({ slug })
+      .eq("id", created.id);
+    if (slugError) {
+      console.error("createProduct slug:", slugError);
+    }
+  }
+
   revalidatePath("/dashboard/products");
   revalidatePath("/");
+  revalidatePath("/productos");
   return { success: true as const };
 }
 
-export async function updateProduct(id: string, data: ProductFormValues) {
+export async function updateProduct(id: string, input: unknown) {
+  const idParsed = productIdSchema.safeParse(id);
+  if (!idParsed.success) {
+    return { success: false as const, error: "Identificador de producto no válido" };
+  }
+  const parsed = productSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
   const { supabase } = await requireUser();
   const imageUrl = data.image_url?.trim() || null;
   const featured =
@@ -625,16 +683,28 @@ export async function updateProduct(id: string, data: ProductFormValues) {
     category_id: data.category_id,
     updated_at: new Date().toISOString(),
   };
+  const { data: existing } = await supabase
+    .from("products")
+    .select("slug")
+    .eq("id", idParsed.data)
+    .maybeSingle();
+
+  const slug =
+    existing?.slug && String(existing.slug).trim()
+      ? String(existing.slug).trim()
+      : buildProductSlug(data.name, data.presentation, idParsed.data);
+
   const withLanding = {
     ...base,
     image_url: imageUrl,
     featured_on_landing: featured,
     featured_sort_order: featured ? (data.featured_sort_order ?? 0) : 0,
+    slug,
   };
 
-  let { error } = await supabase.from("products").update(withLanding).eq("id", id);
+  let { error } = await supabase.from("products").update(withLanding).eq("id", idParsed.data);
   if (error?.message?.toLowerCase().includes("column")) {
-    const fb = await supabase.from("products").update(base).eq("id", id);
+    const fb = await supabase.from("products").update(base).eq("id", idParsed.data);
     error = fb.error;
   }
 
@@ -643,15 +713,21 @@ export async function updateProduct(id: string, data: ProductFormValues) {
   }
   revalidatePath("/dashboard/products");
   revalidatePath("/");
+  revalidatePath("/productos");
+  revalidatePath(`/productos/${slug}`);
   return { success: true as const };
 }
 
 export async function deleteProduct(id: string) {
+  const parsed = productIdSchema.safeParse(id);
+  if (!parsed.success) {
+    return { success: false as const, error: "Identificador de producto no válido" };
+  }
   const { supabase } = await requireUser();
   const { error } = await supabase
     .from("products")
     .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", parsed.data);
 
   if (error) {
     return { success: false as const, error: error.message };

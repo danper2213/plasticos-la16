@@ -35,3 +35,5 @@ export const customerSchema = z
   );
 
 export type CustomerFormValues = z.infer<typeof customerSchema>;
+
+export const customerIdSchema = z.string().uuid("Identificador de cliente no válido");

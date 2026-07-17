@@ -1,8 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/utils/supabase/require-user";
-import type { ClosureFormValues, ExpenseCategory } from "./schema";
+import { requireAdmin } from "@/utils/supabase/require-user";
+import { closureIdSchema, closureSchema, type ExpenseCategory } from "./schema";
+
+function formatZodError(error: { issues: { message: string }[] }): string {
+  return error.issues.map((i) => i.message).join(" · ") || "Datos no válidos";
+}
 
 export interface Closure {
   id: string;
@@ -42,7 +46,7 @@ export async function getClosures(
   month: number,
   year: number
 ): Promise<Closure[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const end = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
@@ -65,7 +69,7 @@ export async function getClosures(
 
 /** Último cierre (por fecha) para sugerir saldo inicial en un registro nuevo. */
 export async function getLatestClosureForSuggestion(): Promise<number> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const { data, error } = await supabase
     .from("daily_closures")
     .select("system_expected_balance")
@@ -82,7 +86,7 @@ export async function getMonthlyExpensesByCategory(
   month: number,
   year: number
 ): Promise<MonthlyExpenseByCategory[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const end = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
@@ -126,8 +130,13 @@ export async function getMonthlyExpensesByCategory(
   );
 }
 
-export async function createClosure(data: ClosureFormValues) {
-  const { supabase } = await requireUser();
+export async function createClosure(input: unknown) {
+  const parsed = closureSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
+  const { supabase } = await requireAdmin();
   const totalExpense = (data.expenses ?? []).reduce((s, e) => s + e.amount, 0);
   // Saldo esperado = Saldo inicial + Venta efectivo + Entradas transferencia - Gastos (se arrastra al día siguiente)
   const system_expected_balance =
@@ -179,7 +188,7 @@ export async function createClosure(data: ClosureFormValues) {
 }
 
 export async function getClosureForEdit(id: string) {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
 
   const { data: closure, error: closureError } = await supabase
     .from("daily_closures")
@@ -217,8 +226,17 @@ export async function getClosureForEdit(id: string) {
   return { success: true as const, data: payload };
 }
 
-export async function updateClosure(id: string, data: ClosureFormValues) {
-  const { supabase } = await requireUser();
+export async function updateClosure(id: string, input: unknown) {
+  const idParsed = closureIdSchema.safeParse(id);
+  if (!idParsed.success) {
+    return { success: false as const, error: "Identificador de cierre no válido" };
+  }
+  const parsed = closureSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
+  const { supabase } = await requireAdmin();
 
   const totalExpense = (data.expenses ?? []).reduce((s, e) => s + e.amount, 0);
   const system_expected_balance =
@@ -241,7 +259,7 @@ export async function updateClosure(id: string, data: ClosureFormValues) {
       difference: 0,
       notes: null,
     })
-    .eq("id", id);
+    .eq("id", idParsed.data);
 
   if (updateError) {
     return { success: false as const, error: updateError.message };
@@ -250,7 +268,7 @@ export async function updateClosure(id: string, data: ClosureFormValues) {
   const { error: deleteExpensesError } = await supabase
     .from("daily_expenses")
     .delete()
-    .eq("closure_id", id);
+    .eq("closure_id", idParsed.data);
 
   if (deleteExpensesError) {
     return { success: false as const, error: deleteExpensesError.message };
@@ -259,7 +277,7 @@ export async function updateClosure(id: string, data: ClosureFormValues) {
   const expenses = data.expenses ?? [];
   if (expenses.length > 0) {
     const rows = expenses.map((e) => ({
-      closure_id: id,
+      closure_id: idParsed.data,
       amount: e.amount,
       category: e.category,
       description: e.description?.trim() || null,
@@ -275,11 +293,15 @@ export async function updateClosure(id: string, data: ClosureFormValues) {
 }
 
 export async function deleteClosure(id: string) {
-  const { supabase } = await requireUser();
+  const parsed = closureIdSchema.safeParse(id);
+  if (!parsed.success) {
+    return { success: false as const, error: "Identificador de cierre no válido" };
+  }
+  const { supabase } = await requireAdmin();
   const { error: expensesError } = await supabase
     .from("daily_expenses")
     .delete()
-    .eq("closure_id", id);
+    .eq("closure_id", parsed.data);
 
   if (expensesError) {
     console.error("deleteClosure daily_expenses error:", expensesError);
@@ -289,7 +311,7 @@ export async function deleteClosure(id: string) {
   const { error: closureError } = await supabase
     .from("daily_closures")
     .delete()
-    .eq("id", id);
+    .eq("id", parsed.data);
 
   if (closureError) {
     return { success: false as const, error: closureError.message };

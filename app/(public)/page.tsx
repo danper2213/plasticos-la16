@@ -21,6 +21,7 @@ import {
   getPublicSocialSettings,
 } from "@/utils/public-settings";
 import { getLandingFeaturedProducts } from "@/lib/landing-featured-products";
+import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
 
 function rowsFromSupabase<T>(
   settled: PromiseSettledResult<{ data: T | null; error: { message?: string } | null }>,
@@ -46,7 +47,6 @@ interface PublicProductRow {
   id: string;
   name: string;
   presentation: string;
-  stock_quantity: number | null;
   product_categories: { name: string } | { name: string }[] | null;
 }
 
@@ -69,53 +69,32 @@ const LANDING_CATALOG_SELECT = `
       id,
       name,
       presentation,
-      stock_quantity,
       product_categories ( name )
     `;
 
 /**
- * Catálogo en landing: prioriza productos marcados para la web (`featured_on_landing`).
- * Si la columna no existe en la base (migración pendiente), cae a una muestra de 12 filas.
+ * Catálogo por categoría en landing: todos los productos activos (con o sin imagen).
+ * El catálogo completo (`/productos`) filtra solo los que tienen foto.
+ * Los destacados del carrusel usan `featured_on_landing` (`getLandingFeaturedProducts`).
  */
 async function fetchLandingCatalogProducts(supabase: SupabaseClient): Promise<{
   data: PublicProductRow[] | null;
   error: { message?: string; code?: string } | null;
 }> {
-  const featured = await supabase
-    .from("products")
+  const result = await supabase
+    .from(PUBLIC_PRODUCTS_TABLE)
     .select(LANDING_CATALOG_SELECT)
-    .eq("is_active", true)
-    .eq("featured_on_landing", true)
     .order("name", { ascending: true })
-    .limit(48);
+    .limit(1000);
 
-  if (!featured.error) {
-    return { data: (featured.data ?? []) as unknown as PublicProductRow[], error: null };
+  if (result.error) {
+    console.error("Landing products:", result.error);
+    return { data: null, error: result.error };
   }
-
-  const msg = featured.error.message?.toLowerCase() ?? "";
-  const code = (featured.error as { code?: string }).code;
-  const missingFeaturedColumn =
-    code === "42703" ||
-    msg.includes("featured_on_landing") ||
-    msg.includes("does not exist") ||
-    msg.includes("column");
-
-  if (!missingFeaturedColumn) {
-    console.error("Landing products:", featured.error);
-    return { data: null, error: featured.error };
-  }
-
-  const sample = await supabase
-    .from("products")
-    .select(LANDING_CATALOG_SELECT)
-    .eq("is_active", true)
-    .order("name", { ascending: true })
-    .limit(12);
 
   return {
-    data: (sample.data ?? []) as unknown as PublicProductRow[],
-    error: sample.error,
+    data: (result.data ?? []) as unknown as PublicProductRow[],
+    error: null,
   };
 }
 
@@ -194,12 +173,11 @@ export default async function HomePage() {
       return {
         id: row.id,
         name: row.name,
-        presentation: row.presentation,
-        stock_quantity: row.stock_quantity,
+        presentation: (row.presentation ?? "").trim(),
         category_name: categoryLabel,
       };
     })
-    .filter((row) => row.name && row.presentation);
+    .filter((row) => Boolean(row.name?.trim()));
   const socialPosts = ((socialRows ?? []) as unknown as PublicSocialPostRow[]).map(
     (row): SocialPost => ({
       id: row.id,

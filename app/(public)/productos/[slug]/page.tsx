@@ -12,6 +12,7 @@ import {
 } from "@/components/public/landing-section-styles";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/server";
+import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
 import { getPublicSocialSettings } from "@/utils/public-settings";
 
 const SITE_SUFFIX = " | PLASTICOS LA 16";
@@ -70,10 +71,9 @@ const fetchProductBySlug = cache(async (slug: string): Promise<PublicProductPage
 
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("products")
+    .from(PUBLIC_PRODUCTS_TABLE)
     .select(PRODUCT_SELECT)
     .eq("slug", normalizedSlug)
-    .eq("is_active", true)
     .maybeSingle();
 
   if (error) {
@@ -91,9 +91,8 @@ async function fetchRelatedProducts(
 ): Promise<RelatedProductRow[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("products")
+    .from(PUBLIC_PRODUCTS_TABLE)
     .select("id, name, slug, presentation, image_url, og_image")
-    .eq("is_active", true)
     .eq("category_id", categoryId)
     .neq("id", excludeId)
     .not("slug", "is", null)

@@ -1,8 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/utils/supabase/require-user";
-import type { TransactionFormValues } from "./schema";
+import { requireAdmin } from "@/utils/supabase/require-user";
+import { transactionSchema } from "./schema";
+
+function formatZodError(error: { issues: { message: string }[] }): string {
+  return error.issues.map((i) => i.message).join(" · ") || "Datos no válidos";
+}
 
 export interface BankAccount {
   id: string;
@@ -36,7 +40,7 @@ export interface TransactionWithRelations extends Omit<TransactionRow, "bank_acc
 }
 
 export async function getBankAccounts(): Promise<BankAccount[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const { data, error } = await supabase
     .from("bank_accounts")
     .select("id, name, current_balance, is_active")
@@ -50,7 +54,7 @@ export async function getBankAccounts(): Promise<BankAccount[]> {
 }
 
 export async function getFinancialCategories(): Promise<FinancialCategory[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const { data, error } = await supabase
     .from("financial_categories")
     .select("id, name")
@@ -64,7 +68,7 @@ export async function getFinancialCategories(): Promise<FinancialCategory[]> {
 }
 
 export async function getDailyTransactions(): Promise<TransactionWithRelations[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const { data, error } = await supabase
     .from("daily_transactions")
     .select(
@@ -109,8 +113,13 @@ export async function getDailyTransactions(): Promise<TransactionWithRelations[]
   });
 }
 
-export async function createTransaction(data: TransactionFormValues) {
-  const { supabase } = await requireUser();
+export async function createTransaction(input: unknown) {
+  const parsed = transactionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
+  const { supabase } = await requireAdmin();
   const { error } = await supabase.from("daily_transactions").insert({
     bank_account_id: data.bank_account_id,
     category_id: data.category_id,

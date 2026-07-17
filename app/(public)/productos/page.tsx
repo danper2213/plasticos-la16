@@ -12,6 +12,7 @@ import {
 import { ScrollFadeSection } from "@/components/public/ScrollFadeSection";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/server";
+import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
 import { getPublicSocialSettings } from "@/utils/public-settings";
 
 export const metadata: Metadata = {
@@ -52,7 +53,7 @@ export default async function ProductosIndexPage() {
   const socialSettings = await getPublicSocialSettings();
 
   const { data, error } = await supabase
-    .from("products")
+    .from(PUBLIC_PRODUCTS_TABLE)
     .select(
       `
       id,
@@ -64,8 +65,8 @@ export default async function ProductosIndexPage() {
       product_categories ( name )
     `,
     )
-    .eq("is_active", true)
     .not("slug", "is", null)
+    .not("image_url", "is", null)
     .order("name", { ascending: true })
     .limit(400);
 
@@ -73,7 +74,10 @@ export default async function ProductosIndexPage() {
     console.error("Catálogo público:", error);
   }
 
-  const rows = ((data ?? []) as unknown as CatalogRow[]).filter((r) => Boolean(r.slug?.trim()));
+  // Solo fichas con imagen real (image_url) y slug para enlace público.
+  const rows = ((data ?? []) as unknown as CatalogRow[]).filter(
+    (r) => Boolean(r.slug?.trim()) && Boolean(r.image_url?.trim()),
+  );
 
   return (
     <main className="relative z-10 pb-24 pt-8 sm:pt-10">
@@ -90,12 +94,12 @@ export default async function ProductosIndexPage() {
           <div className={cn(LANDING_SECTION_PANEL, LANDING_SECTION_PANEL_PAD)}>
             <PublicSectionHeading size="compact">Catálogo completo</PublicSectionHeading>
             <p className="mt-3 max-w-2xl text-zinc-400">
-              Referencias activas con ficha propia. Elegí un producto para ver detalles y cotizar.
+              Productos con foto y ficha propia. Elegí uno para ver detalles y cotizar.
             </p>
 
             {rows.length === 0 ? (
               <div className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-8 text-center text-zinc-400">
-                No hay productos publicados con enlace aún. Volvé pronto o contactanos por WhatsApp.
+                No hay productos con imagen publicados aún. Volvé pronto o contactanos por WhatsApp.
               </div>
             ) : (
               <ul className="mt-8 grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

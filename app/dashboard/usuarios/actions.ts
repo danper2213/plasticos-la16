@@ -4,6 +4,15 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/utils/supabase/require-user";
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { AppRole } from "@/utils/supabase/require-user";
+import {
+  createUserSchema,
+  updateUserRoleSchema,
+  userIdSchema,
+} from "./schema";
+
+function formatZodError(error: { issues: { message: string }[] }): string {
+  return error.issues.map((i) => i.message).join(" · ") || "Datos no válidos";
+}
 
 export interface UserWithRole {
   id: string;
@@ -75,23 +84,17 @@ export type CreateUserResult =
 /**
  * Crea un usuario en Auth y le asigna rol en user_roles. Solo admin.
  */
-export async function createUser(data: {
-  email: string;
-  password: string;
-  role: AppRole;
-}): Promise<CreateUserResult> {
+export async function createUser(input: unknown): Promise<CreateUserResult> {
   await requireAdmin();
 
-  const email = data.email.trim().toLowerCase();
-  const password = data.password;
-  const role = data.role === "admin" ? "admin" : "employee";
+  const parsed = createUserSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: formatZodError(parsed.error) };
+  }
 
-  if (!email) {
-    return { success: false, error: "El correo es obligatorio." };
-  }
-  if (!password || password.length < 6) {
-    return { success: false, error: "La contraseña debe tener al menos 6 caracteres." };
-  }
+  const { email: emailRaw, password, role: roleRaw } = parsed.data;
+  const email = emailRaw.trim().toLowerCase();
+  const role = roleRaw === "admin" ? "admin" : "employee";
 
   let admin;
   try {
@@ -134,7 +137,12 @@ export async function updateUserRole(
   userId: string,
   newRole: AppRole
 ): Promise<UpdateRoleResult> {
-  const { user } = await requireAdmin();
+  const parsed = updateUserRoleSchema.safeParse({ userId, newRole });
+  if (!parsed.success) {
+    return { success: false, error: formatZodError(parsed.error) };
+  }
+
+  await requireAdmin();
 
   let admin;
   try {
@@ -145,15 +153,15 @@ export async function updateUserRole(
 
   const { data: roles } = await admin.from("user_roles").select("user_id, role");
   const admins = (roles ?? []).filter((r) => r.role === "admin");
-  const isTargetAdmin = admins.some((r) => r.user_id === userId);
-  if (isTargetAdmin && newRole === "employee" && admins.length <= 1) {
+  const isTargetAdmin = admins.some((r) => r.user_id === parsed.data.userId);
+  if (isTargetAdmin && parsed.data.newRole === "employee" && admins.length <= 1) {
     return { success: false, error: "No puede quitar el único administrador." };
   }
 
   const { error } = await admin
     .from("user_roles")
-    .update({ role: newRole })
-    .eq("user_id", userId);
+    .update({ role: parsed.data.newRole })
+    .eq("user_id", parsed.data.userId);
 
   if (error) {
     return { success: false, error: error.message };
@@ -170,9 +178,14 @@ export type DeleteUserResult = { success: true } | { success: false; error: stri
  * No permite eliminarse a sí mismo ni eliminar al último admin.
  */
 export async function deleteUser(userId: string): Promise<DeleteUserResult> {
+  const parsed = userIdSchema.safeParse(userId);
+  if (!parsed.success) {
+    return { success: false, error: "Identificador de usuario no válido." };
+  }
+
   const { user: currentUser } = await requireAdmin();
 
-  if (userId === currentUser.id) {
+  if (parsed.data === currentUser.id) {
     return { success: false, error: "No puede eliminarse a sí mismo." };
   }
 
@@ -185,17 +198,17 @@ export async function deleteUser(userId: string): Promise<DeleteUserResult> {
 
   const { data: roles } = await admin.from("user_roles").select("user_id, role");
   const admins = (roles ?? []).filter((r) => r.role === "admin");
-  const isTargetAdmin = admins.some((r) => r.user_id === userId);
+  const isTargetAdmin = admins.some((r) => r.user_id === parsed.data);
   if (isTargetAdmin && admins.length <= 1) {
     return { success: false, error: "No puede eliminar al único administrador." };
   }
 
-  const { error: roleError } = await admin.from("user_roles").delete().eq("user_id", userId);
+  const { error: roleError } = await admin.from("user_roles").delete().eq("user_id", parsed.data);
   if (roleError) {
     return { success: false, error: roleError.message };
   }
 
-  const { error: authError } = await admin.auth.admin.deleteUser(userId);
+  const { error: authError } = await admin.auth.admin.deleteUser(parsed.data);
   if (authError) {
     return { success: false, error: authError.message };
   }

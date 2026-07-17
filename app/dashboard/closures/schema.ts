@@ -33,3 +33,5 @@ export const closureSchema = z.object({
 
 export type ExpenseItemForm = z.infer<typeof expenseItemSchema>;
 export type ClosureFormValues = z.infer<typeof closureSchema>;
+
+export const closureIdSchema = z.string().uuid("Identificador de cierre no válido");

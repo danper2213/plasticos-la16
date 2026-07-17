@@ -38,3 +38,10 @@ export const paymentSchema = z.object({
 });
 
 export type PaymentFormValues = z.infer<typeof paymentSchema>;
+
+export const payableIdSchema = z.string().uuid("Identificador de cuenta por pagar no válido");
+
+export const dueDateSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de vencimiento inválida");

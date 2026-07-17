@@ -22,3 +22,5 @@ export const transactionSchema = z.object({
 });
 
 export type TransactionFormValues = z.infer<typeof transactionSchema>;
+
+export const transactionIdSchema = z.string().uuid("Identificador de movimiento no válido");

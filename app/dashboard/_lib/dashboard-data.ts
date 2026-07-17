@@ -91,7 +91,19 @@ export interface DashboardSummary {
 
 /** Summary for dashboard home: receivables, payables, out-of-stock, overdue. No bank/cash metrics. */
 export async function getDashboardSummary(): Promise<DashboardSummary> {
-  const { supabase } = await requireUser();
+  const { supabase, user } = await requireUser();
+
+  let isAdmin = false;
+  try {
+    const { data } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    isAdmin = data?.role === "admin";
+  } catch {
+    // keep false
+  }
 
   const result: DashboardSummary = {
     pendingReceivables: 0,
@@ -103,36 +115,41 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   try {
     const today = new Date().toISOString().slice(0, 10);
 
-    const [receivablesRes, payablesRes, outOfStockRes, overdueRes] = await Promise.all([
-      supabase
-        .from("accounts_receivable")
-        .select("total_amount")
-        .eq("status", "pending"),
-      supabase
-        .from("accounts_payable")
-        .select("invoice_amount")
-        .eq("status", "pending"),
-      supabase
-        .from("products")
-        .select("id", { count: "exact", head: true })
-        .not("stock_quantity", "is", null)
-        .eq("stock_quantity", 0)
-        .eq("is_active", true),
-      supabase
-        .from("accounts_payable")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending")
-        .lt("due_date", today),
-    ]);
+    const receivablesRes = await supabase
+      .from("accounts_receivable")
+      .select("total_amount")
+      .eq("status", "pending");
+
+    const outOfStockRes = await supabase
+      .from("products")
+      .select("id", { count: "exact", head: true })
+      .not("stock_quantity", "is", null)
+      .eq("stock_quantity", 0)
+      .eq("is_active", true);
 
     result.pendingReceivables = safeSum(
       (receivablesRes.data ?? []).map((r) => r.total_amount)
     );
-    result.pendingPayables = safeSum(
-      (payablesRes.data ?? []).map((r) => r.invoice_amount)
-    );
     result.outOfStockCount = outOfStockRes.count ?? 0;
-    result.overduePayablesCount = overdueRes.count ?? 0;
+
+    if (isAdmin) {
+      const [payablesRes, overdueRes] = await Promise.all([
+        supabase
+          .from("accounts_payable")
+          .select("invoice_amount")
+          .eq("status", "pending"),
+        supabase
+          .from("accounts_payable")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending")
+          .lt("due_date", today),
+      ]);
+
+      result.pendingPayables = safeSum(
+        (payablesRes.data ?? []).map((r) => r.invoice_amount)
+      );
+      result.overduePayablesCount = overdueRes.count ?? 0;
+    }
   } catch {
     // Tables may not exist; keep zeros
   }
@@ -151,15 +168,31 @@ export type RecentActivityItem = {
 
 /** Fetches latest payments and movements, merges and sorts by date desc, returns top 6. */
 export async function getRecentActivity(): Promise<RecentActivityItem[]> {
-  const { supabase } = await requireUser();
+  const { supabase, user } = await requireUser();
+
+  let isAdmin = false;
+  try {
+    const { data } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    isAdmin = data?.role === "admin";
+  } catch {
+    // keep false
+  }
 
   try {
+    const payablePaymentsQuery = isAdmin
+      ? supabase
+          .from("payable_payments")
+          .select("id, amount_paid, payment_date, accounts_payable(suppliers(name))")
+          .order("payment_date", { ascending: false })
+          .limit(5)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] });
+
     const [payablePaymentsRes, receivablePaymentsRes, inventoryRes] = await Promise.all([
-      supabase
-        .from("payable_payments")
-        .select("id, amount_paid, payment_date, accounts_payable(suppliers(name))")
-        .order("payment_date", { ascending: false })
-        .limit(5),
+      payablePaymentsQuery,
       supabase
         .from("receivable_payments")
         .select("id, amount_received, payment_date, accounts_receivable(customers(name))")

@@ -20,7 +20,6 @@ export interface PublicCatalogItem {
   name: string;
   presentation: string;
   category_name: string;
-  stock_quantity: number | null;
 }
 
 interface CatalogPreviewProps {

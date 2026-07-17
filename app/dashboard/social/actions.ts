@@ -1,8 +1,33 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { verifySocialUploadMime } from "@/lib/verify-upload-bytes";
 import { requireAdmin } from "@/utils/supabase/require-user";
 import { createAdminClient } from "@/utils/supabase/admin";
+
+const SOCIAL_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const SOCIAL_VIDEO_MAX_BYTES = 20 * 1024 * 1024;
+
+const ALLOWED_IMAGE_MIMES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+const ALLOWED_VIDEO_MIMES = new Set(["video/mp4", "video/webm"]);
+
+const socialCaptionSchema = z.string().trim().max(2000, "La leyenda es demasiado larga.");
+
+const deleteSocialPostSchema = z.object({
+  postId: z.string().uuid("Identificador de post no válido"),
+  mediaPath: z
+    .string()
+    .trim()
+    .min(1, "Ruta de media no válida")
+    .max(500, "Ruta de media no válida"),
+});
 
 export interface SocialPost {
   id: string;
@@ -55,30 +80,66 @@ export async function uploadSocialPost(formData: FormData) {
   const captionEntry = formData.get("caption");
 
   const file = fileEntry instanceof File ? fileEntry : null;
-  const caption = typeof captionEntry === "string" ? captionEntry.trim() : "";
+  const captionParsed = socialCaptionSchema.safeParse(
+    typeof captionEntry === "string" ? captionEntry : "",
+  );
 
-  if (!file) {
+  if (!captionParsed.success) {
+    return { success: false as const, error: captionParsed.error.issues[0]?.message ?? "Leyenda no válida." };
+  }
+
+  if (!file || file.size === 0) {
     return { success: false as const, error: "Debes seleccionar un archivo." };
   }
 
-  const isImage = file.type.startsWith("image/");
-  const isVideo = file.type.startsWith("video/");
+  const declaredMime = (file.type || "").toLowerCase();
+  const isImage = ALLOWED_IMAGE_MIMES.has(declaredMime);
+  const isVideo = ALLOWED_VIDEO_MIMES.has(declaredMime);
+
   if (!isImage && !isVideo) {
     return {
       success: false as const,
-      error: "Solo se permiten imágenes o videos.",
+      error: "Formato no permitido. Usá JPG, PNG, WebP, GIF, MP4 o WebM.",
     };
   }
 
+  const maxBytes = isVideo ? SOCIAL_VIDEO_MAX_BYTES : SOCIAL_IMAGE_MAX_BYTES;
+  if (file.size > maxBytes) {
+    return {
+      success: false as const,
+      error: isVideo
+        ? "El video no puede superar 20 MB."
+        : "La imagen no puede superar 5 MB.",
+    };
+  }
+
+  const mimeCheck = await verifySocialUploadMime(file, declaredMime);
+  if (!mimeCheck.ok) {
+    return { success: false as const, error: mimeCheck.error };
+  }
+
+  const ext =
+    mimeCheck.mime === "image/png"
+      ? "png"
+      : mimeCheck.mime === "image/webp"
+        ? "webp"
+        : mimeCheck.mime === "image/gif"
+          ? "gif"
+          : mimeCheck.mime === "video/webm"
+            ? "webm"
+            : mimeCheck.mime === "video/mp4"
+              ? "mp4"
+              : "jpg";
+
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
-  const uniquePath = `${user.id}/${Date.now()}-${safeName}`;
+  const uniquePath = `${user.id}/${Date.now()}-${safeName || `archivo.${ext}`}`;
 
   const { error: uploadError } = await adminSupabase.storage
     .from("social-content")
     .upload(uniquePath, file, {
       cacheControl: "3600",
       upsert: false,
-      contentType: file.type || undefined,
+      contentType: mimeCheck.mime,
     });
 
   if (uploadError) {
@@ -92,11 +153,12 @@ export async function uploadSocialPost(formData: FormData) {
     data: { publicUrl },
   } = adminSupabase.storage.from("social-content").getPublicUrl(uniquePath);
 
+  const caption = captionParsed.data;
   const basePost = {
     caption: caption || null,
     media_url: publicUrl,
     media_path: uniquePath,
-    media_type: isVideo ? "video" : "image",
+    media_type: isVideo ? ("video" as const) : ("image" as const),
   };
 
   let { error: insertError } = await adminSupabase.from("social_posts").insert({
@@ -123,13 +185,21 @@ export async function uploadSocialPost(formData: FormData) {
 }
 
 export async function deleteSocialPost(postId: string, mediaPath: string) {
+  const parsed = deleteSocialPostSchema.safeParse({ postId, mediaPath });
+  if (!parsed.success) {
+    return {
+      success: false as const,
+      error: parsed.error.issues[0]?.message ?? "Datos no válidos",
+    };
+  }
+
   await requireAdmin();
   const adminSupabase = createAdminClient();
 
   const { error: deleteDbError } = await adminSupabase
     .from("social_posts")
     .delete()
-    .eq("id", postId);
+    .eq("id", parsed.data.postId);
 
   if (deleteDbError) {
     return {
@@ -140,7 +210,7 @@ export async function deleteSocialPost(postId: string, mediaPath: string) {
 
   const { error: deleteStorageError } = await adminSupabase.storage
     .from("social-content")
-    .remove([mediaPath]);
+    .remove([parsed.data.mediaPath]);
 
   if (deleteStorageError) {
     return {

@@ -1,8 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/utils/supabase/require-user";
-import type { PayableFormValues, PaymentFormValues } from "./schema";
+import { requireAdmin } from "@/utils/supabase/require-user";
+import {
+  dueDateSchema,
+  payableIdSchema,
+  payableSchema,
+  paymentSchema,
+} from "./schema";
+
+function formatZodError(error: { issues: { message: string }[] }): string {
+  return error.issues.map((i) => i.message).join(" · ") || "Datos no válidos";
+}
 
 /** Supplier relation shape from Supabase join */
 export interface PayableSupplierRelation {
@@ -50,7 +59,7 @@ export async function getPayables(
   month: number,
   year: number
 ): Promise<PayableWithSupplier[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
@@ -117,7 +126,7 @@ export async function getPayables(
 }
 
 export async function getActiveSuppliers(): Promise<ActiveSupplierOption[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const { data, error } = await supabase
     .from("suppliers")
     .select("id, name")
@@ -144,8 +153,13 @@ function toStorageDate(value: string | null | undefined): string | null {
   return d ? `${d}T12:00:00.000Z` : null;
 }
 
-export async function createPayable(data: PayableFormValues) {
-  const { supabase } = await requireUser();
+export async function createPayable(input: unknown) {
+  const parsed = payableSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
+  const { supabase } = await requireAdmin();
   const receptionDate = toStorageDate(data.reception_date) ?? (data.reception_date?.trim().slice(0, 10) ? `${data.reception_date.trim().slice(0, 10)}T12:00:00.000Z` : "");
   const dueDate = toStorageDate(data.due_date);
 
@@ -168,8 +182,16 @@ export async function createPayable(data: PayableFormValues) {
 
 /** Actualiza solo la fecha de vencimiento (p. ej. arrastrar en el calendario). */
 export async function updatePayableDueDate(id: string, dueDate: string) {
-  const { supabase } = await requireUser();
-  const stored = toStorageDate(dueDate);
+  const idParsed = payableIdSchema.safeParse(id);
+  if (!idParsed.success) {
+    return { success: false as const, error: "Identificador de cuenta por pagar no válido" };
+  }
+  const dateParsed = dueDateSchema.safeParse(dueDate);
+  if (!dateParsed.success) {
+    return { success: false as const, error: formatZodError(dateParsed.error) };
+  }
+  const { supabase } = await requireAdmin();
+  const stored = toStorageDate(dateParsed.data);
   if (!stored) {
     return { success: false as const, error: "Fecha de vencimiento inválida" };
   }
@@ -180,7 +202,7 @@ export async function updatePayableDueDate(id: string, dueDate: string) {
       due_date: stored,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", idParsed.data);
 
   if (error) {
     return { success: false as const, error: error.message };
@@ -189,8 +211,17 @@ export async function updatePayableDueDate(id: string, dueDate: string) {
   return { success: true as const };
 }
 
-export async function updatePayable(id: string, data: PayableFormValues) {
-  const { supabase } = await requireUser();
+export async function updatePayable(id: string, input: unknown) {
+  const idParsed = payableIdSchema.safeParse(id);
+  if (!idParsed.success) {
+    return { success: false as const, error: "Identificador de cuenta por pagar no válido" };
+  }
+  const parsed = payableSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
+  const { supabase } = await requireAdmin();
   const receptionDate = toStorageDate(data.reception_date) ?? (data.reception_date?.trim().slice(0, 10) ? `${data.reception_date.trim().slice(0, 10)}T12:00:00.000Z` : "");
   const dueDate = toStorageDate(data.due_date);
 
@@ -205,7 +236,7 @@ export async function updatePayable(id: string, data: PayableFormValues) {
       payment_note: data.payment_note?.trim() || null,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", idParsed.data);
 
   if (error) {
     return { success: false as const, error: error.message };
@@ -215,17 +246,21 @@ export async function updatePayable(id: string, data: PayableFormValues) {
 }
 
 export async function deleteInvoice(id: string) {
-  const { supabase } = await requireUser();
+  const parsed = payableIdSchema.safeParse(id);
+  if (!parsed.success) {
+    return { success: false as const, error: "Identificador de cuenta por pagar no válido" };
+  }
+  const { supabase } = await requireAdmin();
   const { error: paymentsError } = await supabase
     .from("payable_payments")
     .delete()
-    .eq("account_payable_id", id);
+    .eq("account_payable_id", parsed.data);
 
   if (paymentsError) {
     return { success: false as const, error: paymentsError.message };
   }
 
-  const { error } = await supabase.from("accounts_payable").delete().eq("id", id);
+  const { error } = await supabase.from("accounts_payable").delete().eq("id", parsed.data);
 
   if (error) {
     return { success: false as const, error: error.message };
@@ -250,7 +285,7 @@ export interface PayablePaymentRow {
 export async function getPaymentsByPayable(
   payableId: string
 ): Promise<PayablePaymentRow[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const { data, error } = await supabase
     .from("payable_payments")
     .select("id, payment_date, amount_paid, source_of_funds, receipt_url")
@@ -265,7 +300,7 @@ export async function getPaymentsByPayable(
 }
 
 export async function getBankAccounts(): Promise<BankAccountOption[]> {
-  const { supabase } = await requireUser();
+  const { supabase } = await requireAdmin();
   const { data, error } = await supabase
     .from("bank_accounts")
     .select("id, name")
@@ -279,11 +314,20 @@ export async function getBankAccounts(): Promise<BankAccountOption[]> {
   return (data ?? []) as BankAccountOption[];
 }
 
-export async function createPayment(data: PaymentFormValues, payableId: string) {
-  const { supabase } = await requireUser();
+export async function createPayment(input: unknown, payableId: string) {
+  const idParsed = payableIdSchema.safeParse(payableId);
+  if (!idParsed.success) {
+    return { success: false as const, error: "Identificador de cuenta por pagar no válido" };
+  }
+  const parsed = paymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
+  const { supabase } = await requireAdmin();
 
   const { error: insertError } = await supabase.from("payable_payments").insert({
-    account_payable_id: payableId,
+    account_payable_id: idParsed.data,
     amount_paid: data.amount_paid,
     source_of_funds: data.source_of_funds.trim(),
     payment_date: data.payment_date,
@@ -297,7 +341,7 @@ export async function createPayment(data: PaymentFormValues, payableId: string) 
   const { error: updateError } = await supabase
     .from("accounts_payable")
     .update({ status: "paid", updated_at: new Date().toISOString() })
-    .eq("id", payableId);
+    .eq("id", idParsed.data);
 
   if (updateError) {
     return { success: false as const, error: updateError.message };

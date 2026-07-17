@@ -37,3 +37,5 @@ export const receivablePaymentSchema = z.object({
 });
 
 export type ReceivablePaymentFormValues = z.infer<typeof receivablePaymentSchema>;
+
+export const receivableIdSchema = z.string().uuid("Identificador de cuenta por cobrar no válido");

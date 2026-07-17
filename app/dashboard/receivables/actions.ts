@@ -2,7 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/utils/supabase/require-user";
-import type { ReceivableFormValues, ReceivablePaymentFormValues } from "./schema";
+import {
+  receivableIdSchema,
+  receivablePaymentSchema,
+  receivableSchema,
+} from "./schema";
+
+function formatZodError(error: { issues: { message: string }[] }): string {
+  return error.issues.map((i) => i.message).join(" · ") || "Datos no válidos";
+}
 
 /** Supabase returns FK relation as object (many-to-one) or possibly array */
 export interface ReceivableRow {
@@ -109,7 +117,12 @@ export async function getBankAccounts(): Promise<BankAccountOption[]> {
   return (data ?? []) as BankAccountOption[];
 }
 
-export async function createReceivable(data: ReceivableFormValues) {
+export async function createReceivable(input: unknown) {
+  const parsed = receivableSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
   const { supabase } = await requireUser();
   const { error } = await supabase.from("accounts_receivable").insert({
     customer_id: data.customer_id,
@@ -129,13 +142,22 @@ export async function createReceivable(data: ReceivableFormValues) {
 }
 
 export async function createReceivablePayment(
-  data: ReceivablePaymentFormValues,
+  input: unknown,
   receivableId: string
 ) {
+  const idParsed = receivableIdSchema.safeParse(receivableId);
+  if (!idParsed.success) {
+    return { success: false as const, error: "Identificador de cuenta por cobrar no válido" };
+  }
+  const parsed = receivablePaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: formatZodError(parsed.error) };
+  }
+  const data = parsed.data;
   const { supabase } = await requireUser();
 
   const { error: insertError } = await supabase.from("receivable_payments").insert({
-    account_receivable_id: receivableId,
+    account_receivable_id: idParsed.data,
     amount_received: data.amount_received,
     destination_of_funds: data.destination_of_funds,
     payment_date: data.payment_date,
@@ -148,7 +170,7 @@ export async function createReceivablePayment(
   const { error: updateError } = await supabase
     .from("accounts_receivable")
     .update({ status: "paid", updated_at: new Date().toISOString() })
-    .eq("id", receivableId);
+    .eq("id", idParsed.data);
 
   if (updateError) {
     return { success: false as const, error: updateError.message };

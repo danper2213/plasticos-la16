@@ -8,3 +8,5 @@ export const samitClosureSchema = z.object({
 });
 
 export type SamitClosureFormValues = z.infer<typeof samitClosureSchema>;
+
+export const samitClosureIdSchema = z.string().uuid("Identificador de cierre SAMIT no válido");

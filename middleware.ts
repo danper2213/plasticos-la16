@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { updateSession } from "@/utils/supabase/middleware";
+import { isAdminDashboardPath } from "@/lib/admin-dashboard-routes";
+import { getMiddlewareUserRole, updateSession } from "@/utils/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
   try {
-    const { response, user } = await updateSession(request);
+    const { response, user, supabase } = await updateSession(request);
     const pathname = request.nextUrl.pathname;
 
     // Landing y demás rutas públicas: solo refrescar cookies, sin redirecciones
@@ -18,6 +19,14 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
+    // Rutas admin: empleados → inicio del dashboard (no solo ocultar en sidebar)
+    if (user && isAdminDashboardPath(pathname)) {
+      const role = await getMiddlewareUserRole(supabase, user.id);
+      if (role !== "admin") {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
+    }
+
     // Si ya está autenticado y entra a /login, ir al dashboard
     if (pathname === "/login" && user) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
@@ -26,7 +35,7 @@ export async function middleware(request: NextRequest) {
     return response;
   } catch (err) {
     console.error("middleware:", err);
-    return NextResponse.next();
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 }
 
