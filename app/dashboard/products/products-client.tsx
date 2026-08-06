@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ProductForm } from "@/components/products/product-form";
+import { InvoiceCostUpdateModal } from "@/components/products/invoice-cost-update-modal";
 import { PriceSimulatorModal } from "@/components/products/price-simulator-modal";
 import { PriceList } from "@/components/products/price-list";
 import {
@@ -82,6 +83,7 @@ export function ProductsClient({
   const [isDeleting, setIsDeleting] = useState(false);
   const [forcedSearch, setForcedSearch] = useState<string | undefined>(undefined);
   const [listFilterOpen, setListFilterOpen] = useState(false);
+  const [invoiceCostOpen, setInvoiceCostOpen] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS);
   const activeSearchRaw = forcedSearch !== undefined ? forcedSearch : debouncedSearch;
@@ -546,6 +548,7 @@ export function ProductsClient({
               filterChips.length > 1 ? clearAllFilters : undefined
             }
             onNewProduct={openNewProductForm}
+            onUpdateCostsFromInvoice={() => setInvoiceCostOpen(true)}
           />
         </div>
 
@@ -611,6 +614,13 @@ export function ProductsClient({
         open={simulatorOpen}
         onOpenChange={setSimulatorOpen}
         product={productForSimulator}
+      />
+
+      <InvoiceCostUpdateModal
+        open={invoiceCostOpen}
+        onOpenChange={setInvoiceCostOpen}
+        suppliers={suppliers}
+        onSuccess={handleFormSuccess}
       />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

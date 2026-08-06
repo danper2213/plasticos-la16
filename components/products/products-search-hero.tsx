@@ -1,7 +1,15 @@
 "use client";
 
 import { forwardRef } from "react";
-import { Barcode, Filter, Package, ScanLine, Sparkles, Zap } from "lucide-react";
+import {
+  Barcode,
+  FileSpreadsheet,
+  Filter,
+  Package,
+  ScanLine,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchLottie } from "@/components/ui/search-lottie";
 import {
@@ -47,6 +55,7 @@ type ProductsSearchHeroProps = {
   filterChips?: ActiveFilterChip[];
   onClearAllFilters?: () => void;
   onNewProduct?: () => void;
+  onUpdateCostsFromInvoice?: () => void;
 };
 
 function StatusPill({
@@ -123,6 +132,7 @@ export const ProductsSearchHero = forwardRef<DashboardSearchBarHandle, ProductsS
       filterChips = [],
       onClearAllFilters,
       onNewProduct,
+      onUpdateCostsFromInvoice,
     },
     ref,
   ) {
@@ -153,15 +163,30 @@ export const ProductsSearchHero = forwardRef<DashboardSearchBarHandle, ProductsS
               Nombre, código de escaneo o medida. Escribí o tocá una sugerencia para empezar.
             </p>
 
-            {onNewProduct ? (
-              <Button
-                type="button"
-                onClick={onNewProduct}
-                className="mt-5 h-11 gap-2 rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25"
-              >
-                <Package className="size-4" aria-hidden />
-                Nuevo Producto
-              </Button>
+            {onNewProduct || onUpdateCostsFromInvoice ? (
+              <div className="mt-5 flex flex-wrap gap-2">
+                {onNewProduct ? (
+                  <Button
+                    type="button"
+                    onClick={onNewProduct}
+                    className="h-11 gap-2 rounded-xl border-0 bg-primary px-5 text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/92 hover:shadow-lg hover:shadow-primary/25"
+                  >
+                    <Package className="size-4" aria-hidden />
+                    Nuevo Producto
+                  </Button>
+                ) : null}
+                {onUpdateCostsFromInvoice ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onUpdateCostsFromInvoice}
+                    className="h-11 gap-2 rounded-xl border-border/70 bg-background/60 px-5 backdrop-blur-sm hover:border-primary/40 hover:bg-primary/10"
+                  >
+                    <FileSpreadsheet className="size-4" aria-hidden />
+                    Costos desde factura
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
