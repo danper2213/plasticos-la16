@@ -56,14 +56,24 @@ describe("convención: 1 caja/paca = ±1 en stock (sin usar x70/x200)", () => {
     ).toBe(50);
   });
 
-  it("salida 273 nunca usa factor 70 del empaque Cj x70", () => {
-    const wrongIfUses70 = 316 - 273 * 70;
-    const after = simulateStockAfterLines(316, [
-      { product_id: PRODUCT_ID, movement_type: "out", quantity: 273 },
-    ]);
-    expect(after).toBe(43);
-    expect(after).not.toBe(wrongIfUses70);
-    expect(after).not.toBe(0);
+  it("salida en unidades convierte a fracciones de paca", () => {
+    expect(
+      simulateStockAfterLines(2, [
+        {
+          product_id: PRODUCT_ID,
+          movement_type: "out",
+          quantity: 500,
+          quantity_unit: "unit",
+          packaging: "Paca x500",
+        },
+      ]),
+    ).toBe(1);
+    expect(
+      computeLineBalanceAfter(2, "out", 50, {
+        quantity_unit: "unit",
+        packaging: "Paca x500",
+      }),
+    ).toBe(1.9);
   });
 });
 

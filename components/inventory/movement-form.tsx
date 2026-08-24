@@ -11,6 +11,7 @@ import {
   Plus,
   AlertTriangle,
   ClipboardList,
+  Loader2,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -47,6 +48,7 @@ import { createMovementsBatch } from "@/app/dashboard/inventory/actions";
 import { triggerSuccess } from "@/lib/confetti";
 import { motion, AnimatePresence } from "framer-motion";
 import { MovementFormLine } from "@/components/inventory/movement-form-line";
+import { MovementProcessingOverlay } from "@/components/inventory/movement-processing-overlay";
 import { buildLinePreviews } from "@/lib/inventory-movement-preview";
 import { isMovementFormDirty } from "@/lib/inventory-movement-form-dirty";
 import { toStockNumber } from "@/lib/inventory-quantity";
@@ -59,12 +61,15 @@ function emptyLine(): MovementLineFormValues {
     product_id: "",
     movement_type: "in",
     quantity: 1,
+    quantity_unit: "pack",
     historical_unit_cost: 0,
   };
 }
 
 interface StockMapEntry {
   quantity: number | null;
+  packaging: string | null;
+  presentation: string | null;
 }
 
 interface MovementFormProps {
@@ -88,6 +93,7 @@ export function MovementForm({
   /** Con varias líneas, solo una expandida; el resto se muestra comprimido. */
   const [focusedLineIndex, setFocusedLineIndex] = React.useState(0);
   const [discardDialogOpen, setDiscardDialogOpen] = React.useState(false);
+  const [isSaving, setIsSaving] = React.useState(false);
   const submitLockRef = React.useRef(false);
   const submitRequestIdRef = React.useRef<string | null>(null);
 
@@ -111,9 +117,14 @@ export function MovementForm({
     product_id: form.watch(`lines.${index}.product_id`),
     movement_type: form.watch(`lines.${index}.movement_type`),
     quantity: form.watch(`lines.${index}.quantity`),
+    quantity_unit: form.watch(`lines.${index}.quantity_unit`),
+    packaging: (() => {
+      const pid = form.watch(`lines.${index}.product_id`);
+      return pid ? stockMap[pid]?.packaging ?? null : null;
+    })(),
     historical_unit_cost: form.watch(`lines.${index}.historical_unit_cost`),
   }));
-  const isSubmitting = form.formState.isSubmitting;
+  const busy = isSaving;
 
   const isDirty = React.useMemo(
     () =>
@@ -128,12 +139,23 @@ export function MovementForm({
     onDirtyChange?.(open && isDirty);
   }, [open, isDirty, onDirtyChange]);
 
-  const registerProductStock = React.useCallback((id: string, stock: number | null) => {
-    setStockMap((prev) => ({
-      ...prev,
-      [id]: { quantity: stock == null ? null : toStockNumber(stock) },
-    }));
-  }, []);
+  const registerProductStock = React.useCallback(
+    (
+      id: string,
+      stock: number | null,
+      meta?: { packaging?: string | null; presentation?: string | null },
+    ) => {
+      setStockMap((prev) => ({
+        ...prev,
+        [id]: {
+          quantity: stock == null ? null : toStockNumber(stock),
+          packaging: meta?.packaging ?? prev[id]?.packaging ?? null,
+          presentation: meta?.presentation ?? prev[id]?.presentation ?? null,
+        },
+      }));
+    },
+    [],
+  );
 
   function closeForm() {
     setDiscardDialogOpen(false);
@@ -141,7 +163,7 @@ export function MovementForm({
   }
 
   function requestClose() {
-    if (isSubmitting) return;
+    if (busy) return;
     if (isDirty) {
       setDiscardDialogOpen(true);
       return;
@@ -169,6 +191,8 @@ export function MovementForm({
   React.useEffect(() => {
     if (!open) return;
     submitRequestIdRef.current = crypto.randomUUID();
+    setIsSaving(false);
+    submitLockRef.current = false;
     form.reset({
       global_notes: "",
       lines: [{ ...emptyLine(), movement_type: initialMovementType }],
@@ -187,6 +211,7 @@ export function MovementForm({
   }, [fields.length]);
 
   function appendLine() {
+    if (busy) return;
     const nextIndex = fields.length;
     append(emptyLine());
     setFocusedLineIndex(nextIndex);
@@ -194,7 +219,7 @@ export function MovementForm({
 
   async function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (isSubmitting || submitLockRef.current) return;
+    if (busy || submitLockRef.current) return;
     submitLockRef.current = true;
 
     try {
@@ -225,8 +250,10 @@ export function MovementForm({
       }
 
       form.clearErrors();
+      setIsSaving(true);
       await onSubmit(parsed.data);
     } finally {
+      setIsSaving(false);
       submitLockRef.current = false;
     }
   }
@@ -277,12 +304,12 @@ export function MovementForm({
       <DialogContent
         overlayClassName="bg-black/50 backdrop-blur-md"
         className="max-w-2xl w-full p-0 gap-0 border border-border rounded-[24px] shadow-2xl bg-card overflow-hidden data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100 dark:bg-zinc-950/95 dark:border-zinc-800"
-        showCloseButton={!isSubmitting}
+        showCloseButton={!busy}
         onInteractOutside={(e) => {
-          if (isDirty || isSubmitting) e.preventDefault();
+          if (isDirty || busy) e.preventDefault();
         }}
         onEscapeKeyDown={(e) => {
-          if (isSubmitting) {
+          if (busy) {
             e.preventDefault();
             return;
           }
@@ -302,8 +329,9 @@ export function MovementForm({
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={modalSpring}
-          className="flex flex-col"
+          className="relative flex flex-col"
         >
+          {busy ? <MovementProcessingOverlay lineCount={fields.length} /> : null}
           <div className="relative bg-gradient-to-br from-primary/15 via-card to-card border-b border-border pl-6 pr-20 py-5 dark:from-blue-950/80 dark:via-zinc-900/90 dark:to-zinc-950 dark:border-zinc-800/80">
             <div className="flex items-center gap-3">
               <div className="flex size-11 items-center justify-center rounded-xl bg-primary/20 text-primary dark:bg-blue-500/20 dark:text-blue-400">
@@ -331,7 +359,8 @@ export function MovementForm({
                       "flex-1 gap-2 rounded-lg",
                       activeSection === "lines" && "shadow-sm"
                     )}
-                    onClick={() => setActiveSection("lines")}
+                    onClick={() => !busy && setActiveSection("lines")}
+                    disabled={busy}
                   >
                     <ClipboardList className="size-4 shrink-0" />
                     Productos ({fields.length})
@@ -343,7 +372,8 @@ export function MovementForm({
                       "flex-1 gap-2 rounded-lg",
                       activeSection === "notes" && "shadow-sm"
                     )}
-                    onClick={() => setActiveSection("notes")}
+                    onClick={() => !busy && setActiveSection("notes")}
+                    disabled={busy}
                   >
                     <StickyNote className="size-4 shrink-0" />
                     Notas del lote
@@ -394,6 +424,7 @@ export function MovementForm({
                       size="sm"
                       className="w-full rounded-lg border-dashed gap-2"
                       onClick={appendLine}
+                      disabled={busy}
                     >
                       <Plus className="size-4" />
                       Agregar otro producto
@@ -448,7 +479,7 @@ export function MovementForm({
                     type="button"
                     variant="outline"
                     className="rounded-lg border-border hover:bg-muted gap-2"
-                    disabled={isSubmitting}
+                    disabled={busy}
                     onClick={requestClose}
                   >
                     <X className="size-4" />
@@ -456,14 +487,18 @@ export function MovementForm({
                   </Button>
                   <Button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={busy || hasStockViolation}
                     className={cn(
                       "rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground gap-2",
-                      hasStockViolation && !isSubmitting && "opacity-60",
+                      hasStockViolation && !busy && "opacity-60",
                     )}
                   >
-                    <Save className="size-4" />
-                    {isSubmitting
+                    {busy ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Save className="size-4" />
+                    )}
+                    {busy
                       ? "Guardando…"
                       : fields.length === 1
                         ? "Registrar"

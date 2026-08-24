@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { toStockNumber } from "@/lib/inventory-quantity";
+import { QUANTITY_UNITS } from "@/lib/inventory-quantity-unit";
 
 export const MOVEMENT_TYPES = ["in", "out", "adjustment"] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
@@ -11,6 +12,11 @@ export const movementSchema = z.object({
     .number({ message: "Indicá una cantidad válida" })
     .finite()
     .positive("La cantidad debe ser mayor que 0"),
+  /**
+   * pack = cajas/pacas (stock BD).
+   * unit = presentación suelta (tula…); se convierte con el factor del empaque.
+   */
+  quantity_unit: z.enum(QUANTITY_UNITS).default("pack"),
   historical_unit_cost: z
     .number()
     .min(0, "El costo unitario no puede ser negativo"),
@@ -58,6 +64,10 @@ export function parseMovementFormValues(
         product_id: String(line.product_id ?? "").trim(),
         movement_type: line.movement_type ?? "in",
         quantity: toStockNumber(line.quantity),
+        quantity_unit:
+          line.quantity_unit === "unit" || line.quantity_unit === "pack"
+            ? line.quantity_unit
+            : "pack",
         historical_unit_cost: toStockNumber(line.historical_unit_cost ?? 0),
       })),
   };

@@ -1,11 +1,18 @@
 import { lineStockDelta } from "@/lib/inventory-stock-delta";
 import { toStockNumber } from "@/lib/inventory-quantity";
 import { inventoryStockAfter } from "@/lib/inventory-units";
+import {
+  quantityToStockUnits,
+  type QuantityUnit,
+} from "@/lib/inventory-quantity-unit";
 
 export type MovementLineInput = {
   product_id: string;
   movement_type: string;
   quantity: number;
+  /** Si viene, quantity está en esa unidad y hay que convertir con packaging. */
+  quantity_unit?: QuantityUnit | null;
+  packaging?: string | null;
 };
 
 export type LinePreview = {
@@ -18,17 +25,35 @@ export function parseLineQuantity(quantity: unknown): number {
   return toStockNumber(quantity);
 }
 
-/** Saldo después de una línea en pacas/cajas (sin conversiones por factor de empaque). */
+/** Cantidad ya expresada en unidades de stock (pacas/cajas). */
+export function lineQuantityInStockUnits(line: MovementLineInput): number {
+  return quantityToStockUnits(
+    parseLineQuantity(line.quantity),
+    line.quantity_unit ?? "pack",
+    line.packaging,
+  );
+}
+
+/** Saldo después de una línea en pacas/cajas. */
 export function computeLineBalanceAfter(
   balanceBefore: number,
   movementType: string,
   quantity: unknown,
+  opts?: {
+    quantity_unit?: QuantityUnit | null;
+    packaging?: string | null;
+  },
 ): number {
+  const stockQty = quantityToStockUnits(
+    parseLineQuantity(quantity),
+    opts?.quantity_unit ?? "pack",
+    opts?.packaging,
+  );
   return (
     balanceBefore +
     lineStockDelta({
       movement_type: movementType,
-      quantity: parseLineQuantity(quantity),
+      quantity: stockQty,
     })
   );
 }
@@ -53,6 +78,10 @@ export function buildLinePreviews(
       before,
       line.movement_type,
       line.quantity,
+      {
+        quantity_unit: line.quantity_unit,
+        packaging: line.packaging,
+      },
     );
     running.set(line.product_id, after);
 
@@ -75,7 +104,7 @@ export function simulateStockAfterLines(
       balance,
       lineStockDelta({
         movement_type: line.movement_type,
-        quantity: parseLineQuantity(line.quantity),
+        quantity: lineQuantityInStockUnits(line),
       }),
     );
   }
@@ -91,7 +120,7 @@ export function sumStockDeltasByProduct(
     if (!line.product_id) continue;
     const d = lineStockDelta({
       movement_type: line.movement_type,
-      quantity: parseLineQuantity(line.quantity),
+      quantity: lineQuantityInStockUnits(line),
     });
     deltaByProduct.set(
       line.product_id,

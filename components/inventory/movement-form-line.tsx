@@ -39,11 +39,18 @@ import {
 } from "@/lib/inventory-stock-display";
 import { parseLineQuantity } from "@/lib/inventory-movement-preview";
 import { normalizeInventoryQuantity } from "@/lib/inventory-quantity";
-import { usesLargeUnitInventory } from "@/lib/inventory-units";
+import {
+  defaultQuantityUnit,
+  formatQuantityInUnit,
+  getPackagingFactor,
+  maxOutInQuantityUnit,
+  quantityToStockUnits,
+  resolveExitUnitOptions,
+  type QuantityUnit,
+} from "@/lib/inventory-quantity-unit";
 import { validateMovementLine } from "@/lib/inventory-movement-validation";
 import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
 const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
   in: "Entrada",
@@ -72,7 +79,11 @@ export interface MovementFormLineProps {
   canRemove: boolean;
   onRemove: () => void;
   linePreview: { balanceBefore: number; balanceAfter: number; violates: boolean };
-  onRegisterProductStock: (productId: string, stock: number | null) => void;
+  onRegisterProductStock: (
+    productId: string,
+    stock: number | null,
+    meta?: { packaging?: string | null; presentation?: string | null },
+  ) => void;
   showCollapseChrome: boolean;
   isCollapsed: boolean;
   onActivateLine: () => void;
@@ -95,6 +106,8 @@ export function MovementFormLine({
   const productId = form.watch(`lines.${index}.product_id`);
   const movementType = form.watch(`lines.${index}.movement_type`) as MovementType;
   const lineQuantity = form.watch(`lines.${index}.quantity`) as number | undefined;
+  const quantityUnit = (form.watch(`lines.${index}.quantity_unit`) ??
+    "pack") as QuantityUnit;
   const unitCost = form.watch(`lines.${index}.historical_unit_cost`) as number | undefined;
 
   const compact = showCollapseChrome && isCollapsed;
@@ -107,8 +120,18 @@ export function MovementFormLine({
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
-  const usesLargePackaging = usesLargeUnitInventory(selectedProduct?.packaging);
-  const entryUnitLabel = getInventoryUnitLabel(selectedProduct?.packaging);
+  const exitUnitOptions = resolveExitUnitOptions(
+    selectedProduct?.packaging,
+    selectedProduct?.presentation,
+  );
+  const packagingFactor = getPackagingFactor(selectedProduct?.packaging);
+  const entryUnitLabel =
+    movementType === "out" && quantityUnit === "unit"
+      ? resolveExitUnitOptions(
+          selectedProduct?.packaging,
+          selectedProduct?.presentation,
+        ).find((o) => o.value === "unit")?.label ?? "unidad"
+      : getInventoryUnitLabel(selectedProduct?.packaging);
   const packagingLabel = formatPackagingDescriptor(selectedProduct?.packaging);
 
   React.useEffect(() => {
@@ -151,18 +174,31 @@ export function MovementFormLine({
     }
 
     setValue(`lines.${index}.quantity`, 1, { shouldValidate: true });
+    setValue(
+      `lines.${index}.quantity_unit`,
+      defaultQuantityUnit(selectedProduct?.packaging),
+      { shouldValidate: true },
+    );
   }, [selectedProduct?.id, selectedProduct?.packaging, productId, index, setValue]);
 
   async function handleSelectProduct(p: ProductSearchHit) {
     setSelectedProduct(p);
     setValue(`lines.${index}.product_id`, p.id, { shouldValidate: true });
     setValue(`lines.${index}.historical_unit_cost`, p.cost, { shouldValidate: true });
+    setValue(
+      `lines.${index}.quantity_unit`,
+      defaultQuantityUnit(p.packaging),
+      { shouldValidate: true },
+    );
     setSearchResults([]);
     setSearchQuery("");
     setStockLoading(true);
     try {
       const fresh = await getProductStockQuantity(p.id);
-      onRegisterProductStock(p.id, fresh ?? 0);
+      onRegisterProductStock(p.id, fresh ?? 0, {
+        packaging: p.packaging,
+        presentation: p.presentation,
+      });
     } finally {
       setStockLoading(false);
     }
@@ -173,20 +209,29 @@ export function MovementFormLine({
     setValue(`lines.${index}.product_id`, "", { shouldValidate: true });
     setValue(`lines.${index}.historical_unit_cost`, 0, { shouldValidate: true });
     setValue(`lines.${index}.quantity`, 1, { shouldValidate: true });
+    setValue(`lines.${index}.quantity_unit`, "pack", { shouldValidate: true });
   }
 
   function handleMovementTypeChange(
     type: MovementType,
     onChange: (value: MovementType) => void,
   ) {
-    if (type === "out" && selectedProduct && !usesLargePackaging) {
-      toast.error(
-        "Las salidas se registran solo en caja/paca. Este producto no tiene empaque grande configurado.",
-      );
-      return;
-    }
     onChange(type);
     setValue(`lines.${index}.movement_type`, type, { shouldValidate: true });
+    if (type === "out") {
+      const nextUnit = defaultQuantityUnit(selectedProduct?.packaging);
+      setValue(`lines.${index}.quantity_unit`, nextUnit, { shouldValidate: true });
+    } else {
+      setValue(`lines.${index}.quantity_unit`, "pack", { shouldValidate: true });
+    }
+  }
+
+  function handleQuantityUnitChange(unit: QuantityUnit) {
+    setValue(`lines.${index}.quantity_unit`, unit, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    setValue(`lines.${index}.quantity`, 1, { shouldValidate: true, shouldDirty: true });
   }
 
   const stockDisplay = getStockDisplayInfo(
@@ -195,19 +240,30 @@ export function MovementFormLine({
   );
 
   const quantityBase = parseLineQuantity(lineQuantity);
+  const quantityInStockUnits = quantityToStockUnits(
+    quantityBase,
+    movementType === "out" ? quantityUnit : "pack",
+    selectedProduct?.packaging,
+  );
 
   const balanceBefore = linePreview.balanceBefore;
   const balanceAfter = linePreview.balanceAfter;
   const violatesStock = linePreview.violates;
 
   const maxOut =
-    movementType === "out" ? Math.max(0, balanceBefore) : Number.POSITIVE_INFINITY;
+    movementType === "out"
+      ? maxOutInQuantityUnit(
+          balanceBefore,
+          quantityUnit,
+          selectedProduct?.packaging,
+        )
+      : Number.POSITIVE_INFINITY;
 
   const lineValidation =
     selectedProduct && productId
       ? validateMovementLine(
           movementType,
-          quantityBase,
+          quantityInStockUnits,
           balanceBefore,
           selectedProduct.packaging,
         )
@@ -234,12 +290,28 @@ export function MovementFormLine({
 
   const qtyLabel =
     selectedProduct && quantityBase > 0
-      ? formatMovementQuantityLabel(quantityBase, selectedProduct.packaging)
+      ? movementType === "out"
+        ? formatQuantityInUnit(
+            quantityBase,
+            quantityUnit,
+            selectedProduct.packaging,
+            selectedProduct.presentation,
+          )
+        : formatMovementQuantityLabel(quantityBase, selectedProduct.packaging)
       : null;
 
   const afterLabel = selectedProduct
     ? formatMovementQuantityLabel(balanceAfter, selectedProduct.packaging)
     : null;
+
+  const stockDeltaHint =
+    movementType === "out" &&
+    quantityUnit === "unit" &&
+    packagingFactor != null &&
+    packagingFactor > 1 &&
+    quantityBase > 0
+      ? `= ${formatMovementQuantityLabel(quantityInStockUnits, selectedProduct?.packaging)} en stock`
+      : null;
 
   const showPreview = Boolean(selectedProduct && productId && quantityBase > 0);
 
@@ -445,19 +517,12 @@ export function MovementFormLine({
                             : type === "out"
                               ? ArrowUpRight
                               : RefreshCw;
-                        const outDisabled = type === "out" && !usesLargePackaging;
                         return (
                           <Button
                             key={type + comboboxKey}
                             type="button"
                             variant={active ? "default" : "outline"}
                             size="sm"
-                            disabled={outDisabled}
-                            title={
-                              outDisabled
-                                ? "Salida solo en caja/paca (configurá empaque en el producto)"
-                                : undefined
-                            }
                             className={cn(
                               "h-9 gap-1 rounded-lg px-2 text-xs font-semibold",
                               active && type === "in" && "bg-emerald-600 hover:bg-emerald-600/90",
@@ -544,6 +609,48 @@ export function MovementFormLine({
               />
             </div>
 
+            {movementType === "out" && exitUnitOptions.length > 0 ? (
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">Presentación de salida</p>
+                <div
+                  className={cn(
+                    "grid gap-1.5",
+                    exitUnitOptions.length > 1 ? "grid-cols-2" : "grid-cols-1",
+                  )}
+                >
+                  {exitUnitOptions.map((opt) => {
+                    const active = quantityUnit === opt.value;
+                    return (
+                      <Button
+                        key={opt.value}
+                        type="button"
+                        variant={active ? "default" : "outline"}
+                        size="sm"
+                        className="h-auto min-h-9 flex-col items-start gap-0.5 rounded-lg px-3 py-1.5 text-left"
+                        onClick={() => handleQuantityUnitChange(opt.value)}
+                      >
+                        <span className="text-xs font-semibold leading-tight">
+                          {opt.label}
+                        </span>
+                        {opt.hint ? (
+                          <span
+                            className={cn(
+                              "text-[10px] font-normal leading-tight",
+                              active
+                                ? "text-primary-foreground/80"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {opt.hint}
+                          </span>
+                        ) : null}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             {showPreview && !stockLoading ? (
               <div
                 className={cn(
@@ -571,6 +678,11 @@ export function MovementFormLine({
                   {movementType === "out" && qtyLabel ? `−${qtyLabel}` : null}
                   {movementType === "adjustment" && qtyLabel ? `→ ${qtyLabel}` : null}
                 </span>
+                {stockDeltaHint ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    ({stockDeltaHint})
+                  </span>
+                ) : null}
                 <ArrowRight className="hidden size-3.5 text-muted-foreground sm:block" aria-hidden />
                 <span className="text-xs text-muted-foreground sm:mr-1">Quedan</span>
                 <span
@@ -601,12 +713,21 @@ export function MovementFormLine({
               {packagingLabel ? (
                 <span className="ml-2">· Empaque: {packagingLabel}</span>
               ) : null}
-              {usesLargePackaging && movementType === "out" ? (
-                <span className="ml-2">· Movimiento en {entryUnitLabel}</span>
-              ) : null}
-              {usesLargePackaging ? (
+              {movementType === "out" && packagingFactor != null && packagingFactor > 1 ? (
                 <span className="ml-2 block sm:inline">
-                  · 1 {entryUnitLabel} = 1 unidad de stock (el ×70 no se usa en el cálculo)
+                  · Salida en{" "}
+                  {exitUnitOptions.map((o) => o.label).join(" o ")}
+                  {quantityUnit === "unit"
+                    ? ` · ${packagingFactor} ${entryUnitLabel} = 1 ${getInventoryUnitLabel(selectedProduct?.packaging)}`
+                    : " · 1 paca/caja = 1 en stock"}
+                </span>
+              ) : movementType === "out" ? (
+                <span className="ml-2 block sm:inline">
+                  · Salida por unidad (1 = 1 en stock)
+                </span>
+              ) : packagingFactor != null ? (
+                <span className="ml-2 block sm:inline">
+                  · 1 {getInventoryUnitLabel(selectedProduct?.packaging)} = 1 unidad de stock
                 </span>
               ) : null}
             </p>
