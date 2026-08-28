@@ -120,17 +120,16 @@ export function MovementFormLine({
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
-  const exitUnitOptions = resolveExitUnitOptions(
+  const usesQuantityUnitSelector =
+    movementType === "in" || movementType === "out";
+  const quantityUnitOptions = resolveExitUnitOptions(
     selectedProduct?.packaging,
     selectedProduct?.presentation,
   );
   const packagingFactor = getPackagingFactor(selectedProduct?.packaging);
   const entryUnitLabel =
-    movementType === "out" && quantityUnit === "unit"
-      ? resolveExitUnitOptions(
-          selectedProduct?.packaging,
-          selectedProduct?.presentation,
-        ).find((o) => o.value === "unit")?.label ?? "unidad"
+    usesQuantityUnitSelector && quantityUnit === "unit"
+      ? quantityUnitOptions.find((o) => o.value === "unit")?.label ?? "unidad"
       : getInventoryUnitLabel(selectedProduct?.packaging);
   const packagingLabel = formatPackagingDescriptor(selectedProduct?.packaging);
 
@@ -218,11 +217,13 @@ export function MovementFormLine({
   ) {
     onChange(type);
     setValue(`lines.${index}.movement_type`, type, { shouldValidate: true });
-    if (type === "out") {
-      const nextUnit = defaultQuantityUnit(selectedProduct?.packaging);
-      setValue(`lines.${index}.quantity_unit`, nextUnit, { shouldValidate: true });
-    } else {
-      setValue(`lines.${index}.quantity_unit`, "pack", { shouldValidate: true });
+    const nextUnit =
+      type === "adjustment"
+        ? "pack"
+        : defaultQuantityUnit(selectedProduct?.packaging);
+    setValue(`lines.${index}.quantity_unit`, nextUnit, { shouldValidate: true });
+    if (quantityUnit !== nextUnit) {
+      setValue(`lines.${index}.quantity`, 1, { shouldValidate: true });
     }
   }
 
@@ -237,12 +238,13 @@ export function MovementFormLine({
   const stockDisplay = getStockDisplayInfo(
     selectedProduct ? linePreview.balanceBefore : null,
     selectedProduct?.packaging,
+    selectedProduct?.presentation,
   );
 
   const quantityBase = parseLineQuantity(lineQuantity);
   const quantityInStockUnits = quantityToStockUnits(
     quantityBase,
-    movementType === "out" ? quantityUnit : "pack",
+    usesQuantityUnitSelector ? quantityUnit : "pack",
     selectedProduct?.packaging,
   );
 
@@ -266,6 +268,7 @@ export function MovementFormLine({
           quantityInStockUnits,
           balanceBefore,
           selectedProduct.packaging,
+          selectedProduct.presentation,
         )
       : null;
 
@@ -290,28 +293,27 @@ export function MovementFormLine({
 
   const qtyLabel =
     selectedProduct && quantityBase > 0
-      ? movementType === "out"
+      ? usesQuantityUnitSelector
         ? formatQuantityInUnit(
             quantityBase,
             quantityUnit,
             selectedProduct.packaging,
             selectedProduct.presentation,
           )
-        : formatMovementQuantityLabel(quantityBase, selectedProduct.packaging)
+        : formatMovementQuantityLabel(
+            quantityBase,
+            selectedProduct.packaging,
+            selectedProduct.presentation,
+          )
       : null;
 
   const afterLabel = selectedProduct
-    ? formatMovementQuantityLabel(balanceAfter, selectedProduct.packaging)
+    ? formatMovementQuantityLabel(
+        balanceAfter,
+        selectedProduct.packaging,
+        selectedProduct.presentation,
+      )
     : null;
-
-  const stockDeltaHint =
-    movementType === "out" &&
-    quantityUnit === "unit" &&
-    packagingFactor != null &&
-    packagingFactor > 1 &&
-    quantityBase > 0
-      ? `= ${formatMovementQuantityLabel(quantityInStockUnits, selectedProduct?.packaging)} en stock`
-      : null;
 
   const showPreview = Boolean(selectedProduct && productId && quantityBase > 0);
 
@@ -325,7 +327,18 @@ export function MovementFormLine({
       : "border-amber-500/30 bg-amber-500/5";
 
   const compactQuantityLabel = selectedProduct
-    ? formatMovementQuantityLabel(parseLineQuantity(lineQuantity), selectedProduct.packaging)
+    ? usesQuantityUnitSelector
+      ? formatQuantityInUnit(
+          parseLineQuantity(lineQuantity),
+          quantityUnit,
+          selectedProduct.packaging,
+          selectedProduct.presentation,
+        )
+      : formatMovementQuantityLabel(
+          parseLineQuantity(lineQuantity),
+          selectedProduct.packaging,
+          selectedProduct.presentation,
+        )
     : "—";
 
   return (
@@ -468,7 +481,7 @@ export function MovementFormLine({
                                 <p className="text-xs text-muted-foreground truncate">
                                   {productMetaLabel(p)}
                                   {p.stock_quantity != null
-                                    ? ` · ${getStockDisplayInfo(p.stock_quantity, p.packaging).primary}`
+                                    ? ` · ${getStockDisplayInfo(p.stock_quantity, p.packaging, p.presentation).primary}`
                                     : ""}
                                 </p>
                               </button>
@@ -609,16 +622,20 @@ export function MovementFormLine({
               />
             </div>
 
-            {movementType === "out" && exitUnitOptions.length > 0 ? (
+            {usesQuantityUnitSelector && quantityUnitOptions.length > 0 ? (
               <div className="space-y-1.5">
-                <p className="text-xs text-muted-foreground">Presentación de salida</p>
+                <p className="text-xs text-muted-foreground">
+                  {movementType === "in"
+                    ? "Presentación de entrada"
+                    : "Presentación de salida"}
+                </p>
                 <div
                   className={cn(
                     "grid gap-1.5",
-                    exitUnitOptions.length > 1 ? "grid-cols-2" : "grid-cols-1",
+                    quantityUnitOptions.length > 1 ? "grid-cols-2" : "grid-cols-1",
                   )}
                 >
-                  {exitUnitOptions.map((opt) => {
+                  {quantityUnitOptions.map((opt) => {
                     const active = quantityUnit === opt.value;
                     return (
                       <Button
@@ -678,11 +695,6 @@ export function MovementFormLine({
                   {movementType === "out" && qtyLabel ? `−${qtyLabel}` : null}
                   {movementType === "adjustment" && qtyLabel ? `→ ${qtyLabel}` : null}
                 </span>
-                {stockDeltaHint ? (
-                  <span className="text-[11px] text-muted-foreground">
-                    ({stockDeltaHint})
-                  </span>
-                ) : null}
                 <ArrowRight className="hidden size-3.5 text-muted-foreground sm:block" aria-hidden />
                 <span className="text-xs text-muted-foreground sm:mr-1">Quedan</span>
                 <span
@@ -713,17 +725,19 @@ export function MovementFormLine({
               {packagingLabel ? (
                 <span className="ml-2">· Empaque: {packagingLabel}</span>
               ) : null}
-              {movementType === "out" && packagingFactor != null && packagingFactor > 1 ? (
+              {usesQuantityUnitSelector &&
+              packagingFactor != null &&
+              packagingFactor > 1 ? (
                 <span className="ml-2 block sm:inline">
-                  · Salida en{" "}
-                  {exitUnitOptions.map((o) => o.label).join(" o ")}
+                  · {movementType === "in" ? "Entrada" : "Salida"} en{" "}
+                  {quantityUnitOptions.map((o) => o.label).join(" o ")}
                   {quantityUnit === "unit"
                     ? ` · ${packagingFactor} ${entryUnitLabel} = 1 ${getInventoryUnitLabel(selectedProduct?.packaging)}`
                     : " · 1 paca/caja = 1 en stock"}
                 </span>
-              ) : movementType === "out" ? (
+              ) : usesQuantityUnitSelector ? (
                 <span className="ml-2 block sm:inline">
-                  · Salida por unidad (1 = 1 en stock)
+                  · {movementType === "in" ? "Entrada" : "Salida"} por unidad (1 = 1 en stock)
                 </span>
               ) : packagingFactor != null ? (
                 <span className="ml-2 block sm:inline">

@@ -1,10 +1,6 @@
-import {
-  lineQuantityInStockUnits,
-  type MovementLineInput,
-} from "@/lib/inventory-movement-preview";
+import type { MovementLineInput } from "@/lib/inventory-movement-preview";
 import {
   formatQuantityInUnit,
-  getPackUnitLabel,
   quantityToStockUnits,
   type QuantityUnit,
 } from "@/lib/inventory-quantity-unit";
@@ -55,39 +51,49 @@ export function toStockUnitLines<T extends LineWithUnit>(
   });
 }
 
-/** Nota legible cuando la salida fue en unidades sueltas. */
-export function buildUnitExitNote(
+function formatUnitLinePart(
+  line: LineWithUnit,
+  packagingByProductId: Record<string, string | null | undefined>,
+  presentationByProductId?: Record<string, string | null | undefined>,
+): string {
+  const packaging = packagingByProductId[line.product_id] ?? null;
+  const presentation = presentationByProductId?.[line.product_id] ?? null;
+  return formatQuantityInUnit(
+    line.quantity,
+    "unit",
+    packaging,
+    presentation,
+  );
+}
+
+/**
+ * Nota legible cuando entrada o salida se registró en unidades sueltas.
+ * El stock persistido sigue en pacas/cajas.
+ */
+export function buildUnitMovementNote(
   lines: LineWithUnit[],
   packagingByProductId: Record<string, string | null | undefined>,
   presentationByProductId?: Record<string, string | null | undefined>,
 ): string | null {
-  const parts: string[] = [];
+  const inParts: string[] = [];
+  const outParts: string[] = [];
   for (const line of lines) {
-    if (line.movement_type !== "out") continue;
     if (line.quantity_unit !== "unit") continue;
-    const packaging = packagingByProductId[line.product_id] ?? null;
-    const presentation = presentationByProductId?.[line.product_id] ?? null;
-    const stockQty = lineQuantityInStockUnits({
-      product_id: line.product_id,
-      movement_type: line.movement_type,
-      quantity: line.quantity,
-      quantity_unit: "unit",
-      packaging,
-    });
-    const entered = formatQuantityInUnit(
-      line.quantity,
-      "unit",
-      packaging,
-      presentation,
+    if (line.movement_type !== "in" && line.movement_type !== "out") continue;
+    const part = formatUnitLinePart(
+      line,
+      packagingByProductId,
+      presentationByProductId,
     );
-    const asPack = formatQuantityInUnit(
-      stockQty,
-      "pack",
-      packaging,
-      presentation,
-    );
-    parts.push(`${entered} → ${asPack} (${getPackUnitLabel(packaging)} stock)`);
+    if (line.movement_type === "in") inParts.push(part);
+    else outParts.push(part);
   }
-  if (parts.length === 0) return null;
-  return `Salida por unidad: ${parts.join("; ")}`;
+  const segments: string[] = [];
+  if (inParts.length > 0) {
+    segments.push(`Entrada por unidad: ${inParts.join("; ")}`);
+  }
+  if (outParts.length > 0) {
+    segments.push(`Salida por unidad: ${outParts.join("; ")}`);
+  }
+  return segments.length > 0 ? segments.join(" · ") : null;
 }

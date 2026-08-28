@@ -12,6 +12,7 @@ export function validateMovementLine(
   quantityBase: number,
   balanceBefore: number,
   packaging: string | null | undefined,
+  presentation?: string | null,
 ): MovementLineValidation {
   if (!Number.isFinite(quantityBase) || quantityBase <= 0) {
     return {
@@ -31,8 +32,16 @@ export function validateMovementLine(
     }
 
     if (quantityBase > balanceBefore + 1e-9) {
-      const available = formatMovementQuantityLabel(balanceBefore, packaging);
-      const requested = formatMovementQuantityLabel(quantityBase, packaging);
+      const available = formatMovementQuantityLabel(
+        balanceBefore,
+        packaging,
+        presentation,
+      );
+      const requested = formatMovementQuantityLabel(
+        quantityBase,
+        packaging,
+        presentation,
+      );
       return {
         allowed: false,
         reason: `No podés sacar ${requested}: solo hay ${available} disponible`,

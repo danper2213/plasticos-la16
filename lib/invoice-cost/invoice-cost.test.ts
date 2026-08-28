@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDescriptionFingerprint,
+  defaultApplyCostUpdate,
   findLearningForDescription,
+  invoiceCostDelta,
   matchProductsBySimilarity,
   processInvoiceLine,
   stripPackNoise,
@@ -129,7 +131,7 @@ describe("processInvoiceLine", () => {
     expect(result.action).toBe("propose_update");
   });
 
-  it("omite update si el costo factura no es superior", () => {
+  it("omite update automático si el costo factura no es superior", () => {
     const expensive = PRODUCTS.map((p) =>
       p.id === "p1" ? { ...p, cost: 900 } : p,
     );
@@ -173,5 +175,21 @@ describe("processInvoiceLine", () => {
     expect(result.cost.unidadesPorEmpaqueSource).toBe("learning");
     expect(result.cost.costoUnitario).toBe(606.6);
     expect(result.shouldUpdate).toBe(true);
+  });
+});
+
+describe("invoiceCostDelta", () => {
+  it("detecta alza, baja e igualdad", () => {
+    expect(invoiceCostDelta(100, 120)).toBe("increase");
+    expect(invoiceCostDelta(100, 80)).toBe("decrease");
+    expect(invoiceCostDelta(100, 100)).toBe("same");
+    expect(invoiceCostDelta(null, 80)).toBe("none");
+  });
+
+  it("solo aplica por defecto cuando el costo de factura es mayor", () => {
+    expect(defaultApplyCostUpdate(100, 120)).toBe(true);
+    expect(defaultApplyCostUpdate(100, 80)).toBe(false);
+    expect(defaultApplyCostUpdate(100, 100)).toBe(false);
+    expect(defaultApplyCostUpdate(null, 80)).toBe(false);
   });
 });

@@ -21,9 +21,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { searchProductsForInvoiceMatch } from "@/app/dashboard/products/invoice-cost-actions";
-import type {
-  InvoiceMatchProduct,
-  ProcessedInvoiceLine,
+import {
+  defaultApplyCostUpdate,
+  invoiceCostDelta,
+  type InvoiceMatchProduct,
+  type ProcessedInvoiceLine,
 } from "@/lib/invoice-cost";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +56,8 @@ export type ConfirmRowDraft = {
   costBasis: ProcessedInvoiceLine["cost"]["costBasis"];
   unitLabel: ProcessedInvoiceLine["cost"]["unitLabel"];
   checked: boolean;
+  /** Aplicar el costo de factura al producto (alza o baja). */
+  applyCostUpdate: boolean;
   matchConfidence: ProcessedInvoiceLine["matchConfidence"];
   action: ProcessedInvoiceLine["action"];
   candidates: ProcessedInvoiceLine["candidates"];
@@ -67,10 +71,9 @@ export function buildConfirmRowDrafts(
     const product = row.suggestedProduct;
     const unitCost = row.cost.costoUnitario;
     const currentCost = product?.cost ?? null;
-    // Se puede aprender el match aunque el costo no suba.
+    // Se puede aprender el match aunque el costo no cambie.
     const canLearn = product != null;
-    const canUpdate =
-      canLearn && currentCost != null && unitCost > currentCost;
+    const applyCostUpdate = defaultApplyCostUpdate(currentCost, unitCost);
 
     return {
       key: `${index}-${row.line.descripcion.slice(0, 40)}`,
@@ -89,8 +92,9 @@ export function buildConfirmRowDrafts(
       numeroRollos: row.cost.numeroRollos ?? 1,
       costBasis: row.cost.costBasis,
       unitLabel: row.cost.unitLabel,
+      applyCostUpdate,
       checked:
-        (row.action === "propose_update" && canUpdate) ||
+        (row.action === "propose_update" && applyCostUpdate) ||
         (canLearn &&
           (row.action === "skip_not_higher" ||
             row.matchConfidence === "learned" ||
@@ -144,13 +148,29 @@ export function InvoiceCostConfirmView({
 
   const summary = useMemo(() => {
     const selected = rows.filter((r) => r.checked && r.productId);
-    const updatable = selected.filter(
-      (r) => r.currentCost != null && r.unitCost > r.currentCost,
+    const costUpdates = selected.filter((r) => {
+      if (!r.applyCostUpdate || r.currentCost == null) return false;
+      const delta = invoiceCostDelta(r.currentCost, r.unitCost);
+      return delta === "increase" || delta === "decrease";
+    });
+    const increases = costUpdates.filter(
+      (r) => invoiceCostDelta(r.currentCost, r.unitCost) === "increase",
+    );
+    const decreases = costUpdates.filter(
+      (r) => invoiceCostDelta(r.currentCost, r.unitCost) === "decrease",
+    );
+    const pendingDecreases = rows.filter(
+      (r) =>
+        r.productId != null &&
+        invoiceCostDelta(r.currentCost, r.unitCost) === "decrease" &&
+        !r.applyCostUpdate,
     );
     return {
       selected: selected.length,
-      updatable: updatable.length,
-      learnOnly: selected.length - updatable.length,
+      increases: increases.length,
+      decreases: decreases.length,
+      pendingDecreases: pendingDecreases.length,
+      learnOnly: selected.length - costUpdates.length,
       skipped: rows.filter((r) => !r.checked).length,
     };
   }, [rows]);
@@ -192,11 +212,33 @@ export function InvoiceCostConfirmView({
           );
         }
 
+        const costInputsChanged =
+          patch.unidadesPorEmpaque != null ||
+          patch.numeroRollos != null ||
+          patch.productId != null ||
+          patch.currentCost != null;
+
+        if (patch.applyCostUpdate === undefined && costInputsChanged) {
+          const prevDelta = invoiceCostDelta(row.currentCost, row.unitCost);
+          const nextDelta = invoiceCostDelta(next.currentCost, next.unitCost);
+          if (nextDelta === "decrease" && prevDelta === "decrease") {
+            // Conservar la decisión de bajar costo si sigue siendo menor.
+          } else {
+            next.applyCostUpdate = defaultApplyCostUpdate(
+              next.currentCost,
+              next.unitCost,
+            );
+          }
+        }
+
         // Sin producto no se puede aprender ni actualizar.
         if (!next.productId) {
           next.checked = false;
+          next.applyCostUpdate = false;
         } else if (patch.productId != null) {
           // Al elegir/corregir match, marcar para aprender (y actualizar si aplica).
+          next.checked = true;
+        } else if (patch.applyCostUpdate === true) {
           next.checked = true;
         }
 
@@ -206,11 +248,13 @@ export function InvoiceCostConfirmView({
   }
 
   function selectProduct(key: string, product: InvoiceMatchProduct) {
+    const unitCost = rows.find((r) => r.key === key)?.unitCost ?? 0;
     updateRow(key, {
       productId: product.id,
       productName: product.name,
       currentCost: product.cost,
       checked: true,
+      applyCostUpdate: defaultApplyCostUpdate(product.cost, unitCost),
       matchConfidence:
         rows.find((r) => r.key === key)?.matchConfidence === "learned"
           ? "learned"
@@ -240,10 +284,31 @@ export function InvoiceCostConfirmView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="rounded-full border border-border px-2.5 py-1">
-          {summary.updatable} a actualizar costo
+          {summary.increases} a subir costo
         </span>
+        <span className="rounded-full border border-border px-2.5 py-1">
+          {summary.decreases} a bajar costo
+        </span>
+        {summary.pendingDecreases > 0 ? (
+          <button
+            type="button"
+            className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20"
+            onClick={() =>
+              onChange(
+                rows.map((r) =>
+                  invoiceCostDelta(r.currentCost, r.unitCost) === "decrease" &&
+                  r.productId
+                    ? { ...r, applyCostUpdate: true, checked: true }
+                    : r,
+                ),
+              )
+            }
+          >
+            {summary.pendingDecreases} con costo menor · aplicar todas
+          </button>
+        ) : null}
         <span className="rounded-full border border-border px-2.5 py-1">
           {summary.learnOnly} solo aprender match
         </span>
@@ -259,7 +324,7 @@ export function InvoiceCostConfirmView({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10" title="Aprender match (y actualizar costo si es superior)">
+              <TableHead className="w-10" title="Incluir línea para aprender el match">
                 ✓
               </TableHead>
               <TableHead className="min-w-[220px]">Línea factura</TableHead>
@@ -272,18 +337,38 @@ export function InvoiceCostConfirmView({
               </TableHead>
               <TableHead className="w-28 text-right">Costo BD</TableHead>
               <TableHead className="w-28 text-right">Costo factura</TableHead>
-              <TableHead className="w-24 text-right">Diff</TableHead>
+              <TableHead
+                className="w-36 text-right"
+                title="Diferencia vs catálogo. Marcá para aplicar el costo de factura (incluye bajas)."
+              >
+                Diff / aplicar
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => {
               const canLearn = row.productId != null;
-              const canUpdate =
-                canLearn &&
-                row.currentCost != null &&
-                row.unitCost > row.currentCost;
+              const delta = invoiceCostDelta(row.currentCost, row.unitCost);
+              const canApplyCost =
+                canLearn && (delta === "increase" || delta === "decrease");
               const diff =
                 row.currentCost != null ? row.unitCost - row.currentCost : null;
+
+              const costBadge = (() => {
+                if (row.applyCostUpdate && delta === "increase") {
+                  return <Badge variant="success">Sube costo</Badge>;
+                }
+                if (row.applyCostUpdate && delta === "decrease") {
+                  return <Badge variant="warning">Baja costo</Badge>;
+                }
+                if (delta === "decrease") {
+                  return <Badge variant="warning">Costo menor</Badge>;
+                }
+                if (canLearn) {
+                  return <Badge variant="outline">Solo aprender</Badge>;
+                }
+                return null;
+              })();
 
               const selectOptions = (() => {
                 const byId = new Map<
@@ -311,6 +396,9 @@ export function InvoiceCostConfirmView({
                   key={row.key}
                   className={cn(
                     row.checked && "bg-primary/5",
+                    delta === "decrease" &&
+                      !row.applyCostUpdate &&
+                      "bg-amber-500/5",
                     row.action === "no_match" && "bg-destructive/5",
                   )}
                 >
@@ -323,11 +411,7 @@ export function InvoiceCostConfirmView({
                       onChange={(e) =>
                         updateRow(row.key, { checked: e.target.checked })
                       }
-                      aria-label={
-                        canUpdate
-                          ? `Actualizar costo y aprender ${row.descripcion}`
-                          : `Aprender match ${row.descripcion}`
-                      }
+                      aria-label={`Aprender match ${row.descripcion}`}
                     />
                   </TableCell>
                   <TableCell>
@@ -341,11 +425,7 @@ export function InvoiceCostConfirmView({
                       ) : (
                         <Badge variant="outline">Por unidad</Badge>
                       )}
-                      {canUpdate ? (
-                        <Badge variant="success">Actualiza costo</Badge>
-                      ) : canLearn ? (
-                        <Badge variant="outline">Solo aprender</Badge>
-                      ) : null}
+                      {costBadge}
                     </div>
                     <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground font-mono tabular-nums">
                       {row.costBasis === "metraje"
@@ -533,16 +613,42 @@ export function InvoiceCostConfirmView({
                     {diff == null ? (
                       "—"
                     ) : (
-                      <span
-                        className={cn(
-                          diff > 0
-                            ? "text-amber-700 dark:text-amber-400"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {diff > 0 ? "+" : ""}
-                        {formatCost(diff)}
-                      </span>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <span
+                          className={cn(
+                            delta === "increase" &&
+                              "text-amber-700 dark:text-amber-400",
+                            delta === "decrease" &&
+                              "text-emerald-700 dark:text-emerald-400",
+                            delta === "same" && "text-muted-foreground",
+                          )}
+                        >
+                          {diff > 0 ? "+" : ""}
+                          {formatCost(diff)}
+                        </span>
+                        {canApplyCost ? (
+                          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-sans cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="size-3.5 rounded border-input"
+                              checked={row.applyCostUpdate}
+                              onChange={(e) =>
+                                updateRow(row.key, {
+                                  applyCostUpdate: e.target.checked,
+                                })
+                              }
+                              aria-label={
+                                delta === "decrease"
+                                  ? `Bajar costo de ${row.descripcion}`
+                                  : `Actualizar costo de ${row.descripcion}`
+                              }
+                            />
+                            {delta === "decrease"
+                              ? "Bajar costo"
+                              : "Actualizar"}
+                          </label>
+                        ) : null}
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>

@@ -4,9 +4,11 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Calendar,
+  Camera,
   ClipboardList,
   FileText,
   Filter,
+  Printer,
   RefreshCw,
   Search,
   Sparkles,
@@ -71,6 +73,8 @@ type InventoryMovementHeroProps = {
   filterChips?: ActiveFilterChip[];
   onClearAllFilters?: () => void;
   hasActiveFilters?: boolean;
+  onOpenFormats?: () => void;
+  onOpenScan?: () => void;
 };
 
 export function InventoryMovementHero({
@@ -87,6 +91,8 @@ export function InventoryMovementHero({
   filterChips = [],
   onClearAllFilters,
   hasActiveFilters = false,
+  onOpenFormats,
+  onOpenScan,
 }: InventoryMovementHeroProps) {
   const hasListFilters = hasProductFilter || hasDateFilter;
 
@@ -106,8 +112,8 @@ export function InventoryMovementHero({
           />
 
           <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-            Cada guardado genera un comprobante con uno o varios productos. Elegí el tipo de
-            movimiento o usá el botón del encabezado.
+            Cada guardado genera un comprobante con uno o varios productos. Cargá la foto de
+            una lista a mano, imprimí un formato, o registrá el movimiento vos.
           </p>
 
           <div className="mt-5 flex flex-wrap gap-2">
@@ -133,6 +139,32 @@ export function InventoryMovementHero({
                 </span>
               </button>
             ))}
+            {onOpenFormats ? (
+              <button
+                type="button"
+                onClick={onOpenFormats}
+                className="group inline-flex items-center gap-2 rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-left text-sm backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-primary/10 hover:shadow-md hover:shadow-primary/10"
+              >
+                <Printer className="size-3.5 shrink-0 text-primary/70 group-hover:text-primary" />
+                <span className="font-medium text-foreground">Formatos</span>
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Imprimir
+                </span>
+              </button>
+            ) : null}
+            {onOpenScan ? (
+              <button
+                type="button"
+                onClick={onOpenScan}
+                className="group inline-flex items-center gap-2 rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-left text-sm backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-primary/10 hover:shadow-md hover:shadow-primary/10"
+              >
+                <Camera className="size-3.5 shrink-0 text-primary/70 group-hover:text-primary" />
+                <span className="font-medium text-foreground">Leer foto</span>
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Foto
+                </span>
+              </button>
+            ) : null}
           </div>
 
           <p className="mt-4 flex items-center gap-2 text-[11px] text-muted-foreground/80">

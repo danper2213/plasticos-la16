@@ -39,5 +39,11 @@ export {
   type RawInvoiceLine,
 } from "@/lib/invoice-cost/process-invoice-line";
 
+export {
+  defaultApplyCostUpdate,
+  invoiceCostDelta,
+  type InvoiceCostDelta,
+} from "@/lib/invoice-cost/cost-delta";
+
 // extract-invoice / detect-invoice-file son server-only (Gemini).
 // No reexportarlos desde este barrel para no romper imports de cliente.

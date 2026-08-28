@@ -8,7 +8,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Search, X } from "lucide-react";
+import { Mic, Search, Volume2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SearchBarTypewriterPlaceholder } from "@/components/ui/search-bar-typewriter-placeholder";
@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 export type DashboardSearchBarHandle = {
   focus: () => void;
 };
+
+export type SearchBarMicState = "idle" | "listening" | "speaking";
 
 type DashboardSearchBarProps = {
   value: string;
@@ -31,6 +33,8 @@ type DashboardSearchBarProps = {
   align?: "center" | "start";
   /** Mantiene la barra expandida (p. ej. hero de productos). */
   alwaysExpanded?: boolean;
+  micState?: SearchBarMicState;
+  onMicClick?: () => void;
 };
 
 export const DashboardSearchBar = forwardRef<
@@ -48,6 +52,8 @@ export const DashboardSearchBar = forwardRef<
     variant = "default",
     align = "center",
     alwaysExpanded = false,
+    micState = "idle",
+    onMicClick,
   },
   ref,
 ) {
@@ -56,13 +62,20 @@ export const DashboardSearchBar = forwardRef<
   const [focused, setFocused] = useState(false);
   const isHero = variant === "hero";
   const isSticky = variant === "sticky";
+  const showMic = Boolean(onMicClick);
+  const listening = micState === "listening";
+  const speaking = micState === "speaking";
 
   const hasQuery = value.trim().length > 0;
-  const expanded = isSticky || alwaysExpanded || focused || hasQuery;
+  const expanded = isSticky || alwaysExpanded || focused || hasQuery || listening;
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
   const showAnimatedPlaceholder =
-    Boolean(rotatingPlaceholder?.length) && expanded && !hasQuery && !focused;
+    Boolean(rotatingPlaceholder?.length) &&
+    expanded &&
+    !hasQuery &&
+    !focused &&
+    !listening;
 
   useImperativeHandle(
     ref,
@@ -115,11 +128,40 @@ export const DashboardSearchBar = forwardRef<
       : "max-w-md";
   const iconSize = isSticky ? "size-4" : isHero ? "size-6" : "size-5";
   const iconLeft = isSticky ? "left-3.5" : isHero ? "left-5" : "left-4";
+  const showClear = expanded && hasQuery;
+  const rightPad =
+    showMic && showClear
+      ? isSticky
+        ? "pr-20"
+        : isHero
+          ? "pr-24"
+          : "pr-[4.75rem]"
+      : showMic || showClear
+        ? isSticky
+          ? "pr-10"
+          : isHero
+            ? "pr-12"
+            : "pr-11"
+        : isSticky
+          ? "pr-10"
+          : isHero
+            ? "pr-12"
+            : "pr-11";
   const inputPadding = isSticky
-    ? "pl-10 pr-10 text-sm"
+    ? cn("pl-10 text-sm", rightPad)
     : isHero
-      ? "pl-14 pr-12 text-base"
-      : "pl-12 pr-11 text-base";
+      ? cn("pl-14 text-base", rightPad)
+      : cn("pl-12 text-base", rightPad);
+  const placeholderPad = isSticky
+    ? cn("left-10 text-sm", rightPad)
+    : isHero
+      ? cn("left-14 text-base", rightPad)
+      : cn("left-12 text-base", rightPad);
+  const fieldPlaceholder = listening
+    ? "Escuchando…"
+    : showAnimatedPlaceholder
+      ? " "
+      : placeholder;
 
   return (
     <div className={cn("flex w-full", align === "start" ? "justify-start" : "justify-center")}>
@@ -140,6 +182,9 @@ export const DashboardSearchBar = forwardRef<
                   isHero && "rounded-2xl ring-primary/25",
                   isSticky && "rounded-lg bg-muted/80 dark:bg-muted/50",
                   showAnimatedPlaceholder && isHero && "ring-primary/30",
+                  listening &&
+                    "border-red-500/60 bg-red-500/[0.08] ring-2 ring-red-500/35 dark:bg-red-500/[0.12]",
+                  speaking && "border-primary/50 ring-primary/35",
                 )
               : cn(
                   "cursor-pointer border-border/70 bg-muted/70 hover:border-primary/30 hover:bg-muted/90 hover:shadow-md hover:shadow-primary/5 dark:bg-muted/50 dark:hover:bg-muted/65",
@@ -174,7 +219,7 @@ export const DashboardSearchBar = forwardRef<
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={handleKeyDown}
-            placeholder={showAnimatedPlaceholder ? " " : placeholder}
+            placeholder={fieldPlaceholder}
             tabIndex={expanded ? 0 : -1}
             className={cn(
               barHeight,
@@ -194,11 +239,16 @@ export const DashboardSearchBar = forwardRef<
             aria-keyshortcuts="/ Control+/ Control+Shift+K"
             autoComplete="off"
           />
+          {listening ? (
+            <span className="sr-only" role="status">
+              Escuchando
+            </span>
+          ) : null}
           {showAnimatedPlaceholder ? (
             <div
               className={cn(
                 "pointer-events-none absolute top-1/2 z-[5] flex -translate-y-1/2 items-center truncate text-muted-foreground/80",
-                isSticky ? "left-10 pr-10 text-sm" : isHero ? "left-14 pr-12 text-base" : "left-12 pr-11 text-base",
+                placeholderPad,
               )}
               aria-hidden
             >
@@ -208,14 +258,15 @@ export const DashboardSearchBar = forwardRef<
               />
             </div>
           ) : null}
-          {expanded && hasQuery ? (
+          {showClear ? (
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className={cn(
-                "absolute right-1 top-1/2 z-10 -translate-y-1/2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground",
+                "absolute top-1/2 z-10 -translate-y-1/2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground",
                 isSticky ? "size-8" : "size-9",
+                showMic ? (isSticky ? "right-9" : "right-10") : "right-1",
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
@@ -226,6 +277,44 @@ export const DashboardSearchBar = forwardRef<
               aria-label="Limpiar búsqueda"
             >
               <X className="size-4" aria-hidden />
+            </Button>
+          ) : null}
+          {expanded && showMic ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "absolute right-1 top-1/2 z-10 -translate-y-1/2 rounded-lg",
+                isSticky ? "size-8" : "size-9",
+                listening
+                  ? "text-red-600 hover:bg-red-500/10 hover:text-red-600 dark:text-red-400"
+                  : speaking
+                    ? "text-primary hover:bg-primary/10"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMicClick?.();
+              }}
+              aria-label={
+                listening
+                  ? "Detener escucha"
+                  : speaking
+                    ? "Silenciar lectura"
+                    : "Buscar por voz"
+              }
+              aria-pressed={listening || speaking}
+            >
+              {speaking ? (
+                <Volume2 className="size-4" aria-hidden />
+              ) : (
+                <Mic
+                  className={cn("size-4", listening && "animate-pulse")}
+                  aria-hidden
+                />
+              )}
             </Button>
           ) : null}
         </div>

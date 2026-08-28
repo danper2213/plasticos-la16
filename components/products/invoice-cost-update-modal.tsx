@@ -157,8 +157,7 @@ export function InvoiceCostUpdateModal({
           unidadesPorEmpaque: Math.round(r.unidadesPorEmpaque),
           unitCost: r.unitCost,
           costBasis: r.costBasis,
-          applyCostUpdate:
-            r.currentCost != null && r.unitCost > r.currentCost,
+          applyCostUpdate: r.applyCostUpdate,
         })),
       });
 

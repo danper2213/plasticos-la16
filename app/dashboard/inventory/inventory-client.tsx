@@ -15,6 +15,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { MovementForm } from "@/components/inventory/movement-form";
+import { InventoryFormatsDialog } from "@/components/inventory/inventory-formats-dialog";
+import { InventorySheetScanModal } from "@/components/inventory/inventory-sheet-scan-modal";
 import { InventoryMovementHero } from "@/components/inventory/inventory-movement-hero";
 import type { InventoryMovementPreset } from "@/components/inventory/inventory-movement-hero";
 import { InventoryBatchCard } from "@/components/inventory/inventory-batch-card";
@@ -45,9 +47,10 @@ import {
   normalizeIntlOutput,
   todayDateColombia,
 } from "@/lib/calendar-date";
-import type { InventoryBatchWithLines, MovementWithProduct } from "./actions";
+import type { InventoryBatchWithLines, MovementWithProduct, ProductRotationRow } from "./actions";
 import { deleteInventoryBatch, deleteMovement, searchProductsForMovement } from "./actions";
 import type { ProductSearchHit } from "./actions";
+import { InventoryRotationPanel } from "@/components/inventory/inventory-rotation-panel";
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 import { useNavigationGuardRegistration } from "@/components/layout/navigation-guard";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
@@ -133,7 +136,11 @@ function MovementRowNequi({
       <div className="text-right">
         <p className="text-xl font-bold tabular-nums text-foreground">
           {row.movement_type === "out" ? "−" : row.movement_type === "in" ? "+" : ""}
-          {formatMovementQuantityLabel(row.quantity, row.product_packaging)}
+          {formatMovementQuantityLabel(
+            row.quantity,
+            row.product_packaging,
+            row.product_presentation,
+          )}
         </p>
       </div>
       <Button
@@ -189,6 +196,8 @@ interface InventoryClientProps {
   filterTo?: string;
   filterProductId?: string;
   filterProductName?: string | null;
+  rotationRows?: ProductRotationRow[];
+  rotationPeriodLabel?: string;
 }
 
 type DailyMovementGroup = {
@@ -247,10 +256,14 @@ export function InventoryClient({
   filterTo,
   filterProductId,
   filterProductName,
+  rotationRows = [],
+  rotationPeriodLabel = "todo el historial",
 }: InventoryClientProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [formOpen, setFormOpen] = React.useState(false);
+  const [formatsOpen, setFormatsOpen] = React.useState(false);
+  const [scanOpen, setScanOpen] = React.useState(false);
   const [formInitialType, setFormInitialType] = React.useState<InventoryMovementPreset>("in");
   const [movementFormDirty, setMovementFormDirty] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
@@ -472,6 +485,13 @@ export function InventoryClient({
         filterChips={filterChips}
         onClearAllFilters={filterChips.length > 1 ? clearAllFilters : undefined}
         hasActiveFilters={hasActiveFilters}
+        onOpenFormats={() => setFormatsOpen(true)}
+        onOpenScan={() => setScanOpen(true)}
+      />
+
+      <InventoryRotationPanel
+        rows={rotationRows}
+        periodLabel={rotationPeriodLabel}
       />
 
       <InventoryProductFilterDialog
@@ -705,6 +725,12 @@ export function InventoryClient({
         onSuccess={handleFormSuccess}
         onDirtyChange={setMovementFormDirty}
         initialMovementType={formInitialType}
+      />
+      <InventoryFormatsDialog open={formatsOpen} onOpenChange={setFormatsOpen} />
+      <InventorySheetScanModal
+        open={scanOpen}
+        onOpenChange={setScanOpen}
+        onSuccess={handleFormSuccess}
       />
     </div>
   );

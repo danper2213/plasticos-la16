@@ -15,6 +15,7 @@ import { SearchLottie } from "@/components/ui/search-lottie";
 import {
   DashboardSearchBar,
   type DashboardSearchBarHandle,
+  type SearchBarMicState,
 } from "@/components/layout/dashboard-search-bar";
 import {
   DashboardFeatureHeroBadge,
@@ -56,6 +57,8 @@ type ProductsSearchHeroProps = {
   onClearAllFilters?: () => void;
   onNewProduct?: () => void;
   onUpdateCostsFromInvoice?: () => void;
+  micState?: SearchBarMicState;
+  onMicClick?: () => void;
 };
 
 function StatusPill({
@@ -133,6 +136,8 @@ export const ProductsSearchHero = forwardRef<DashboardSearchBarHandle, ProductsS
       onClearAllFilters,
       onNewProduct,
       onUpdateCostsFromInvoice,
+      micState,
+      onMicClick,
     },
     ref,
   ) {
@@ -160,7 +165,7 @@ export const ProductsSearchHero = forwardRef<DashboardSearchBarHandle, ProductsS
             />
 
             <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Nombre, código de escaneo o medida. Escribí o tocá una sugerencia para empezar.
+              Nombre, código o medida. Preguntá el precio o el stock por voz, o tocá una sugerencia.
             </p>
 
             {onNewProduct || onUpdateCostsFromInvoice ? (
@@ -237,6 +242,8 @@ export const ProductsSearchHero = forwardRef<DashboardSearchBarHandle, ProductsS
               placeholder="Buscar por nombre, código o medida…"
               rotatingPlaceholder={SEARCH_EXAMPLE_TERMS}
               ariaLabel="Buscar productos"
+              micState={micState}
+              onMicClick={onMicClick}
             />
 
             {showStatus ? (

@@ -345,12 +345,13 @@ export interface ConfirmInvoiceCostLineInput {
   unidadesPorEmpaque: number;
   unitCost: number;
   costBasis?: "metraje" | "unidad";
-  /** Si true, actualiza products.cost cuando unitCost > cost actual. */
+  /** Si true, actualiza products.cost al valor de la factura (alza o baja). */
   applyCostUpdate: boolean;
 }
 
 /**
- * Confirma líneas: refuerza aprendizaje y, si aplica, sube el costo del producto.
+ * Confirma líneas: refuerza aprendizaje y, si aplica, actualiza el costo
+ * del producto (alza o baja, según lo que el usuario marcó).
  */
 export async function confirmInvoiceCostUpdates(input: {
   supplierId?: string | null;
@@ -414,13 +415,14 @@ export async function confirmInvoiceCostUpdates(input: {
     if (productError) throw new Error(productError.message);
     if (!product) continue;
 
-    const currentCost = Number(product.cost ?? 0);
-    if (!(line.unitCost > currentCost)) continue;
+    const currentCost = Math.round(Number(product.cost ?? 0) * 100) / 100;
+    const nextCost = Math.round(line.unitCost * 100) / 100;
+    if (!(nextCost > 0) || nextCost === currentCost) continue;
 
     const { error: updateError } = await supabase
       .from("products")
       .update({
-        cost: line.unitCost,
+        cost: nextCost,
         updated_at: new Date().toISOString(),
       })
       .eq("id", line.productId);

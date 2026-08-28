@@ -15,9 +15,11 @@ import { toStockNumber } from "@/lib/inventory-quantity";
 import { buildLinePreviews } from "@/lib/inventory-movement-preview";
 import {
   attachPackagingToLines,
-  buildUnitExitNote,
+  buildUnitMovementNote,
   toStockUnitLines,
 } from "@/lib/inventory-line-stock";
+import { aggregateProductRotation } from "@/lib/inventory-product-rotation";
+import { formatMovementQuantityLabel } from "@/lib/inventory-stock-display";
 import { todayDateColombia } from "@/lib/calendar-date";
 
 function inventoryStockLog(message: string, detail?: Record<string, unknown>): string {
@@ -29,6 +31,7 @@ export type BatchLineStockImpact = {
   productId: string;
   productName: string;
   productPackaging: string | null;
+  productPresentation: string | null;
   movementType: string;
   quantity: number;
   stockBefore: number;
@@ -376,6 +379,89 @@ export async function getInventoryBatches(options?: {
   });
 }
 
+export type ProductRotationRow = {
+  productId: string;
+  productName: string;
+  packaging: string | null;
+  presentation: string | null;
+  quantityOut: number;
+  quantityOutLabel: string;
+  outEvents: number;
+  distinctDays: number;
+};
+
+/**
+ * Ranking de productos con más salidas en el período (rotación de bodega).
+ * Aprende de cada salida registrada en inventory_movements.
+ */
+export async function getProductRotationReport(options?: {
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+}): Promise<ProductRotationRow[]> {
+  const { supabase } = await requireUser();
+  const limit = Math.min(Math.max(options?.limit ?? 15, 1), 50);
+
+  let query = supabase
+    .from("inventory_movements")
+    .select("product_id, quantity, movement_date, batch_id")
+    .eq("movement_type", "out");
+
+  if (options?.dateFrom) query = query.gte("movement_date", options.dateFrom);
+  if (options?.dateTo) query = query.lte("movement_date", options.dateTo);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("getProductRotationReport:", error.message ?? error);
+    return [];
+  }
+
+  const aggregated = aggregateProductRotation(
+    (data ?? []) as Array<{
+      product_id: string;
+      quantity: number;
+      movement_date: string | null;
+      batch_id: string | null;
+    }>,
+  ).slice(0, limit);
+
+  if (aggregated.length === 0) return [];
+
+  const productIds = aggregated.map((r) => r.productId);
+  const { data: products, error: productsError } = await supabase
+    .from("products")
+    .select("id, name, packaging, presentation")
+    .in("id", productIds);
+
+  if (productsError) {
+    console.error("getProductRotationReport products:", productsError.message);
+  }
+
+  const byId = new Map(
+    ((products ?? []) as Array<{
+      id: string;
+      name: string;
+      packaging: string | null;
+      presentation: string | null;
+    }>).map((p) => [p.id, p]),
+  );
+
+  return aggregated.map((row) => {
+    const product = byId.get(row.productId);
+    const packaging = product?.packaging ?? null;
+    return {
+      productId: row.productId,
+      productName: product?.name?.trim() || "Producto",
+      packaging,
+      presentation: product?.presentation ?? null,
+      quantityOut: row.quantityOut,
+      quantityOutLabel: formatMovementQuantityLabel(row.quantityOut, packaging),
+      outEvents: row.outEvents,
+      distinctDays: row.distinctDays,
+    };
+  });
+}
+
 /** Reconstruye el saldo antes/después de cada línea al momento del comprobante. */
 export async function getBatchStockImpact(
   batchId: string,
@@ -447,6 +533,7 @@ export async function getBatchStockImpact(
         productId: line.product_id,
         productName: line.product_name,
         productPackaging: line.product_packaging,
+        productPresentation: line.product_presentation || null,
         movementType: line.movement_type,
         quantity: line.quantity,
         stockBefore: toStockNumber(line.stock_before),
@@ -523,6 +610,7 @@ export async function getBatchStockImpact(
       productId: line.product_id,
       productName: line.product_name,
       productPackaging: line.product_packaging,
+      productPresentation: line.product_presentation || null,
       movementType: line.movement_type,
       quantity: line.quantity,
       stockBefore: previews[i]?.balanceBefore ?? 0,
@@ -910,7 +998,7 @@ export async function createMovementsBatch(data: BatchInventoryMovementFormValue
   }
 
   const movement_date = todayDateColombia();
-  const unitNote = buildUnitExitNote(
+  const unitNote = buildUnitMovementNote(
     parsed.data.lines,
     packagingById,
     presentationById,

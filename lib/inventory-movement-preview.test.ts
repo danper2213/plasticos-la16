@@ -75,6 +75,26 @@ describe("convención: 1 caja/paca = ±1 en stock (sin usar x70/x200)", () => {
       }),
     ).toBe(1.9);
   });
+
+  it("entrada en unidades convierte a fracciones de paca", () => {
+    expect(
+      simulateStockAfterLines(2, [
+        {
+          product_id: PRODUCT_ID,
+          movement_type: "in",
+          quantity: 500,
+          quantity_unit: "unit",
+          packaging: "Paca x500",
+        },
+      ]),
+    ).toBe(3);
+    expect(
+      computeLineBalanceAfter(2, "in", 50, {
+        quantity_unit: "unit",
+        packaging: "Paca x500",
+      }),
+    ).toBe(2.1);
+  });
 });
 
 describe("lineStockDelta", () => {
@@ -91,6 +111,17 @@ describe("formatMovementQuantityLabel", () => {
   it("entrada/salida 10 = 10 Pacas con Paca x200", () => {
     expect(formatMovementQuantityLabel(10, PACA_X200)).toBe("10 Pacas");
     expect(getInventoryUnitLabel(PACA_X200)).toBe("Paca");
+  });
+
+  it("fracción de paca se muestra en rollos, no en 0,88 Pacas", () => {
+    expect(formatMovementQuantityLabel(0.88, "Paca x43", "Rollo")).toBe("38 Rollos");
+    expect(formatMovementQuantityLabel(38 / 43, "Paca x43", "Rollo")).toBe("38 Rollos");
+  });
+
+  it("mezcla pacas enteras y resto en rollos", () => {
+    expect(formatMovementQuantityLabel(2.88, "Paca x43", "Rollo")).toBe(
+      "2 Pacas y 38 Rollos",
+    );
   });
 });
 
@@ -112,6 +143,12 @@ describe("getStockDisplayInfo", () => {
     const info = getStockDisplayInfo(316, PACA_X200);
     expect(info.primary).toContain("316");
     expect(info.primary).toContain("Paca");
+  });
+
+  it("fracción de paca: 0,88 de Paca x43 = 38 Rollos", () => {
+    const info = getStockDisplayInfo(0.88, "Paca x43", "Rollo");
+    expect(info.primary).toBe("38 Rollos");
+    expect(info.primary).not.toMatch(/0[,.]88/);
   });
 
   it("Pqt x20: muestra 316 sin dividir por 20", () => {

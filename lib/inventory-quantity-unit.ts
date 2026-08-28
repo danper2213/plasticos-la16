@@ -59,7 +59,7 @@ export function getLooseUnitLabel(
   return "unidad";
 }
 
-/** Opciones de salida según empaque del producto. */
+/** Opciones de presentación (entrada/salida) según empaque del producto. */
 export function resolveExitUnitOptions(
   packaging: string | null | undefined,
   presentation?: string | null,

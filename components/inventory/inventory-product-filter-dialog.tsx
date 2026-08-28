@@ -87,6 +87,11 @@ export function InventoryProductFilterDialog({
                         <Search className="mt-0.5 size-3.5 shrink-0 text-primary/70" aria-hidden />
                         <span>
                           <span className="font-medium text-foreground">{p.name}</span>
+                          {p.supplier_name ? (
+                            <span className="ml-1 text-muted-foreground">
+                              · {p.supplier_name}
+                            </span>
+                          ) : null}
                           {p.packaging ? (
                             <span className="ml-1 text-muted-foreground">({p.packaging})</span>
                           ) : null}

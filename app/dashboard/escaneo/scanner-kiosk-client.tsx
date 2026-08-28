@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCop } from "@/lib/format";
-import { formatInventoryQuantity } from "@/lib/inventory-quantity";
+import { getStockDisplayInfo } from "@/lib/inventory-stock-display";
 import { getProductByScanCode, type ProductWithRelations } from "@/app/dashboard/products/actions";
 import { PriceSimulatorPanels } from "@/components/products/price-simulator-panels";
 import { cn } from "@/lib/utils";
@@ -87,7 +87,7 @@ export function ScannerKioskClient() {
   const stockLabel =
     product?.stock_quantity == null
       ? "Sin registro en bodega"
-      : `En bodega: ${formatInventoryQuantity(Number(product.stock_quantity))}`;
+      : `En bodega: ${getStockDisplayInfo(Number(product.stock_quantity), product.packaging, product.presentation).primary}`;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">

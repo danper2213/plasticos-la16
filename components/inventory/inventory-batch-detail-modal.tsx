@@ -62,8 +62,12 @@ function movementTypeStyles(type: string): string {
   return "bg-amber-500/15 text-amber-600 dark:text-amber-400";
 }
 
-function formatStockValue(value: number, packaging: string | null): string {
-  return getStockDisplayInfo(value, packaging).primary;
+function formatStockValue(
+  value: number,
+  packaging: string | null,
+  presentation?: string | null,
+): string {
+  return getStockDisplayInfo(value, packaging, presentation).primary;
 }
 
 interface InventoryBatchDetailModalProps {
@@ -227,7 +231,11 @@ export function InventoryBatchDetailModal({
                     </div>
                     <p className="shrink-0 text-right text-base font-bold tabular-nums">
                       {row.movement_type === "out" ? "−" : row.movement_type === "in" ? "+" : ""}
-                      {formatMovementQuantityLabel(row.quantity, row.product_packaging)}
+                      {formatMovementQuantityLabel(
+                        row.quantity,
+                        row.product_packaging,
+                        row.product_presentation,
+                      )}
                     </p>
                     <Button
                       type="button"
@@ -282,14 +290,26 @@ export function InventoryBatchDetailModal({
                         >
                           <MovementTypeIcon type={row.movementType} />
                           {row.movementType === "out" ? "−" : row.movementType === "in" ? "+" : ""}
-                          {formatMovementQuantityLabel(row.quantity, row.productPackaging)}
+                          {formatMovementQuantityLabel(
+                            row.quantity,
+                            row.productPackaging,
+                            row.productPresentation,
+                          )}
                         </span>
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {formatStockValue(row.stockBefore, row.productPackaging)}
+                        {formatStockValue(
+                          row.stockBefore,
+                          row.productPackaging,
+                          row.productPresentation,
+                        )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums font-semibold">
-                        {formatStockValue(row.stockAfter, row.productPackaging)}
+                        {formatStockValue(
+                          row.stockAfter,
+                          row.productPackaging,
+                          row.productPresentation,
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

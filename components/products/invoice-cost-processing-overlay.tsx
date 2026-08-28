@@ -13,22 +13,43 @@ const EXTRACT_STEPS = [
   "Preparando vista de confirmación…",
 ] as const;
 
+const SHEET_EXTRACT_STEPS = [
+  "Leyendo la foto…",
+  "Reconociendo cantidades y productos…",
+  "Detectando si es entrada o salida…",
+  "Buscando coincidencias en el catálogo…",
+  "Preparando la confirmación…",
+] as const;
+
 const CONFIRM_STEPS = [
   "Guardando aprendizajes…",
-  "Actualizando costos al alza…",
+  "Actualizando costos confirmados…",
   "Sincronizando catálogo…",
 ] as const;
 
 type InvoiceCostProcessingOverlayProps = {
-  mode: "extract" | "confirm";
+  mode: "extract" | "confirm" | "extract-sheet";
   className?: string;
 };
+
+function overlayCopy(mode: InvoiceCostProcessingOverlayProps["mode"]) {
+  if (mode === "extract-sheet") {
+    return {
+      title: "Leyendo movimiento de inventario",
+      steps: SHEET_EXTRACT_STEPS,
+    };
+  }
+  if (mode === "extract") {
+    return { title: "Extrayendo y verificando factura", steps: EXTRACT_STEPS };
+  }
+  return { title: "Confirmando cambios", steps: CONFIRM_STEPS };
+}
 
 export function InvoiceCostProcessingOverlay({
   mode,
   className,
 }: InvoiceCostProcessingOverlayProps) {
-  const steps = mode === "extract" ? EXTRACT_STEPS : CONFIRM_STEPS;
+  const { title, steps } = overlayCopy(mode);
   const [stepIndex, setStepIndex] = useState(0);
 
   useEffect(() => {
@@ -58,11 +79,7 @@ export function InvoiceCostProcessingOverlay({
       </div>
 
       <div className="max-w-sm text-center space-y-2">
-        <p className="text-base font-semibold text-foreground">
-          {mode === "extract"
-            ? "Extrayendo y verificando factura"
-            : "Confirmando cambios"}
-        </p>
+        <p className="text-base font-semibold text-foreground">{title}</p>
         <p
           key={`${mode}-${stepIndex}`}
           className="text-sm text-muted-foreground animate-in fade-in duration-300"

@@ -22,11 +22,14 @@ import { PriceList } from "@/components/products/price-list";
 import {
   ProductSearchBar,
 } from "@/components/products/product-search-bar";
+import type { SearchBarMicState } from "@/components/layout/dashboard-search-bar";
 import type { ActiveFilterChip } from "@/components/products/products-filter-chips";
 import { ProductsListFilterDialog } from "@/components/products/products-list-filter-dialog";
 import { ProductsSearchHero } from "@/components/products/products-search-hero";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useSpeechAnnounce } from "@/hooks/use-speech-announce";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import {
   buildProductsPageCacheKey,
   clearProductsListCache,
@@ -45,6 +48,11 @@ import {
 } from "./actions";
 import type { ProductsStockFilter } from "./list-types";
 import { logProductsSearch } from "@/lib/products-search-debug";
+import { buildProductsVoiceAnnouncement } from "@/lib/products-voice-announce";
+import {
+  parseVoiceProductRequest,
+  type VoiceProductIntent,
+} from "@/lib/products-voice-query";
 
 type StockFilter = ProductsStockFilter;
 
@@ -94,12 +102,53 @@ export function ProductsClient({
   const requestIdRef = useRef(0);
   const inflightRequests = useRef(new Map<string, Promise<ProductsPageResult>>());
   const filterKeyRef = useRef("");
+  const announceAfterFetchRef = useRef(false);
+  const voiceIntentRef = useRef<VoiceProductIntent>("search");
+  const speakRef = useRef<(text: string) => void>(() => {});
+  const listStateRef = useRef(listState);
+  const activeSearchRef = useRef(activeSearch);
+  listStateRef.current = listState;
+  activeSearchRef.current = activeSearch;
   const {
     heroObservedRef,
     searchBarRef,
     stickySearchBarRef,
     heroVisible,
   } = useDashboardSearchFocus();
+  const announce = useSpeechAnnounce();
+  speakRef.current = announce.speak;
+
+  const recognition = useSpeechRecognition({
+    lang: "es-CO",
+    onInterim: (text) => {
+      setSearchQuery(text);
+    },
+    onFinal: (text) => {
+      const parsed = parseVoiceProductRequest(text);
+      const query = parsed.query;
+      if (!query) return;
+      voiceIntentRef.current = parsed.intent;
+      setSearchQuery(query);
+      setForcedSearch(query);
+      setPage(1);
+      if (query === activeSearchRef.current) {
+        speakRef.current(
+          buildProductsVoiceAnnouncement({
+            query,
+            totalCount: listStateRef.current.totalCount,
+            products: listStateRef.current.products,
+            intent: voiceIntentRef.current,
+          }),
+        );
+        voiceIntentRef.current = "search";
+        return;
+      }
+      announceAfterFetchRef.current = true;
+    },
+    onError: (message) => {
+      toast.error(message);
+    },
+  });
 
   const filterKey = `${activeSearch}|${stockFilter}|${categoryFilter}|${supplierFilter}`;
 
@@ -152,6 +201,10 @@ export function ProductsClient({
         id: "search",
         label: `«${searchQuery.trim()}»`,
         onRemove: () => {
+          announceAfterFetchRef.current = false;
+          voiceIntentRef.current = "search";
+          announce.cancel();
+          recognition.abort();
           setSearchQuery("");
           setForcedSearch("");
           setPage(1);
@@ -202,6 +255,8 @@ export function ProductsClient({
     activeCategoryName,
     stockFilter,
     activeStockLabel,
+    announce,
+    recognition,
   ]);
 
   useEffect(() => {
@@ -276,6 +331,21 @@ export function ProductsClient({
     [stockFilter, categoryFilter, supplierFilter],
   );
 
+  function flushVoiceAnnouncement(result: ProductsPageResult, query: string) {
+    if (!announceAfterFetchRef.current) return;
+    announceAfterFetchRef.current = false;
+    const intent = voiceIntentRef.current;
+    voiceIntentRef.current = "search";
+    speakRef.current(
+      buildProductsVoiceAnnouncement({
+        query,
+        totalCount: result.totalCount,
+        products: result.products,
+        intent,
+      }),
+    );
+  }
+
   useEffect(() => {
     if (skipInitialFetch.current) {
       skipInitialFetch.current = false;
@@ -329,6 +399,7 @@ export function ProductsClient({
         logProductsSearch("fetch cache hit", { reqId, cacheKey, totalCount: cached.totalCount });
         setListState(cached);
         setIsLoading(false);
+        flushVoiceAnnouncement(cached, activeSearch);
         return;
       }
 
@@ -358,9 +429,12 @@ export function ProductsClient({
         });
         setListState(result);
         setPage(result.page);
+        flushVoiceAnnouncement(result, activeSearch);
       } catch (error) {
         if (!cancelled && reqId === requestIdRef.current) {
           logProductsSearch("fetch error", { reqId, error });
+          announceAfterFetchRef.current = false;
+          voiceIntentRef.current = "search";
           toast.error("No se pudo cargar la lista de productos");
         }
       } finally {
@@ -389,12 +463,20 @@ export function ProductsClient({
 
   function handleSearchQueryChange(value: string) {
     logProductsSearch("input change", { value, length: value.length });
+    announceAfterFetchRef.current = false;
+    voiceIntentRef.current = "search";
+    announce.cancel();
+    if (recognition.status === "listening") recognition.abort();
     setSearchQuery(value);
     if (page !== 1) setPage(1);
   }
 
   function handleSearchClear() {
     logProductsSearch("clear");
+    announceAfterFetchRef.current = false;
+    voiceIntentRef.current = "search";
+    announce.cancel();
+    recognition.abort();
     setSearchQuery("");
     setForcedSearch("");
     setPage(1);
@@ -406,6 +488,28 @@ export function ProductsClient({
     setForcedSearch(trimmed);
     setPage(1);
   }
+
+  function handleMicClick() {
+    if (announce.speaking) {
+      announce.cancel();
+      return;
+    }
+    if (recognition.status === "listening") {
+      recognition.stop();
+      return;
+    }
+    announce.cancel();
+    recognition.start();
+  }
+
+  const micState: SearchBarMicState =
+    recognition.status === "listening"
+      ? "listening"
+      : announce.speaking
+        ? "speaking"
+        : "idle";
+  const onMicClick =
+    recognition.status === "unsupported" ? undefined : handleMicClick;
 
   function handleSupplierSelect(supplierId: string) {
     setSupplierFilter(supplierId);
@@ -523,6 +627,8 @@ export function ProductsClient({
             onChange={handleSearchQueryChange}
             onClear={handleSearchClear}
             onSubmit={handleSearchSubmit}
+            micState={micState}
+            onMicClick={onMicClick}
           />
         </DashboardStickySearch>
 
@@ -549,6 +655,8 @@ export function ProductsClient({
             }
             onNewProduct={openNewProductForm}
             onUpdateCostsFromInvoice={() => setInvoiceCostOpen(true)}
+            micState={micState}
+            onMicClick={onMicClick}
           />
         </div>
 

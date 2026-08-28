@@ -62,7 +62,9 @@ export interface ProcessedInvoiceLine {
 }
 
 /**
- * Pipeline: aprendizaje → metraje desde descripción → costo → match → alza.
+ * Pipeline: aprendizaje → metraje desde descripción → costo → match → alza
+ * propuesta. Las bajas de costo no se auto-aplican (`skip_not_higher`);
+ * la UI puede optar por aplicarlas.
  */
 export function processInvoiceLine(
   input: ProcessInvoiceLineInput,
