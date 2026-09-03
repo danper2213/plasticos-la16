@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronRight,
   ScanLine,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigationGuardClick } from "@/components/layout/navigation-guard";
@@ -59,6 +60,7 @@ const administracionGroup: NavGroup = {
     { href: "/dashboard/banks", label: "Cuentas Bancarias", icon: Landmark, roles: ["admin"] },
     { href: "/dashboard/closures", label: "Cierres Diario", icon: Calendar, roles: ["admin"] },
     { href: "/dashboard/closures/samit", label: "Cierres SAMIT", icon: Calculator, roles: ["admin"] },
+    { href: "/dashboard/registro-diario", label: "Registro diario", icon: ClipboardList, roles: ["admin"] },
     { href: "/dashboard/proveedores", label: "Proveedores", icon: Truck, roles: ["admin"] },
     { href: "/dashboard/payables", label: "Cuentas por Pagar", icon: CreditCard, roles: ["admin"] },
     { href: "/dashboard/usuarios", label: "Usuarios", icon: UserCog, roles: ["admin"] },

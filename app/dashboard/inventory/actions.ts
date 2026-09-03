@@ -21,6 +21,10 @@ import {
 import { aggregateProductRotation } from "@/lib/inventory-product-rotation";
 import { formatMovementQuantityLabel } from "@/lib/inventory-stock-display";
 import { todayDateColombia } from "@/lib/calendar-date";
+import {
+  INVENTORY_BATCH_PAGE_SIZE,
+  inventoryReceiptCutoffIso,
+} from "@/lib/inventory-receipt-retention";
 
 function inventoryStockLog(message: string, detail?: Record<string, unknown>): string {
   return detail ? `${message} ${JSON.stringify(detail)}` : message;
@@ -309,13 +313,100 @@ interface BatchRowFromDb {
   inventory_movements: MovementRow[] | MovementRow | null;
 }
 
+export type InventoryBatchesPage = {
+  batches: InventoryBatchWithLines[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+const EMPTY_BATCHES_PAGE: InventoryBatchesPage = {
+  batches: [],
+  totalCount: 0,
+  page: 1,
+  pageSize: INVENTORY_BATCH_PAGE_SIZE,
+  totalPages: 0,
+};
+
+/**
+ * Borra comprobantes (y movimientos sueltos) de más de 30 días.
+ * No revierte stock: la existencia de bodega ya quedó aplicada.
+ */
+export async function purgeExpiredInventoryReceipts(): Promise<number> {
+  const { supabase } = await requireUser();
+  const cutoff = inventoryReceiptCutoffIso();
+
+  const { data: oldBatches, error: listError } = await supabase
+    .from("inventory_movement_batches")
+    .select("id")
+    .lt("created_at", cutoff);
+
+  if (listError) {
+    console.error("purgeExpiredInventoryReceipts list:", listError.message);
+    return 0;
+  }
+
+  const batchIds = ((oldBatches ?? []) as unknown as Array<{ id: string }>).map((row) => row.id);
+  let deleted = 0;
+
+  if (batchIds.length > 0) {
+    const { error: deleteBatchesError } = await supabase
+      .from("inventory_movement_batches")
+      .delete()
+      .in("id", batchIds);
+    if (deleteBatchesError) {
+      console.error("purgeExpiredInventoryReceipts batches:", deleteBatchesError.message);
+    } else {
+      deleted += batchIds.length;
+    }
+  }
+
+  const { error: legacyError } = await supabase
+    .from("inventory_movements")
+    .delete()
+    .is("batch_id", null)
+    .lt("created_at", cutoff);
+
+  if (legacyError) {
+    console.error("purgeExpiredInventoryReceipts legacy:", legacyError.message);
+  }
+
+  return deleted;
+}
+
+function mapBatchRow(b: BatchRowFromDb): InventoryBatchWithLines {
+  const movRaw = b.inventory_movements;
+  const movList = Array.isArray(movRaw) ? movRaw : movRaw ? [movRaw] : [];
+  const withUser = movList.length > 0 && "created_by_user_id" in (movList[0] as object);
+  const lines = movList
+    .map((row) => mapMovementRow(row as MovementRow, Boolean(withUser)))
+    .sort((a, c) => {
+      const ta = new Date(a.created_at ?? a.movement_date).getTime();
+      const tc = new Date(c.created_at ?? c.movement_date).getTime();
+      return ta - tc;
+    });
+  return {
+    id: b.id,
+    movement_date: b.movement_date,
+    notes: b.notes,
+    created_at: b.created_at,
+    created_by_user_id: b.created_by_user_id ?? null,
+    created_by_email: b.created_by_email ?? null,
+    lines,
+  };
+}
+
 /** Comprobantes de inventario (facturas) con líneas; filtros por fecha del comprobante y por producto. */
 export async function getInventoryBatches(options?: {
   dateFrom?: string;
   dateTo?: string;
   productId?: string;
-}): Promise<InventoryBatchWithLines[]> {
+  page?: number;
+}): Promise<InventoryBatchesPage> {
   const { supabase } = await requireUser();
+  const pageSize = INVENTORY_BATCH_PAGE_SIZE;
+  let page = Math.max(1, options?.page ?? 1);
 
   let batchIds: string[] | null = null;
   if (options?.productId) {
@@ -326,57 +417,68 @@ export async function getInventoryBatches(options?: {
       .not("batch_id", "is", null);
     if (midErr) {
       console.error("getInventoryBatches (filter product):", midErr);
-      return [];
+      return EMPTY_BATCHES_PAGE;
     }
     const ids = [...new Set((midRows ?? []).map((r) => (r as { batch_id: string }).batch_id).filter(Boolean))];
-    if (ids.length === 0) return [];
+    if (ids.length === 0) return { ...EMPTY_BATCHES_PAGE, page };
     batchIds = ids;
   }
 
-  const runBatchesQuery = (selectStr: string) => {
+  const runBatchesQuery = (selectStr: string, pageNum: number) => {
+    const from = (pageNum - 1) * pageSize;
+    const to = from + pageSize - 1;
     let q = supabase
       .from("inventory_movement_batches")
-      .select(selectStr)
-      .order("created_at", { ascending: false });
+      .select(selectStr, { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, to);
     if (options?.dateFrom) q = q.gte("movement_date", options.dateFrom);
     if (options?.dateTo) q = q.lte("movement_date", options.dateTo);
     if (batchIds) q = q.in("id", batchIds);
     return q;
   };
 
-  let { data, error } = await runBatchesQuery(BATCHES_SELECT);
-  if (error) {
-    const fallback = await runBatchesQuery(BATCHES_SELECT_LEGACY);
-    data = fallback.data;
-    error = fallback.error;
-  }
+  const fetchPage = async (pageNum: number) => {
+    let { data, error, count } = await runBatchesQuery(BATCHES_SELECT, pageNum);
+    if (error) {
+      const fallback = await runBatchesQuery(BATCHES_SELECT_LEGACY, pageNum);
+      data = fallback.data;
+      error = fallback.error;
+      count = fallback.count;
+    }
+    return { data, error, count };
+  };
+
+  let { data, error, count } = await fetchPage(page);
   if (error) {
     console.error("getInventoryBatches error:", error.message ?? error);
-    return [];
+    return { ...EMPTY_BATCHES_PAGE, page };
+  }
+
+  let totalCount = count ?? 0;
+  let totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / pageSize);
+
+  if (totalPages > 0 && page > totalPages) {
+    page = totalPages;
+    const retry = await fetchPage(page);
+    if (retry.error) {
+      console.error("getInventoryBatches retry error:", retry.error.message);
+      return { ...EMPTY_BATCHES_PAGE, page, totalCount, totalPages };
+    }
+    data = retry.data;
+    count = retry.count;
+    totalCount = count ?? totalCount;
+    totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / pageSize);
   }
 
   const raw = (data ?? []) as unknown as BatchRowFromDb[];
-  return raw.map((b) => {
-    const movRaw = b.inventory_movements;
-    const movList = Array.isArray(movRaw) ? movRaw : movRaw ? [movRaw] : [];
-    const withUser = movList.length > 0 && "created_by_user_id" in (movList[0] as object);
-    const lines = movList
-      .map((row) => mapMovementRow(row as MovementRow, Boolean(withUser)))
-      .sort((a, c) => {
-        const ta = new Date(a.created_at ?? a.movement_date).getTime();
-        const tc = new Date(c.created_at ?? c.movement_date).getTime();
-        return ta - tc;
-      });
-    return {
-      id: b.id,
-      movement_date: b.movement_date,
-      notes: b.notes,
-      created_at: b.created_at,
-      created_by_user_id: b.created_by_user_id ?? null,
-      created_by_email: b.created_by_email ?? null,
-      lines,
-    };
-  });
+  return {
+    batches: raw.map(mapBatchRow),
+    totalCount,
+    page,
+    pageSize,
+    totalPages,
+  };
 }
 
 export type ProductRotationRow = {
@@ -388,6 +490,21 @@ export type ProductRotationRow = {
   quantityOutLabel: string;
   outEvents: number;
   distinctDays: number;
+  sharePercent: number;
+};
+
+export type ProductRotationReport = {
+  rows: ProductRotationRow[];
+  totalQuantityOut: number;
+  totalProducts: number;
+  totalOutEvents: number;
+};
+
+const EMPTY_ROTATION_REPORT: ProductRotationReport = {
+  rows: [],
+  totalQuantityOut: 0,
+  totalProducts: 0,
+  totalOutEvents: 0,
 };
 
 /**
@@ -398,7 +515,7 @@ export async function getProductRotationReport(options?: {
   dateFrom?: string;
   dateTo?: string;
   limit?: number;
-}): Promise<ProductRotationRow[]> {
+}): Promise<ProductRotationReport> {
   const { supabase } = await requireUser();
   const limit = Math.min(Math.max(options?.limit ?? 15, 1), 50);
 
@@ -413,21 +530,26 @@ export async function getProductRotationReport(options?: {
   const { data, error } = await query;
   if (error) {
     console.error("getProductRotationReport:", error.message ?? error);
-    return [];
+    return EMPTY_ROTATION_REPORT;
   }
 
   const aggregated = aggregateProductRotation(
-    (data ?? []) as Array<{
+    (data ?? []) as unknown as Array<{
       product_id: string;
       quantity: number;
       movement_date: string | null;
       batch_id: string | null;
     }>,
-  ).slice(0, limit);
+  );
 
-  if (aggregated.length === 0) return [];
+  if (aggregated.length === 0) return EMPTY_ROTATION_REPORT;
 
-  const productIds = aggregated.map((r) => r.productId);
+  const totalQuantityOut = aggregated.reduce((sum, row) => sum + row.quantityOut, 0);
+  const totalOutEvents = aggregated.reduce((sum, row) => sum + row.outEvents, 0);
+  const totalProducts = aggregated.length;
+  const top = aggregated.slice(0, limit);
+
+  const productIds = top.map((r) => r.productId);
   const { data: products, error: productsError } = await supabase
     .from("products")
     .select("id, name, packaging, presentation")
@@ -438,7 +560,7 @@ export async function getProductRotationReport(options?: {
   }
 
   const byId = new Map(
-    ((products ?? []) as Array<{
+    ((products ?? []) as unknown as Array<{
       id: string;
       name: string;
       packaging: string | null;
@@ -446,20 +568,28 @@ export async function getProductRotationReport(options?: {
     }>).map((p) => [p.id, p]),
   );
 
-  return aggregated.map((row) => {
-    const product = byId.get(row.productId);
-    const packaging = product?.packaging ?? null;
-    return {
-      productId: row.productId,
-      productName: product?.name?.trim() || "Producto",
-      packaging,
-      presentation: product?.presentation ?? null,
-      quantityOut: row.quantityOut,
-      quantityOutLabel: formatMovementQuantityLabel(row.quantityOut, packaging),
-      outEvents: row.outEvents,
-      distinctDays: row.distinctDays,
-    };
-  });
+  return {
+    totalQuantityOut,
+    totalProducts,
+    totalOutEvents,
+    rows: top.map((row) => {
+      const product = byId.get(row.productId);
+      const packaging = product?.packaging ?? null;
+      const sharePercent =
+        totalQuantityOut > 0 ? (row.quantityOut / totalQuantityOut) * 100 : 0;
+      return {
+        productId: row.productId,
+        productName: product?.name?.trim() || "Producto",
+        packaging,
+        presentation: product?.presentation ?? null,
+        quantityOut: row.quantityOut,
+        quantityOutLabel: formatMovementQuantityLabel(row.quantityOut, packaging),
+        outEvents: row.outEvents,
+        distinctDays: row.distinctDays,
+        sharePercent,
+      };
+    }),
+  };
 }
 
 /** Reconstruye el saldo antes/después de cada línea al momento del comprobante. */
@@ -1208,6 +1338,8 @@ export async function createMovementsBatch(data: BatchInventoryMovementFormValue
       });
     }
   }
+
+  await purgeExpiredInventoryReceipts();
 
   revalidatePath("/dashboard/inventory");
   revalidatePath("/dashboard/products");

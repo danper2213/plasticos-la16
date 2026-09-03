@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +34,8 @@ import {
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   Package,
   Plus,
@@ -47,10 +50,11 @@ import {
   normalizeIntlOutput,
   todayDateColombia,
 } from "@/lib/calendar-date";
-import type { InventoryBatchWithLines, MovementWithProduct, ProductRotationRow } from "./actions";
+import type { InventoryBatchWithLines, MovementWithProduct, ProductRotationReport } from "./actions";
 import { deleteInventoryBatch, deleteMovement, searchProductsForMovement } from "./actions";
 import type { ProductSearchHit } from "./actions";
 import { InventoryRotationPanel } from "@/components/inventory/inventory-rotation-panel";
+import { INVENTORY_RECEIPT_RETENTION_DAYS } from "@/lib/inventory-receipt-retention";
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 import { useNavigationGuardRegistration } from "@/components/layout/navigation-guard";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
@@ -161,6 +165,15 @@ function formatDate(value: string | null): string {
   return formatDateOnlyEsCO(value);
 }
 
+function visibleBatchPages(current: number, total: number): number[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const start = Math.max(1, Math.min(current - 2, total - 4));
+  const end = Math.min(total, start + 4);
+  const pages: number[] = [];
+  for (let n = start; n <= end; n += 1) pages.push(n);
+  return pages;
+}
+
 function getDateRange(preset: "today" | "week" | "month"): { from: string; to: string } {
   const today = new Date();
   const to = todayDateColombia(today);
@@ -191,13 +204,17 @@ function getDateFilterSummary(filterFrom?: string, filterTo?: string): string | 
 
 interface InventoryClientProps {
   batches: InventoryBatchWithLines[];
+  batchesTotalCount: number;
+  batchesPage: number;
+  batchesTotalPages: number;
   legacyMovements: MovementWithProduct[];
   filterFrom?: string;
   filterTo?: string;
   filterProductId?: string;
   filterProductName?: string | null;
-  rotationRows?: ProductRotationRow[];
-  rotationPeriodLabel?: string;
+  rotationReport: ProductRotationReport;
+  rotationMonth: number;
+  rotationYear: number;
 }
 
 type DailyMovementGroup = {
@@ -251,13 +268,17 @@ function groupMovementsByDate(rows: MovementWithProduct[]): DailyMovementGroup[]
 
 export function InventoryClient({
   batches,
+  batchesTotalCount,
+  batchesPage,
+  batchesTotalPages,
   legacyMovements,
   filterFrom,
   filterTo,
   filterProductId,
   filterProductName,
-  rotationRows = [],
-  rotationPeriodLabel = "todo el historial",
+  rotationReport,
+  rotationMonth,
+  rotationYear,
 }: InventoryClientProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -353,11 +374,22 @@ export function InventoryClient({
     setDeleteDialogOpen(true);
   }
 
-  function buildFilterUrl(opts: { from?: string; to?: string; productId?: string }) {
+  function buildFilterUrl(opts: {
+    from?: string;
+    to?: string;
+    productId?: string;
+    month?: number;
+    year?: number;
+    page?: number;
+  }) {
     const params = new URLSearchParams();
     if (opts.from) params.set("from", opts.from);
     if (opts.to) params.set("to", opts.to);
     if (opts.productId) params.set("product", opts.productId);
+    params.set("month", String(opts.month ?? rotationMonth));
+    params.set("year", String(opts.year ?? rotationYear));
+    const page = opts.page ?? 1;
+    if (page > 1) params.set("page", String(page));
     const q = params.toString();
     return q ? `${pathname}?${q}` : pathname;
   }
@@ -438,19 +470,21 @@ export function InventoryClient({
     dateFilterSummary,
     filterFrom,
     filterTo,
+    rotationMonth,
+    rotationYear,
     router,
     pathname,
   ]);
 
   function clearAllFilters() {
-    router.push(pathname);
+    router.push(buildFilterUrl({ month: rotationMonth, year: rotationYear }));
   }
 
   const legacyDailyGroups = React.useMemo(
     () => groupMovementsByDate(legacyMovements),
     [legacyMovements]
   );
-  const hasAnyData = batches.length > 0 || legacyMovements.length > 0;
+  const hasAnyData = batchesTotalCount > 0 || batches.length > 0 || legacyMovements.length > 0;
   const movementLineCount =
     batches.reduce((sum, b) => sum + b.lines.length, 0) + legacyMovements.length;
 
@@ -490,8 +524,27 @@ export function InventoryClient({
       />
 
       <InventoryRotationPanel
-        rows={rotationRows}
-        periodLabel={rotationPeriodLabel}
+        report={rotationReport}
+        month={rotationMonth}
+        year={rotationYear}
+        buildMonthHref={(m, y) =>
+          buildFilterUrl({
+            from: filterFrom,
+            to: filterTo,
+            productId: filterProductId,
+            month: m,
+            year: y,
+          })
+        }
+        buildProductHref={(productId) =>
+          buildFilterUrl({
+            from: filterFrom,
+            to: filterTo,
+            productId,
+            month: rotationMonth,
+            year: rotationYear,
+          })
+        }
       />
 
       <InventoryProductFilterDialog
@@ -561,25 +614,121 @@ export function InventoryClient({
           </InventoryPanel>
         ) : (
           <div className="space-y-6">
-            {batches.length > 0 ? (
+            {batches.length > 0 || batchesTotalCount > 0 ? (
               <InventoryPanel className="p-5 sm:p-6">
                 <InventorySectionHeader
                   icon={FileText}
                   title="Comprobantes de inventario"
                   badge={
                     <Badge variant="secondary" className="font-normal tabular-nums">
-                      {batches.length}
+                      {batchesTotalCount}
                     </Badge>
                   }
-                  className="mb-4"
+                  className="mb-1"
                 />
-                <ul className="space-y-3">
-                  {batches.map((batch) => (
-                    <li key={batch.id}>
-                      <InventoryBatchCard batch={batch} onOpen={openBatchDetail} />
-                    </li>
-                  ))}
-                </ul>
+                <p className="mb-4 pl-10 text-xs text-muted-foreground">
+                  Se muestran 5 por página. A los {INVENTORY_RECEIPT_RETENTION_DAYS} días el
+                  comprobante se elimina solo; el stock de bodega no se toca.
+                </p>
+                {batches.length > 0 ? (
+                  <ul className="space-y-3">
+                    {batches.map((batch) => (
+                      <li key={batch.id}>
+                        <InventoryBatchCard batch={batch} onOpen={openBatchDetail} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No hay comprobantes en esta página.
+                  </p>
+                )}
+                {batchesTotalPages > 1 ? (
+                  <nav
+                    className="mt-5 flex flex-wrap items-center justify-center gap-2 border-t border-border/60 pt-4"
+                    aria-label="Paginación de comprobantes"
+                  >
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 rounded-xl"
+                      disabled={batchesPage <= 1}
+                      asChild={batchesPage > 1}
+                    >
+                      {batchesPage > 1 ? (
+                        <Link
+                          href={buildFilterUrl({
+                            from: filterFrom,
+                            to: filterTo,
+                            productId: filterProductId,
+                            page: batchesPage - 1,
+                          })}
+                        >
+                          <ChevronLeft className="size-4" aria-hidden />
+                          Anterior
+                        </Link>
+                      ) : (
+                        <>
+                          <ChevronLeft className="size-4" aria-hidden />
+                          Anterior
+                        </>
+                      )}
+                    </Button>
+                    <div className="flex flex-wrap items-center justify-center gap-1">
+                      {visibleBatchPages(batchesPage, batchesTotalPages).map((n) => {
+                        const active = n === batchesPage;
+                        return (
+                          <Link
+                            key={n}
+                            href={buildFilterUrl({
+                              from: filterFrom,
+                              to: filterTo,
+                              productId: filterProductId,
+                              page: n,
+                            })}
+                            aria-current={active ? "page" : undefined}
+                            className={
+                              active
+                                ? "inline-flex size-9 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground"
+                                : "inline-flex size-9 items-center justify-center rounded-xl border border-border/60 bg-background/60 text-sm font-medium text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
+                            }
+                          >
+                            {n}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 rounded-xl"
+                      disabled={batchesPage >= batchesTotalPages}
+                      asChild={batchesPage < batchesTotalPages}
+                    >
+                      {batchesPage < batchesTotalPages ? (
+                        <Link
+                          href={buildFilterUrl({
+                            from: filterFrom,
+                            to: filterTo,
+                            productId: filterProductId,
+                            page: batchesPage + 1,
+                          })}
+                        >
+                          Siguiente
+                          <ChevronRight className="size-4" aria-hidden />
+                        </Link>
+                      ) : (
+                        <>
+                          Siguiente
+                          <ChevronRight className="size-4" aria-hidden />
+                        </>
+                      )}
+                    </Button>
+                    <span className="w-full text-center text-xs tabular-nums text-muted-foreground sm:w-auto sm:ml-2">
+                      Página {batchesPage} de {batchesTotalPages}
+                    </span>
+                  </nav>
+                ) : null}
               </InventoryPanel>
             ) : null}
 

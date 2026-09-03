@@ -2,6 +2,7 @@
 export const ADMIN_DASHBOARD_PREFIXES = [
   "/dashboard/banks",
   "/dashboard/closures",
+  "/dashboard/registro-diario",
   "/dashboard/proveedores",
   "/dashboard/payables",
   "/dashboard/usuarios",
