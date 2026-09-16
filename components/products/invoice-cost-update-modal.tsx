@@ -271,9 +271,6 @@ export function InvoiceCostUpdateModal({
         overlayClassName="bg-black/50 backdrop-blur-md"
         className="max-w-5xl w-full p-0 gap-0 border border-border rounded-[24px] shadow-2xl bg-card overflow-hidden data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100 dark:bg-zinc-950/95 dark:border-zinc-800"
         showCloseButton={!busy}
-        onPointerDownOutside={(e) => {
-          if (busy) e.preventDefault();
-        }}
         onEscapeKeyDown={(e) => {
           if (busy) e.preventDefault();
         }}

@@ -13,6 +13,7 @@ export interface InvoiceMatchProduct {
   packaging?: string | null;
   cost: number;
   supplier_id?: string | null;
+  supplier_name?: string | null;
 }
 
 export interface ProductMatchCandidate {

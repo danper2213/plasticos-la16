@@ -38,11 +38,22 @@ function formatCost(value: number): string {
   }).format(value);
 }
 
+function productOptionLabel(
+  name: string,
+  supplierName?: string | null,
+  extra?: string | null,
+): string {
+  return [name, supplierName?.trim() || null, extra ?? null]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+}
+
 export type ConfirmRowDraft = {
   key: string;
   descripcion: string;
   productId: string | null;
   productName: string | null;
+  productSupplierName: string | null;
   currentCost: number | null;
   unidadesPorEmpaque: number;
   unitCost: number;
@@ -80,6 +91,7 @@ export function buildConfirmRowDrafts(
       descripcion: row.line.descripcion,
       productId: product?.id ?? null,
       productName: product?.name ?? null,
+      productSupplierName: product?.supplier_name ?? null,
       currentCost,
       unidadesPorEmpaque: row.cost.unidadesPorEmpaque,
       unitCost,
@@ -252,6 +264,7 @@ export function InvoiceCostConfirmView({
     updateRow(key, {
       productId: product.id,
       productName: product.name,
+      productSupplierName: product.supplier_name ?? null,
       currentCost: product.cost,
       checked: true,
       applyCostUpdate: defaultApplyCostUpdate(product.cost, unitCost),
@@ -373,20 +386,34 @@ export function InvoiceCostConfirmView({
               const selectOptions = (() => {
                 const byId = new Map<
                   string,
-                  { id: string; name: string; score?: number }
+                  {
+                    id: string;
+                    name: string;
+                    supplierName?: string | null;
+                    score?: number;
+                  }
                 >();
                 for (const c of row.candidates) {
                   byId.set(c.product.id, {
                     id: c.product.id,
                     name: c.product.name,
+                    supplierName: c.product.supplier_name,
                     score: c.score,
                   });
                 }
-                if (row.productId && row.productName && !byId.has(row.productId)) {
-                  byId.set(row.productId, {
-                    id: row.productId,
-                    name: row.productName,
-                  });
+                if (row.productId && row.productName) {
+                  const existing = byId.get(row.productId);
+                  if (existing) {
+                    if (!existing.supplierName && row.productSupplierName) {
+                      existing.supplierName = row.productSupplierName;
+                    }
+                  } else {
+                    byId.set(row.productId, {
+                      id: row.productId,
+                      name: row.productName,
+                      supplierName: row.productSupplierName,
+                    });
+                  }
                 }
                 return [...byId.values()];
               })();
@@ -470,6 +497,7 @@ export function InvoiceCostConfirmView({
                               updateRow(row.key, {
                                 productId: opt.id,
                                 productName: opt.name,
+                                productSupplierName: opt.supplierName ?? null,
                                 checked: true,
                               });
                             }
@@ -480,8 +508,12 @@ export function InvoiceCostConfirmView({
                           </SelectTrigger>
                           <SelectContent>
                             {selectOptions.map((opt) => (
-                              <SelectItem key={opt.id} value={opt.id}>
-                                {opt.name}
+                              <SelectItem
+                                key={opt.id}
+                                value={opt.id}
+                                className="whitespace-normal"
+                              >
+                                {productOptionLabel(opt.name, opt.supplierName)}
                                 {opt.score != null ? (
                                   <span className="text-muted-foreground">
                                     {" "}
@@ -542,8 +574,16 @@ export function InvoiceCostConfirmView({
                           </SelectTrigger>
                           <SelectContent>
                             {searchResults[row.key]!.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.name} · {formatCost(p.cost)}
+                              <SelectItem
+                                key={p.id}
+                                value={p.id}
+                                className="whitespace-normal"
+                              >
+                                {productOptionLabel(
+                                  p.name,
+                                  p.supplier_name,
+                                  formatCost(p.cost),
+                                )}
                               </SelectItem>
                             ))}
                           </SelectContent>

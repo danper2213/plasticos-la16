@@ -30,8 +30,23 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     showCloseButton?: boolean;
     overlayClassName?: string;
+    /** Si es true, un clic en el fondo cierra el diálogo. Por defecto no cierra. */
+    dismissOnOutsideClick?: boolean;
   }
->(({ className, children, showCloseButton = true, overlayClassName, ...props }, ref) => (
+>(
+  (
+    {
+      className,
+      children,
+      showCloseButton = true,
+      overlayClassName,
+      dismissOnOutsideClick = false,
+      onPointerDownOutside,
+      onInteractOutside,
+      ...props
+    },
+    ref,
+  ) => (
   <DialogPortal>
     <DialogOverlay className={overlayClassName} />
     <DialogPrimitive.Content
@@ -40,6 +55,14 @@ const DialogContent = React.forwardRef<
         "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-6 shadow-lg duration-200 data-[state=open]:opacity-100 data-[state=closed]:opacity-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100 rounded-lg",
         className
       )}
+      onPointerDownOutside={(event) => {
+        if (!dismissOnOutsideClick) event.preventDefault();
+        onPointerDownOutside?.(event);
+      }}
+      onInteractOutside={(event) => {
+        if (!dismissOnOutsideClick) event.preventDefault();
+        onInteractOutside?.(event);
+      }}
       {...props}
     >
       {children}

@@ -38,12 +38,27 @@ interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof Dialog.Content> {
   side?: "top" | "right" | "bottom" | "left";
   showCloseButton?: boolean;
+  /** Si es true, un clic en el fondo cierra el panel. Por defecto no cierra. */
+  dismissOnOutsideClick?: boolean;
 }
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof Dialog.Content>,
   SheetContentProps
->(({ side = "right", className, children, showCloseButton = true, ...props }, ref) => (
+>(
+  (
+    {
+      side = "right",
+      className,
+      children,
+      showCloseButton = true,
+      dismissOnOutsideClick = false,
+      onPointerDownOutside,
+      onInteractOutside,
+      ...props
+    },
+    ref,
+  ) => (
   <SheetPortal>
     <SheetOverlay />
     <Dialog.Content
@@ -53,6 +68,14 @@ const SheetContent = React.forwardRef<
         sideClasses[side],
         className
       )}
+      onPointerDownOutside={(event) => {
+        if (!dismissOnOutsideClick) event.preventDefault();
+        onPointerDownOutside?.(event);
+      }}
+      onInteractOutside={(event) => {
+        if (!dismissOnOutsideClick) event.preventDefault();
+        onInteractOutside?.(event);
+      }}
       {...props}
     >
       {children}

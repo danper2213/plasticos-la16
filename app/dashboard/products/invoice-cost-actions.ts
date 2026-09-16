@@ -73,24 +73,52 @@ export async function listInvoiceCostLearnings(
   return ((data ?? []) as LearningRow[]).map(rowToLearning);
 }
 
-async function loadActiveProductsForMatch(): Promise<InvoiceMatchProduct[]> {
-  const { supabase } = await requireAdmin();
+const PRODUCTS_MATCH_SELECT =
+  "id, name, presentation, packaging, cost, supplier_id, suppliers ( name )";
 
-  const { data, error } = await supabase
-    .from("products")
-    .select("id, name, presentation, packaging, cost, supplier_id")
-    .eq("is_active", true);
+function nestedName(
+  value: { name?: string } | { name?: string }[] | null | undefined,
+): string | null {
+  const row = Array.isArray(value) ? value[0] : value;
+  const name = row?.name?.trim();
+  return name || null;
+}
 
-  if (error) throw new Error(error.message);
+type ProductMatchRow = {
+  id: unknown;
+  name: unknown;
+  presentation: unknown;
+  packaging: unknown;
+  cost: unknown;
+  supplier_id: unknown;
+  suppliers?: { name?: string } | { name?: string }[] | null;
+};
 
-  return (data ?? []).map((row) => ({
+function mapProductMatchRow(row: ProductMatchRow): InvoiceMatchProduct {
+  return {
     id: row.id as string,
     name: row.name as string,
     presentation: (row.presentation as string | null) ?? null,
     packaging: (row.packaging as string | null) ?? null,
     cost: Number(row.cost ?? 0),
     supplier_id: (row.supplier_id as string | null) ?? null,
-  }));
+    supplier_name: nestedName(row.suppliers),
+  };
+}
+
+async function loadActiveProductsForMatch(): Promise<InvoiceMatchProduct[]> {
+  const { supabase } = await requireAdmin();
+
+  const { data, error } = await supabase
+    .from("products")
+    .select(PRODUCTS_MATCH_SELECT)
+    .eq("is_active", true);
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((row) =>
+    mapProductMatchRow(row as unknown as ProductMatchRow),
+  );
 }
 
 /**
@@ -321,7 +349,7 @@ export async function searchProductsForInvoiceMatch(
 
   let q = supabase
     .from("products")
-    .select("id, name, presentation, packaging, cost, supplier_id")
+    .select(PRODUCTS_MATCH_SELECT)
     .eq("is_active", true);
 
   q = applySupabaseSearchFilter(q, trimmed, productAutocompleteSearchFields);
@@ -329,14 +357,9 @@ export async function searchProductsForInvoiceMatch(
   const { data, error } = await q.limit(20);
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map((row) => ({
-    id: row.id as string,
-    name: row.name as string,
-    presentation: (row.presentation as string | null) ?? null,
-    packaging: (row.packaging as string | null) ?? null,
-    cost: Number(row.cost ?? 0),
-    supplier_id: (row.supplier_id as string | null) ?? null,
-  }));
+  return (data ?? []).map((row) =>
+    mapProductMatchRow(row as unknown as ProductMatchRow),
+  );
 }
 
 export interface ConfirmInvoiceCostLineInput {
