@@ -4,9 +4,8 @@ import { GeistMono } from "geist/font/mono";
 import { Analytics } from "@vercel/analytics/react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
+import { GA_MEASUREMENT_ID } from "@/lib/google-tag";
 import "./globals.css";
-
-const GA_MEASUREMENT_ID = "G-322GFN22NG";
 
 export const metadata: Metadata = {
   title: "PLASTICOS LA 16",
