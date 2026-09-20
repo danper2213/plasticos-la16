@@ -6,7 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import "./globals.css";
 
-const GA_MEASUREMENT_ID = "G-PNFM0B1WWQ";
+const GA_MEASUREMENT_ID = "G-322GFN22NG";
 
 export const metadata: Metadata = {
   title: "PLASTICOS LA 16",
