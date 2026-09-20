@@ -1,4 +1,4 @@
-export const GA_MEASUREMENT_ID = "G-322GFN22NG";
+export const GA_MEASUREMENT_ID = "G-PNFM0B1WWQ";
 
 export const GOOGLE_TAG_SNIPPET = `<!-- Google tag (gtag.js) --><script async src="https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}"></script><script>
   window.dataLayer = window.dataLayer || [];
