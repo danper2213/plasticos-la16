@@ -13,7 +13,11 @@ function buildContentSecurityPolicy(): string {
     "https://www.google-analytics.com",
     "https://*.google-analytics.com",
     "https://analytics.google.com",
+    "https://*.analytics.google.com",
     "https://www.googletagmanager.com",
+    "https://*.googletagmanager.com",
+    "https://www.google.com",
+    "https://stats.g.doubleclick.net",
     ...(supabaseOrigin ? [supabaseOrigin] : []),
     ...(supabaseWsOrigin ? [supabaseWsOrigin] : []),
   ].join(" ");
@@ -25,7 +29,10 @@ function buildContentSecurityPolicy(): string {
     "https://images.unsplash.com",
     "https://www.google.com",
     "https://www.google-analytics.com",
+    "https://*.google-analytics.com",
     "https://www.googletagmanager.com",
+    "https://*.googletagmanager.com",
+    "https://stats.g.doubleclick.net",
     "https://*.supabase.co",
     ...(supabaseOrigin ? [supabaseOrigin] : []),
   ].join(" ");
@@ -41,20 +48,20 @@ function buildContentSecurityPolicy(): string {
     "default-src 'self'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    // Tag Assistant carga el sitio en iframe; 'none' + X-Frame-Options: DENY hacen fallar "Probar instalación".
+    "frame-ancestors 'self' https://tagassistant.google.com https://*.google.com https://www.googletagmanager.com",
     "object-src 'none'",
-    "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://www.googletagmanager.com",
+    "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://www.googletagmanager.com https://www.google-analytics.com https://ssl.google-analytics.com",
     "style-src 'self' 'unsafe-inline'",
     `img-src ${imgSrc}`,
     "font-src 'self' data:",
     `connect-src ${connectSrc}`,
     `media-src ${mediaSrc}`,
-    "frame-src 'self'",
+    "frame-src 'self' https://www.googletagmanager.com https://tagassistant.google.com https://www.google.com",
   ].join("; ");
 }
 
 const securityHeaders = [
-  { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Content-Security-Policy", value: buildContentSecurityPolicy() },
