@@ -10,6 +10,10 @@ function buildContentSecurityPolicy(): string {
     "'self'",
     "https://vitals.vercel-insights.com",
     "https://*.supabase.co",
+    "https://www.google-analytics.com",
+    "https://*.google-analytics.com",
+    "https://analytics.google.com",
+    "https://www.googletagmanager.com",
     ...(supabaseOrigin ? [supabaseOrigin] : []),
     ...(supabaseWsOrigin ? [supabaseWsOrigin] : []),
   ].join(" ");
@@ -20,6 +24,8 @@ function buildContentSecurityPolicy(): string {
     "blob:",
     "https://images.unsplash.com",
     "https://www.google.com",
+    "https://www.google-analytics.com",
+    "https://www.googletagmanager.com",
     "https://*.supabase.co",
     ...(supabaseOrigin ? [supabaseOrigin] : []),
   ].join(" ");
@@ -37,7 +43,7 @@ function buildContentSecurityPolicy(): string {
     "form-action 'self'",
     "frame-ancestors 'none'",
     "object-src 'none'",
-    "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com",
+    "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://www.googletagmanager.com",
     "style-src 'self' 'unsafe-inline'",
     `img-src ${imgSrc}`,
     "font-src 'self' data:",
