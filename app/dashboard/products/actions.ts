@@ -150,40 +150,56 @@ function mapRowToProductWithRelations(row: Partial<ProductRow>): ProductWithRela
   };
 }
 
+const PRODUCTS_CATALOG_PAGE_SIZE = 1000;
+
+async function fetchAllActiveProductRows(
+  supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
+  select: string,
+): Promise<{
+  rows: Partial<ProductRow>[];
+  error: { message?: string; code?: string } | null;
+}> {
+  const rows: Partial<ProductRow>[] = [];
+  let from = 0;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from("products")
+      .select(select)
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .range(from, from + PRODUCTS_CATALOG_PAGE_SIZE - 1);
+
+    if (error) return { rows: [], error };
+    const chunk = (data ?? []) as Partial<ProductRow>[];
+    rows.push(...chunk);
+    if (chunk.length < PRODUCTS_CATALOG_PAGE_SIZE) {
+      return { rows, error: null };
+    }
+    from += PRODUCTS_CATALOG_PAGE_SIZE;
+  }
+}
+
 export async function getProducts(): Promise<ProductWithRelations[]> {
   const { supabase } = await requireUser();
-  let rowsRaw: Partial<ProductRow>[] | null = null;
-  let error: { message?: string; code?: string } | null = null;
-
-  const first = await supabase
-    .from("products")
-    .select(PRODUCTS_SELECT_FULL)
-    .eq("is_active", true)
-    .order("name", { ascending: true });
-
-  rowsRaw = (first.data ?? []) as Partial<ProductRow>[];
-  error = first.error;
+  let result = await fetchAllActiveProductRows(supabase, PRODUCTS_SELECT_FULL);
 
   if (
-    first.error &&
-    (first.error.message?.toLowerCase().includes("column") || first.error.code === "42703")
+    result.error &&
+    (result.error.message?.toLowerCase().includes("column") ||
+      result.error.code === "42703")
   ) {
-    const fb = await supabase
-      .from("products")
-      .select(PRODUCTS_SELECT_BASE)
-      .eq("is_active", true)
-      .order("name", { ascending: true });
-    rowsRaw = (fb.data ?? []) as Partial<ProductRow>[];
-    error = fb.error;
+    result = await fetchAllActiveProductRows(supabase, PRODUCTS_SELECT_BASE);
   }
 
-  if (error) {
-    console.error("getProducts error:", error);
+  if (result.error) {
+    console.error("getProducts error:", result.error);
     return [];
   }
 
-  const rows = rowsRaw ?? [];
-  return rows.map((row) => mapRowToProductWithRelations(row as Partial<ProductRow>));
+  return result.rows.map((row) =>
+    mapRowToProductWithRelations(row as Partial<ProductRow>),
+  );
 }
 
 function applyProductsListFilters<

@@ -1,9 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -20,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { searchProductsForInvoiceMatch } from "@/app/dashboard/products/invoice-cost-actions";
+import { searchIntelligent, toSearchProduct } from "@/lib/searchEngine";
 import {
   defaultApplyCostUpdate,
   invoiceCostDelta,
@@ -60,6 +58,7 @@ export type ConfirmRowDraft = {
   valorTotalConIva: number;
   valorTotalNeto: number;
   valorIva: number | null;
+  ivaInclusion: ProcessedInvoiceLine["cost"]["ivaInclusion"];
   um: string;
   cantidad: number;
   totalUnidades: number;
@@ -98,6 +97,7 @@ export function buildConfirmRowDrafts(
       valorTotalConIva: row.cost.valorTotalConIva,
       valorTotalNeto: row.line.valorTotalNeto,
       valorIva: row.line.valorIva ?? null,
+      ivaInclusion: row.cost.ivaInclusion,
       um: row.line.um,
       cantidad: row.line.cantidad,
       totalUnidades: row.cost.totalUnidades,
@@ -146,17 +146,49 @@ function confidenceBadge(confidence: ConfirmRowDraft["matchConfidence"]) {
 interface InvoiceCostConfirmViewProps {
   rows: ConfirmRowDraft[];
   onChange: (rows: ConfirmRowDraft[]) => void;
+  catalog?: InvoiceMatchProduct[];
+}
+
+function searchInvoiceMatchCatalog(
+  catalog: InvoiceMatchProduct[],
+  query: string,
+): InvoiceMatchProduct[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const ranked = searchIntelligent(
+    trimmed,
+    catalog.map((product) =>
+      toSearchProduct({
+        id: product.id,
+        name: product.name,
+        category_name: product.supplier_name,
+        presentation: product.presentation,
+        packaging: product.packaging,
+        cost: product.cost,
+      }),
+    ),
+  );
+  const byId = new Map(catalog.map((product) => [product.id, product]));
+  return ranked
+    .slice(0, 20)
+    .map((row) => byId.get(row.id))
+    .filter((product): product is InvoiceMatchProduct => product != null);
 }
 
 export function InvoiceCostConfirmView({
   rows,
   onChange,
+  catalog = [],
 }: InvoiceCostConfirmViewProps) {
   const [searchByKey, setSearchByKey] = useState<Record<string, string>>({});
-  const [searchResults, setSearchResults] = useState<
-    Record<string, InvoiceMatchProduct[]>
-  >({});
-  const [searchingKey, setSearchingKey] = useState<string | null>(null);
+
+  const searchResultsByKey = useMemo(() => {
+    const next: Record<string, InvoiceMatchProduct[]> = {};
+    for (const [key, query] of Object.entries(searchByKey)) {
+      next[key] = searchInvoiceMatchCatalog(catalog, query);
+    }
+    return next;
+  }, [catalog, searchByKey]);
 
   const summary = useMemo(() => {
     const selected = rows.filter((r) => r.checked && r.productId);
@@ -273,18 +305,6 @@ export function InvoiceCostConfirmView({
           ? "learned"
           : "high",
     });
-  }
-
-  async function runSearch(key: string) {
-    const q = (searchByKey[key] ?? "").trim();
-    if (q.length < 2) return;
-    setSearchingKey(key);
-    try {
-      const results = await searchProductsForInvoiceMatch(q);
-      setSearchResults((prev) => ({ ...prev, [key]: results }));
-    } finally {
-      setSearchingKey(null);
-    }
   }
 
   if (rows.length === 0) {
@@ -461,11 +481,14 @@ export function InvoiceCostConfirmView({
                           : `${row.numeroRollos} rollo(s) × ${row.unidadesPorEmpaque} m = ${row.totalUnidades.toLocaleString("es-CO")} m`
                         : `${row.cantidad} ${row.um} × ${row.unidadesPorEmpaque} un = ${row.totalUnidades.toLocaleString("es-CO")} un`}
                       <br />
-                      neto {formatCost(row.valorTotalNeto)}
-                      {row.valorIva != null
-                        ? ` + IVA ${formatCost(row.valorIva)}`
-                        : " × 1.19"}{" "}
-                      = {formatCost(row.valorTotalConIva)}
+                      VR TOTAL {formatCost(row.valorTotalNeto)}
+                      {row.ivaInclusion === "excluded"
+                        ? row.valorIva != null
+                          ? ` + IVA ${formatCost(row.valorIva)} = ${formatCost(row.valorTotalConIva)}`
+                          : ` × 1,19 = ${formatCost(row.valorTotalConIva)}`
+                        : row.valorIva != null
+                          ? ` · IVA ${formatCost(row.valorIva)} (incluido)`
+                          : " (IVA incluido)"}
                       <br />
                       {formatCost(row.valorTotalConIva)} ÷{" "}
                       {row.totalUnidades.toLocaleString("es-CO")} {row.unitLabel}{" "}
@@ -484,7 +507,7 @@ export function InvoiceCostConfirmView({
                             const fromCandidates = row.candidates.find(
                               (c) => c.product.id === id,
                             )?.product;
-                            const fromSearch = searchResults[row.key]?.find(
+                            const fromSearch = searchResultsByKey[row.key]?.find(
                               (p) => p.id === id,
                             );
                             const hit = fromCandidates ?? fromSearch;
@@ -530,40 +553,22 @@ export function InvoiceCostConfirmView({
                         </p>
                       )}
 
-                      <div className="flex gap-1.5">
-                        <Input
-                          value={searchByKey[row.key] ?? ""}
-                          onChange={(e) =>
-                            setSearchByKey((prev) => ({
-                              ...prev,
-                              [row.key]: e.target.value,
-                            }))
-                          }
-                          placeholder="Buscar otro producto…"
-                          className="h-8 text-xs"
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              void runSearch(row.key);
-                            }
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-8 shrink-0 px-2"
-                          disabled={searchingKey === row.key}
-                          onClick={() => void runSearch(row.key)}
-                        >
-                          <Search className="size-3.5" />
-                        </Button>
-                      </div>
+                      <Input
+                        value={searchByKey[row.key] ?? ""}
+                        onChange={(e) =>
+                          setSearchByKey((prev) => ({
+                            ...prev,
+                            [row.key]: e.target.value,
+                          }))
+                        }
+                        placeholder="Buscar otro producto…"
+                        className="h-8 text-xs"
+                      />
 
-                      {(searchResults[row.key] ?? []).length > 0 ? (
+                      {(searchResultsByKey[row.key] ?? []).length > 0 ? (
                         <Select
                           onValueChange={(id) => {
-                            const hit = searchResults[row.key]?.find(
+                            const hit = searchResultsByKey[row.key]?.find(
                               (p) => p.id === id,
                             );
                             if (hit) selectProduct(row.key, hit);
@@ -573,7 +578,7 @@ export function InvoiceCostConfirmView({
                             <SelectValue placeholder="Resultados de búsqueda…" />
                           </SelectTrigger>
                           <SelectContent>
-                            {searchResults[row.key]!.map((p) => (
+                            {searchResultsByKey[row.key]!.map((p) => (
                               <SelectItem
                                 key={p.id}
                                 value={p.id}
@@ -588,6 +593,10 @@ export function InvoiceCostConfirmView({
                             ))}
                           </SelectContent>
                         </Select>
+                      ) : (searchByKey[row.key] ?? "").trim() ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          Sin resultados
+                        </p>
                       ) : null}
                     </div>
                   </TableCell>

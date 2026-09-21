@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -13,12 +13,14 @@ import { Button } from "@/components/ui/button";
 import {
   confirmInvoiceCostUpdates,
   extractAndPreviewInvoiceCosts,
+  listProductsForInvoiceMatch,
   prepareInvoicePayableDraft,
   registerInvoicePayable,
   type InvoiceExtractMeta,
   type InvoicePayableDraft,
 } from "@/app/dashboard/products/invoice-cost-actions";
 import type { ActiveSupplierOption } from "@/app/dashboard/products/actions";
+import type { InvoiceMatchProduct } from "@/lib/invoice-cost";
 import {
   InvoiceCostConfirmView,
   buildConfirmRowDrafts,
@@ -26,6 +28,7 @@ import {
 } from "@/components/products/invoice-cost-confirm-view";
 import { InvoiceCostProcessingOverlay } from "@/components/products/invoice-cost-processing-overlay";
 import { InvoiceCostUploadStep } from "@/components/products/invoice-cost-upload-step";
+import { geminiUserFacingMessage } from "@/lib/gemini-errors";
 import { InvoicePayableConfirmView } from "@/components/products/invoice-payable-confirm-view";
 
 type Step = "upload" | "confirm" | "payable";
@@ -59,8 +62,20 @@ export function InvoiceCostUpdateModal({
   const [costResultSummary, setCostResultSummary] = useState<string | null>(
     null,
   );
+  const [matchCatalog, setMatchCatalog] = useState<InvoiceMatchProduct[]>([]);
 
   const busy = extracting || confirming || registering;
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void listProductsForInvoiceMatch().then((products) => {
+      if (!cancelled) setMatchCatalog(products);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   function resetState() {
     setStep("upload");
@@ -88,7 +103,7 @@ export function InvoiceCostUpdateModal({
     }
 
     try {
-      const draft = await prepareInvoicePayableDraft({
+      const draftResult = await prepareInvoicePayableDraft({
         supplierId: supplierId || null,
         meta: {
           supplierName: extractMeta.supplierName,
@@ -97,17 +112,18 @@ export function InvoiceCostUpdateModal({
           invoiceTotalConIva: extractMeta.invoiceTotalConIva,
           invoiceTotalNeto: extractMeta.invoiceTotalNeto,
           lineNetosSum: extractMeta.lineNetosSum,
+          ivaInclusion: extractMeta.ivaInclusion,
         },
       });
-      setPayableDraft(draft);
+      if (!draftResult.success) {
+        toast.error(draftResult.error);
+        return false;
+      }
+      setPayableDraft(draftResult.data);
       setStep("payable");
       return true;
     } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "No se pudo preparar el registro en CxP",
-      );
+      toast.error(geminiUserFacingMessage(err, "No se pudo preparar el registro en CxP"));
       return false;
     }
   }
@@ -125,16 +141,18 @@ export function InvoiceCostUpdateModal({
       if (supplierId) formData.set("supplierId", supplierId);
 
       const result = await extractAndPreviewInvoiceCosts(formData);
-      setConfirmRows(buildConfirmRowDrafts(result.processed));
-      setExtractMeta(result.meta);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      setConfirmRows(buildConfirmRowDrafts(result.data.processed));
+      setExtractMeta(result.data.meta);
       setStep("confirm");
       toast.success(
-        `Se extrajeron ${result.meta.lineCount} línea${result.meta.lineCount === 1 ? "" : "s"} de la factura`,
+        `Se extrajeron ${result.data.meta.lineCount} línea${result.data.meta.lineCount === 1 ? "" : "s"} de la factura`,
       );
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "No se pudo extraer la factura",
-      );
+      toast.error(geminiUserFacingMessage(err, "No se pudo extraer la factura"));
     } finally {
       setExtracting(false);
     }
@@ -160,22 +178,22 @@ export function InvoiceCostUpdateModal({
           applyCostUpdate: r.applyCostUpdate,
         })),
       });
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
 
-      const learnOnly = result.learningsUpserted - result.updatedCosts;
+      const learnOnly = result.data.learningsUpserted - result.data.updatedCosts;
       const summary =
-        result.updatedCosts > 0
-          ? `Actualizados ${result.updatedCosts} costo${result.updatedCosts === 1 ? "" : "s"} · ${result.learningsUpserted} aprendizaje${result.learningsUpserted === 1 ? "" : "s"}`
-          : `Aprendizaje guardado (${result.learningsUpserted} match${result.learningsUpserted === 1 ? "" : "es"})${learnOnly > 0 ? " · sin cambio de costo" : ""}`;
+        result.data.updatedCosts > 0
+          ? `Actualizados ${result.data.updatedCosts} costo${result.data.updatedCosts === 1 ? "" : "s"} · ${result.data.learningsUpserted} aprendizaje${result.data.learningsUpserted === 1 ? "" : "s"}`
+          : `Aprendizaje guardado (${result.data.learningsUpserted} match${result.data.learningsUpserted === 1 ? "" : "es"})${learnOnly > 0 ? " · sin cambio de costo" : ""}`;
 
       setCostResultSummary(summary);
       toast.success(summary);
       await loadPayableDraft();
     } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "No se pudieron confirmar los costos",
-      );
+      toast.error(geminiUserFacingMessage(err, "No se pudieron confirmar los costos"));
     } finally {
       setConfirming(false);
     }
@@ -239,9 +257,7 @@ export function InvoiceCostUpdateModal({
       onSuccess?.();
     } catch (err) {
       toast.error(
-        err instanceof Error
-          ? err.message
-          : "No se pudo registrar en cuentas por pagar",
+        geminiUserFacingMessage(err, "No se pudo registrar en cuentas por pagar"),
       );
     } finally {
       setRegistering(false);
@@ -331,11 +347,17 @@ export function InvoiceCostUpdateModal({
                         {extractMeta.supplierName}
                       </span>
                     ) : null}
+                    <span className="rounded-full border border-border px-2.5 py-1">
+                      {extractMeta.ivaInclusion === "excluded"
+                        ? "IVA 19% aplicado (líneas sin IVA)"
+                        : "IVA ya incluido en las líneas"}
+                    </span>
                   </div>
                 ) : null}
                 <InvoiceCostConfirmView
                   rows={confirmRows}
                   onChange={setConfirmRows}
+                  catalog={matchCatalog}
                 />
               </div>
             ) : null}

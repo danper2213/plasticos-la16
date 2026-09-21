@@ -7,11 +7,16 @@
  * - Si UM es KG: metros del rollo vienen de la descripción ("120ML" = 120 m)
  *   y se multiplican por numeroRollos (no por los kilos).
  * - "3M" / "1.25M" en descripción = ancho; "120ML" = largo en metros.
+ * - El IVA de VR TOTAL se resuelve (incluido vs neto × 1.19).
  *
- *   costo = (valor_total_neto * 1.19) / metros_totales
+ *   costo = valor_total_con_iva / metros_totales
  */
 
-const IVA_FACTOR = 1.19;
+import {
+  COLOMBIA_IVA_FACTOR,
+  type InvoiceIvaInclusion,
+  resolveLineAmountWithIva,
+} from "@/lib/invoice-cost/resolve-invoice-iva";
 
 /** Sufijo de unidades sueltas: un, und, ud, uds, unidad(es). */
 const UNIT_SUFFIX = "(?:un(?:id(?:ad(?:es)?)?)?|uds?)";
@@ -116,9 +121,11 @@ export interface InvoiceLineCostInput {
   um: string;
   /** Cantidad facturada (metros, kilos, rollos…). */
   cantidad: number;
-  /** VALOR TOTAL neto de la línea (sin IVA). */
+  /** VR TOTAL de la línea, tal como aparece (con o sin IVA). */
   valorTotalNeto: number;
   valorIva?: number;
+  /** Decisión a nivel factura; la columna IVA de la línea puede anularla. */
+  invoiceIvaInclusion?: InvoiceIvaInclusion;
   /** Metros por rollo (de "120ML" o IA). */
   metrosPorUnidad?: number | null;
   /**
@@ -136,12 +143,13 @@ export interface InvoiceLineCostResult {
   /** Metros totales (base del costo). */
   totalUnidades: number;
   valorTotalConIva: number;
-  /** Costo por metro (con IVA), 2 decimales. */
+  /** Costo por metro o unidad (base con IVA), 2 decimales. */
   costoUnitario: number;
   packPatternFound: boolean;
   costBasis: InvoiceCostBasis;
   unitLabel: "m" | "un";
   numeroRollos?: number;
+  ivaInclusion: InvoiceIvaInclusion;
   ivaValidation?: {
     sumaNetoMasIva: number;
     matches: boolean;
@@ -155,8 +163,12 @@ export function calculateInvoiceUnitCost(
   input: InvoiceLineCostInput,
 ): InvoiceLineCostResult {
   const cantidad = toPositiveNumber(input.cantidad, 0);
-  const valorTotalNeto = toNonNegativeNumber(input.valorTotalNeto, 0);
-  const valorTotalConIva = round2(valorTotalNeto * IVA_FACTOR);
+  const resolvedIva = resolveLineAmountWithIva({
+    valorTotal: toNonNegativeNumber(input.valorTotalNeto, 0),
+    valorIva: input.valorIva,
+    invoiceInclusion: input.invoiceIvaInclusion,
+  });
+  const valorTotalConIva = resolvedIva.valorTotalConIva;
   const um = normalizeInvoiceUm(input.um);
 
   const resolved = resolveCostBasis({
@@ -182,14 +194,25 @@ export function calculateInvoiceUnitCost(
     costBasis: resolved.costBasis,
     unitLabel: resolved.unitLabel,
     numeroRollos: resolved.numeroRollos,
+    ivaInclusion: resolvedIva.inclusion,
   };
 
   if (input.valorIva != null && Number.isFinite(input.valorIva)) {
-    const sumaNetoMasIva = round2(valorTotalNeto + input.valorIva);
-    result.ivaValidation = {
-      sumaNetoMasIva,
-      matches: sumaNetoMasIva === valorTotalConIva,
-    };
+    if (resolvedIva.inclusion === "excluded") {
+      const neto = toNonNegativeNumber(input.valorTotalNeto, 0);
+      result.ivaValidation = {
+        sumaNetoMasIva: round2(neto + input.valorIva),
+        matches: round2(neto + input.valorIva) === valorTotalConIva,
+      };
+    } else {
+      const impliedNeto = round2(valorTotalConIva - input.valorIva);
+      result.ivaValidation = {
+        sumaNetoMasIva: round2(impliedNeto + input.valorIva),
+        matches:
+          impliedNeto > 0 &&
+          round2(impliedNeto * COLOMBIA_IVA_FACTOR) === valorTotalConIva,
+      };
+    }
   }
 
   return result;

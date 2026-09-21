@@ -5,6 +5,7 @@ export const extractedLineSchema = z.object({
   descripcion: z.string().min(1),
   um: z.string().min(1).default("CJ"),
   cantidad: z.coerce.number().positive(),
+  /** VR TOTAL de la línea, tal como aparece (con o sin IVA). */
   valorTotalNeto: z.coerce.number().nonnegative(),
   valorIva: z.coerce.number().nonnegative().optional(),
   codigoProveedor: z.string().optional().nullable(),
@@ -25,6 +26,18 @@ export const extractedInvoiceSchema = z.object({
   invoiceTotalConIva: z.coerce.number().positive().optional().nullable(),
   /** Total general NETO (sin IVA) si solo aparece ese. */
   invoiceTotalNeto: z.coerce.number().positive().optional().nullable(),
+  /** IVA de cabecera (valor del impuesto) si aparece. */
+  invoiceTotalIva: z.coerce.number().nonnegative().optional().nullable(),
+  /**
+   * true si VR TOTAL de línea YA incluye IVA.
+   * false si es neto/subtotal y el IVA va aparte.
+   */
+  lineTotalsIncludeIva: z.preprocess((value) => {
+    if (value === true || value === "true") return true;
+    if (value === false || value === "false") return false;
+    if (value == null || value === "") return null;
+    return value;
+  }, z.boolean().nullable().optional()),
   lines: z.array(extractedLineSchema).min(1),
 });
 

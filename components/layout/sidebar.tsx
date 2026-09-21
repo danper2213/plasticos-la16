@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronRight,
   ScanLine,
+  ScanBarcode,
   ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard/customers", label: "Clientes", icon: Users, roles: ["admin", "employee"] },
   { href: "/dashboard/products", label: "Productos", icon: Package, roles: ["admin", "employee"] },
   { href: "/dashboard/escaneo", label: "Escaneo", icon: ScanLine, roles: ["admin", "employee"] },
+  { href: "/kiosco", label: "Kiosco", icon: ScanBarcode, roles: ["admin", "employee"] },
   { href: "/dashboard/cotizaciones", label: "Cotizaciones", icon: FileText, roles: ["admin", "employee"] },
   { href: "/dashboard/inventory", label: "Inventario", icon: Warehouse, roles: ["admin", "employee"] },
   { href: "/dashboard/receivables", label: "Cuentas por Cobrar", icon: Receipt, roles: ["admin", "employee"] },

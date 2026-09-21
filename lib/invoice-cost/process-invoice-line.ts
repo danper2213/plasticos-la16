@@ -14,11 +14,16 @@ import {
   type InvoiceMatchProduct,
   type ProductMatchCandidate,
 } from "@/lib/invoice-cost/match-products";
+import {
+  resolveInvoiceIvaInclusion,
+  type InvoiceIvaInclusion,
+} from "@/lib/invoice-cost/resolve-invoice-iva";
 
 export interface RawInvoiceLine {
   descripcion: string;
   um: string;
   cantidad: number;
+  /** VR TOTAL de la línea, tal como aparece (con o sin IVA). */
   valorTotalNeto: number;
   valorIva?: number;
   codigoProveedor?: string | null;
@@ -35,6 +40,7 @@ export interface ProcessInvoiceLineInput {
   products: InvoiceMatchProduct[];
   learnings?: InvoiceCostLearning[];
   supplierId?: string | null;
+  invoiceIvaInclusion?: InvoiceIvaInclusion;
 }
 
 export type InvoiceLineAction =
@@ -84,6 +90,7 @@ export function processInvoiceLine(
     cantidad: line.cantidad,
     valorTotalNeto: line.valorTotalNeto,
     valorIva: line.valorIva,
+    invoiceIvaInclusion: input.invoiceIvaInclusion,
     metrosPorUnidad: line.metrosPorUnidad,
     numeroRollos: line.numeroRollos,
     metrajeTotal: line.metrajeTotal,
@@ -211,14 +218,31 @@ export function processInvoiceLines(
   options: {
     learnings?: InvoiceCostLearning[];
     supplierId?: string | null;
+    invoiceIvaInclusion?: InvoiceIvaInclusion;
+    headerTotalWithIva?: number | null;
+    headerTotalNeto?: number | null;
+    headerIvaAmount?: number | null;
+    extractorIvaHint?: boolean | null;
   } = {},
 ): ProcessedInvoiceLine[] {
+  const invoiceIvaInclusion =
+    options.invoiceIvaInclusion ??
+    resolveInvoiceIvaInclusion({
+      headerTotalWithIva: options.headerTotalWithIva,
+      headerTotalNeto: options.headerTotalNeto,
+      headerIvaAmount: options.headerIvaAmount,
+      lineTotals: lines.map((line) => line.valorTotalNeto),
+      lineIvas: lines.map((line) => line.valorIva),
+      extractorHint: options.extractorIvaHint,
+    }).inclusion;
+
   return lines.map((line) =>
     processInvoiceLine({
       line,
       products,
       learnings: options.learnings,
       supplierId: options.supplierId,
+      invoiceIvaInclusion,
     }),
   );
 }

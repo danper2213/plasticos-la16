@@ -265,4 +265,28 @@
   }
 }
 
+/* Kiosco: barra de retorno automático al estado de espera */
+@keyframes kiosk-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.kiosk-countdown-bar {
+  transform-origin: left center;
+  animation-name: kiosk-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kiosk-countdown-bar {
+    animation: none;
+    transform: scaleX(1);
+  }
+}
+
 /* Comprobante: ya no se imprime desde la app; se abre en ventana nueva con HTML propio */

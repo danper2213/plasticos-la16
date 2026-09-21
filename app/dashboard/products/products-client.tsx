@@ -40,12 +40,17 @@ import { useDashboardSearchFocus } from "@/hooks/use-dashboard-search-focus";
 import { useProductsListUrlSync } from "@/hooks/use-products-list-url-sync";
 import {
   deleteProduct,
+  getProducts,
   getProductsPage,
   type ActiveSupplierOption,
   type CategoryOption,
   type ProductWithRelations,
   type ProductsPageResult,
 } from "./actions";
+import {
+  filterProductsCatalog,
+  paginateProductsCatalog,
+} from "@/lib/products-list-local";
 import type { ProductsStockFilter } from "./list-types";
 import { logProductsSearch } from "@/lib/products-search-debug";
 import { buildProductsVoiceAnnouncement } from "@/lib/products-voice-announce";
@@ -56,7 +61,7 @@ import {
 
 type StockFilter = ProductsStockFilter;
 
-const SEARCH_DEBOUNCE_MS = 350;
+const SEARCH_DEBOUNCE_MS = 120;
 const LOADING_DELAY_MS = 150;
 
 interface ProductsClientProps {
@@ -65,6 +70,7 @@ interface ProductsClientProps {
   totalRegistered: number;
   initialPage: ProductsPageResult;
   initialUrl: ProductsListUrlState;
+  initialCatalog?: ProductWithRelations[];
 }
 
 export function ProductsClient({
@@ -73,6 +79,7 @@ export function ProductsClient({
   totalRegistered,
   initialPage,
   initialUrl,
+  initialCatalog,
 }: ProductsClientProps) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
@@ -92,9 +99,21 @@ export function ProductsClient({
   const [forcedSearch, setForcedSearch] = useState<string | undefined>(undefined);
   const [listFilterOpen, setListFilterOpen] = useState(false);
   const [invoiceCostOpen, setInvoiceCostOpen] = useState(false);
+  const [catalog, setCatalog] = useState<ProductWithRelations[] | null>(() => {
+    if (initialCatalog && (initialCatalog.length > 0 || totalRegistered === 0)) {
+      return initialCatalog;
+    }
+    return null;
+  });
 
   const debouncedSearch = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS);
-  const activeSearchRaw = forcedSearch !== undefined ? forcedSearch : debouncedSearch;
+  const liveSearch = searchQuery.trim();
+  const catalogReady = catalog != null;
+  const activeSearchRaw = catalogReady
+    ? liveSearch
+    : forcedSearch !== undefined
+      ? forcedSearch
+      : debouncedSearch;
   const activeSearch = activeSearchRaw.trim();
 
   const skipInitialFetch = useRef(true);
@@ -107,8 +126,6 @@ export function ProductsClient({
   const speakRef = useRef<(text: string) => void>(() => {});
   const listStateRef = useRef(listState);
   const activeSearchRef = useRef(activeSearch);
-  listStateRef.current = listState;
-  activeSearchRef.current = activeSearch;
   const {
     heroObservedRef,
     searchBarRef,
@@ -117,6 +134,52 @@ export function ProductsClient({
   } = useDashboardSearchFocus();
   const announce = useSpeechAnnounce();
   speakRef.current = announce.speak;
+
+  const reloadCatalog = useCallback(async () => {
+    try {
+      const all = await getProducts();
+      setCatalog(all);
+    } catch {
+      toast.error("No se pudo actualizar el catálogo de productos");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (catalog != null) return;
+    let cancelled = false;
+    void getProducts()
+      .then((all) => {
+        if (!cancelled) setCatalog(all);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          toast.error("No se pudo cargar el catálogo para búsqueda rápida");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [catalog]);
+
+  const localFiltered = useMemo(() => {
+    if (!catalog) return null;
+    return filterProductsCatalog(catalog, {
+      search: liveSearch,
+      stockFilter,
+      categoryId: categoryFilter,
+      supplierId: supplierFilter,
+    });
+  }, [catalog, liveSearch, stockFilter, categoryFilter, supplierFilter]);
+
+  const localPage = useMemo(() => {
+    if (!localFiltered) return null;
+    return paginateProductsCatalog(localFiltered, page);
+  }, [localFiltered, page]);
+
+  const displayList: ProductsPageResult = localPage ?? listState;
+  const displayRegistered = catalog?.length ?? totalRegistered;
+  listStateRef.current = displayList;
+  activeSearchRef.current = activeSearch;
 
   const recognition = useSpeechRecognition({
     lang: "es-CO",
@@ -278,6 +341,26 @@ export function ProductsClient({
   });
 
   useEffect(() => {
+    if (!localPage) return;
+    if (localPage.page !== page) setPage(localPage.page);
+  }, [localPage, page]);
+
+  useEffect(() => {
+    if (!catalogReady || !announceAfterFetchRef.current) return;
+    announceAfterFetchRef.current = false;
+    const intent = voiceIntentRef.current;
+    voiceIntentRef.current = "search";
+    speakRef.current(
+      buildProductsVoiceAnnouncement({
+        query: liveSearch,
+        totalCount: displayList.totalCount,
+        products: displayList.products,
+        intent,
+      }),
+    );
+  }, [catalogReady, liveSearch, displayList, stockFilter, categoryFilter, supplierFilter]);
+
+  useEffect(() => {
     if (cacheSeeded.current) return;
     cacheSeeded.current = true;
     productsPageCache.set(
@@ -347,6 +430,8 @@ export function ProductsClient({
   }
 
   useEffect(() => {
+    if (catalogReady) return;
+
     if (skipInitialFetch.current) {
       skipInitialFetch.current = false;
       if (
@@ -459,6 +544,7 @@ export function ProductsClient({
     initialPage.page,
     initialUrl,
     fetchProductsPage,
+    catalogReady,
   ]);
 
   function handleSearchQueryChange(value: string) {
@@ -530,49 +616,11 @@ export function ProductsClient({
     setStockFilter("all");
   }
 
-  const loadPage = useCallback(
-    async (targetPage: number, options?: { force?: boolean }) => {
-      if (options?.force) {
-        clearProductsListCache();
-        inflightRequests.current.clear();
-      }
-
-      const cacheKey = buildProductsPageCacheKey({
-        page: targetPage,
-        search: activeSearch,
-        stockFilter,
-        categoryId: categoryFilter,
-        supplierId: supplierFilter,
-      });
-
-      if (!options?.force) {
-        const cached = productsPageCache.get(cacheKey);
-        if (cached) {
-          setListState(cached);
-          setPage(cached.page);
-          return;
-        }
-      }
-
-      setIsLoading(true);
-      try {
-        const result = await fetchProductsPage(targetPage, activeSearch);
-        setListState(result);
-        setPage(result.page);
-      } catch {
-        toast.error("No se pudo cargar la lista de productos");
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [activeSearch, stockFilter, categoryFilter, supplierFilter, fetchProductsPage],
-  );
-
   function handleFormSuccess() {
     clearProductsListCache();
     inflightRequests.current.clear();
     router.refresh();
-    void loadPage(page, { force: true });
+    void reloadCatalog();
   }
 
   function openSimulator(product: ProductWithRelations) {
@@ -607,10 +655,7 @@ export function ProductsClient({
       clearProductsListCache();
       inflightRequests.current.clear();
       router.refresh();
-      const nextPage =
-        listState.products.length === 1 && page > 1 ? page - 1 : page;
-      setPage(nextPage);
-      await loadPage(nextPage, { force: true });
+      await reloadCatalog();
     } else {
       toast.error(result.error ?? "Error al eliminar el producto");
     }
@@ -639,10 +684,10 @@ export function ProductsClient({
             onSearchQueryChange={handleSearchQueryChange}
             onSearchClear={handleSearchClear}
             onSearchSubmit={handleSearchSubmit}
-            totalCount={listState.totalCount}
-            totalPages={listState.totalPages}
-            page={listState.page}
-            totalRegistered={totalRegistered}
+            totalCount={displayList.totalCount}
+            totalPages={displayList.totalPages}
+            page={displayList.page}
+            totalRegistered={displayRegistered}
             isLoading={isLoading}
             isSearching={isSearching}
             hasActiveFilters={hasActiveFilters}
@@ -685,11 +730,11 @@ export function ProductsClient({
         />
 
         <PriceList
-          products={listState.products}
-          totalCount={listState.totalCount}
-          page={listState.page}
-          totalPages={listState.totalPages}
-          isLoading={isLoading}
+          products={displayList.products}
+          totalCount={displayList.totalCount}
+          page={displayList.page}
+          totalPages={displayList.totalPages}
+          isLoading={catalogReady ? false : isLoading}
           searchQuery={searchQuery}
           onSearchClear={handleSearchClear}
           onPageChange={setPage}
@@ -699,7 +744,7 @@ export function ProductsClient({
           highlightedSupplierId={supplierFilter}
           onSupplierSelect={handleSupplierSelect}
           activeStockLabel={stockFilter !== "all" ? activeStockLabel : undefined}
-          totalRegistered={totalRegistered}
+          totalRegistered={displayRegistered}
           onEdit={openEditProductForm}
           onSimulate={openSimulator}
           onDelete={openDeleteDialog}

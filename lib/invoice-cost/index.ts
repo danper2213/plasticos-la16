@@ -40,6 +40,14 @@ export {
 } from "@/lib/invoice-cost/process-invoice-line";
 
 export {
+  resolveInvoiceIvaInclusion,
+  resolveLineAmountWithIva,
+  type InvoiceIvaInclusion,
+  type InvoiceIvaResolution,
+  type InvoiceIvaSource,
+} from "@/lib/invoice-cost/resolve-invoice-iva";
+
+export {
   defaultApplyCostUpdate,
   invoiceCostDelta,
   type InvoiceCostDelta,

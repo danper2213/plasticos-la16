@@ -1,6 +1,7 @@
 import "server-only";
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { generateGeminiJsonText } from "@/lib/gemini-generate";
 import type { InvoiceCostLearning } from "@/lib/invoice-cost/learning";
 import {
   assertInvoiceFileSize,
@@ -18,16 +19,6 @@ export {
 
 /** Modelo por defecto para extracción de facturas. */
 export const DEFAULT_GEMINI_INVOICE_MODEL = "gemini-3.6-flash";
-
-function getGeminiApiKey(): string {
-  const key = process.env.GEMINI_API_KEY?.trim();
-  if (!key) {
-    throw new Error(
-      "Falta GEMINI_API_KEY en el entorno. Agregala en .env.local y en Vercel.",
-    );
-  }
-  return key;
-}
 
 function getGeminiInvoiceModel(): string {
   return process.env.GEMINI_INVOICE_MODEL?.trim() || DEFAULT_GEMINI_INVOICE_MODEL;
@@ -50,12 +41,17 @@ function buildExtractionPrompt(learnings: InvoiceCostLearning[]): string {
     "  · invoiceDate: fecha de la factura en YYYY-MM-DD si aparece.",
     "  · invoiceTotalConIva: TOTAL A PAGAR / total con IVA de la factura (no de una línea).",
     "  · invoiceTotalNeto: subtotal/neto general si está visible (sin IVA).",
+    "  · invoiceTotalIva: valor del IVA de cabecera si aparece (no el de una línea).",
+    "  · lineTotalsIncludeIva: true si el VR TOTAL / VALOR TOTAL de cada línea YA incluye IVA",
+    "    (etiquetas: IVA incluido, total con IVA, VR TOTAL = neto+IVA).",
+    "    false si ese valor es neto/subtotal/antes de IVA y el impuesto va en columna o pie aparte.",
     "- Cada ítem de producto es una línea.",
     "- descripcion: texto completo de la columna DESCRIPCIÓN (incluí empaque y metraje si aparece).",
     "- um: unidad de medida de la línea (MTR, KG, RL, CJ, etc.).",
     "- cantidad: número de la columna CANTIDAD (puede ser metros o kilos).",
-    "- valorTotalNeto: VALOR TOTAL de la línea SIN IVA.",
-    "- valorIva: VALOR IVA de la línea si está visible.",
+    "- valorTotalNeto: columna VR TOTAL / VALOR TOTAL de la línea TAL COMO APARECE.",
+    "  No lo multipliques ni le restes IVA. El sistema decide si ya trae IVA.",
+    "- valorIva: VALOR IVA de la línea si está en una columna aparte (no lo restes del VR TOTAL).",
     "- codigoProveedor: código/SKU del proveedor si existe.",
     "",
     "METRAJE Calypso / film (obligatorio):",
@@ -93,12 +89,12 @@ export async function extractInvoiceLinesFromFile(input: {
 }): Promise<ExtractedInvoice> {
   assertInvoiceFileSize(input.bytes.byteLength);
 
-  const ai = new GoogleGenAI({ apiKey: getGeminiApiKey() });
   const base64 = Buffer.from(input.bytes).toString("base64");
   const prompt = buildExtractionPrompt(input.learnings ?? []);
 
-  const response = await ai.models.generateContent({
+  const text = await generateGeminiJsonText({
     model: getGeminiInvoiceModel(),
+    emptyTextError: "Gemini no devolvió texto al extraer la factura.",
     contents: [
       {
         role: "user",
@@ -124,6 +120,8 @@ export async function extractInvoiceLinesFromFile(input: {
           invoiceDate: { type: Type.STRING, nullable: true },
           invoiceTotalConIva: { type: Type.NUMBER, nullable: true },
           invoiceTotalNeto: { type: Type.NUMBER, nullable: true },
+          invoiceTotalIva: { type: Type.NUMBER, nullable: true },
+          lineTotalsIncludeIva: { type: Type.BOOLEAN, nullable: true },
           lines: {
             type: Type.ARRAY,
             items: {
@@ -147,11 +145,6 @@ export async function extractInvoiceLinesFromFile(input: {
       },
     },
   });
-
-  const text = response.text?.trim();
-  if (!text) {
-    throw new Error("Gemini no devolvió texto al extraer la factura.");
-  }
 
   let parsedJson: unknown;
   try {

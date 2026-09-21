@@ -1,6 +1,7 @@
 import "server-only";
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { generateGeminiJsonText } from "@/lib/gemini-generate";
 import {
   assertInvoiceFileSize,
   type InvoiceExtractMime,
@@ -12,16 +13,6 @@ import {
 import { normalizeHandwrittenSheetLines } from "@/lib/inventory-sheet/normalize-handwritten-lines";
 
 const DEFAULT_MODEL = "gemini-3.6-flash";
-
-function getGeminiApiKey(): string {
-  const key = process.env.GEMINI_API_KEY?.trim();
-  if (!key) {
-    throw new Error(
-      "Falta GEMINI_API_KEY en el entorno. Agregala en .env.local y en Vercel.",
-    );
-  }
-  return key;
-}
 
 function getGeminiModel(): string {
   return process.env.GEMINI_INVOICE_MODEL?.trim() || DEFAULT_MODEL;
@@ -80,12 +71,12 @@ export async function extractInventorySheetFromFile(input: {
 }): Promise<ExtractedSheet> {
   assertInvoiceFileSize(input.bytes.byteLength);
 
-  const ai = new GoogleGenAI({ apiKey: getGeminiApiKey() });
   const base64 = Buffer.from(input.bytes).toString("base64");
   const prompt = buildExtractionPrompt(input.formatHint ?? null);
 
-  const response = await ai.models.generateContent({
+  const text = await generateGeminiJsonText({
     model: getGeminiModel(),
+    emptyTextError: "Gemini no devolvió texto al leer la hoja.",
     contents: [
       {
         role: "user",
@@ -129,11 +120,6 @@ export async function extractInventorySheetFromFile(input: {
       },
     },
   });
-
-  const text = response.text?.trim();
-  if (!text) {
-    throw new Error("Gemini no devolvió texto al leer la hoja.");
-  }
 
   let parsedJson: unknown;
   try {

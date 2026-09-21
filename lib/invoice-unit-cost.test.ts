@@ -68,7 +68,7 @@ describe("extractMetrosPorPieza", () => {
 });
 
 describe("calculateInvoiceUnitCost — unidades", () => {
-  it("calcula costo unitario con IVA a 2 decimales", () => {
+  it("calcula costo unitario con VR TOTAL (IVA ya incluido)", () => {
     const result = calculateInvoiceUnitCost({
       descripcion:
         "Contenedor Espumado 16 oz Blanco con Tapa Espumada - Pq x 20 un/CJ x 400 un",
@@ -81,19 +81,34 @@ describe("calculateInvoiceUnitCost — unidades", () => {
     expect(result.unitLabel).toBe("un");
     expect(result.unidadesPorEmpaque).toBe(400);
     expect(result.totalUnidades).toBe(8000);
-    expect(result.valorTotalConIva).toBe(4_852_820);
-    expect(result.costoUnitario).toBe(606.6);
+    expect(result.valorTotalConIva).toBe(4_078_000);
+    expect(result.ivaInclusion).toBe("included");
+    expect(result.costoUnitario).toBe(509.75);
     expect(result.packPatternFound).toBe(true);
   });
 
-  it("valida VALOR IVA opcional", () => {
-    const neto = 4_078_000;
-    const iva = round2(neto * 0.19);
+  it("aplica 19 % cuando el VR TOTAL es neto", () => {
     const result = calculateInvoiceUnitCost({
       descripcion: "Item - CJ x 400 un",
       um: "CJ",
       cantidad: 20,
-      valorTotalNeto: neto,
+      valorTotalNeto: 4_078_000,
+      invoiceIvaInclusion: "excluded",
+    });
+
+    expect(result.ivaInclusion).toBe("excluded");
+    expect(result.valorTotalConIva).toBe(4_852_820);
+    expect(result.costoUnitario).toBe(606.6);
+  });
+
+  it("valida VALOR IVA opcional contra VR TOTAL con IVA", () => {
+    const conIva = 4_852_820;
+    const iva = round2((conIva / 1.19) * 0.19);
+    const result = calculateInvoiceUnitCost({
+      descripcion: "Item - CJ x 400 un",
+      um: "CJ",
+      cantidad: 20,
+      valorTotalNeto: conIva,
       valorIva: iva,
     });
 
@@ -115,7 +130,7 @@ describe("calculateInvoiceUnitCost — metraje", () => {
     expect(result.costBasis).toBe("metraje");
     expect(result.unidadesPorEmpaque).toBe(300);
     expect(result.totalUnidades).toBe(600);
-    expect(result.costoUnitario).toBe(round2(119_000 / 600));
+    expect(result.costoUnitario).toBe(round2(100_000 / 600));
   });
 
   it("UM=RL usa cantidad × metros", () => {
@@ -129,7 +144,7 @@ describe("calculateInvoiceUnitCost — metraje", () => {
     expect(result.costBasis).toBe("metraje");
     expect(result.unidadesPorEmpaque).toBe(200);
     expect(result.totalUnidades).toBe(1_000);
-    expect(result.costoUnitario).toBe(round2(59_500 / 1_000));
+    expect(result.costoUnitario).toBe(round2(50_000 / 1_000));
   });
 
   it("si UM es MTR, la cantidad es el metraje total", () => {
@@ -142,7 +157,7 @@ describe("calculateInvoiceUnitCost — metraje", () => {
 
     expect(result.costBasis).toBe("metraje");
     expect(result.totalUnidades).toBe(1500);
-    expect(result.costoUnitario).toBe(round2(357_000 / 1500));
+    expect(result.costoUnitario).toBe(round2(300_000 / 1500));
   });
 });
 

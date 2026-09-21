@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { requireUser } from "@/utils/supabase/require-user";
+import { geminiUserFacingMessage } from "@/lib/gemini-errors";
 import { detectInvoiceFileMime } from "@/lib/invoice-cost/detect-invoice-file";
 import { extractInventorySheetFromFile } from "@/lib/inventory-sheet/extract-sheet";
 import {
@@ -324,7 +325,7 @@ export async function extractAndPreviewInventorySheet(formData: FormData): Promi
   } catch (e) {
     return {
       success: false,
-      error: e instanceof Error ? e.message : "No se pudo leer la hoja.",
+      error: geminiUserFacingMessage(e, "No se pudo leer la hoja."),
     };
   }
 

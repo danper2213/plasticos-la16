@@ -4,10 +4,6 @@ import {
   extractMetrosPorPieza,
 } from "@/lib/invoice-unit-cost";
 
-function round2(n: number) {
-  return Math.round(n * 100) / 100;
-}
-
 describe("extractMetrosPorPieza — convención Calypso ML", () => {
   it("lee 120ML y no el ancho 3M", () => {
     expect(
@@ -33,8 +29,8 @@ describe("Factura Calypso — costos esperados por metro", () => {
 
     expect(result.costBasis).toBe("metraje");
     expect(result.totalUnidades).toBe(300);
-    expect(result.valorTotalConIva).toBe(704_942.98);
-    expect(result.costoUnitario).toBe(2_349.81);
+    expect(result.valorTotalConIva).toBe(592_389.06);
+    expect(result.costoUnitario).toBe(1_974.63);
   });
 
   it("2. POLIETILENO 120ML — 1 rollo (53,84 kg)", () => {
@@ -48,8 +44,8 @@ describe("Factura Calypso — costos esperados por metro", () => {
 
     expect(result.unidadesPorEmpaque).toBe(120);
     expect(result.totalUnidades).toBe(120);
-    expect(result.valorTotalConIva).toBe(495_337.69);
-    expect(result.costoUnitario).toBe(4_127.81);
+    expect(result.valorTotalConIva).toBe(416_250.16);
+    expect(result.costoUnitario).toBe(3_468.75);
   });
 
   it("3. POLIETILENO 100ML — 2 rollos (121,10 kg)", () => {
@@ -63,8 +59,8 @@ describe("Factura Calypso — costos esperados por metro", () => {
 
     expect(result.unidadesPorEmpaque).toBe(100);
     expect(result.totalUnidades).toBe(200);
-    expect(result.valorTotalConIva).toBe(1_186_764.87);
-    expect(result.costoUnitario).toBe(5_933.82);
+    expect(result.valorTotalConIva).toBe(997_281.4);
+    expect(result.costoUnitario).toBe(4_986.41);
   });
 
   it("4. POLIETILENO 70ML — 1 rollo (64,20 kg)", () => {
@@ -77,8 +73,8 @@ describe("Factura Calypso — costos esperados por metro", () => {
     });
 
     expect(result.totalUnidades).toBe(70);
-    expect(result.valorTotalConIva).toBe(622_771.14);
-    expect(result.costoUnitario).toBe(8_896.73);
+    expect(result.valorTotalConIva).toBe(523_337.09);
+    expect(result.costoUnitario).toBe(7_476.24);
   });
 
   it("5. POLIETILENO 50ML — 1 rollo (73,28 kg)", () => {
@@ -91,8 +87,8 @@ describe("Factura Calypso — costos esperados por metro", () => {
     });
 
     expect(result.totalUnidades).toBe(50);
-    expect(result.valorTotalConIva).toBe(981_928.55);
-    expect(result.costoUnitario).toBe(19_638.57);
+    expect(result.valorTotalConIva).toBe(825_150.04);
+    expect(result.costoUnitario).toBe(16_503);
   });
 
   it("metrajeTotal directo también funciona", () => {
@@ -106,12 +102,6 @@ describe("Factura Calypso — costos esperados por metro", () => {
     });
 
     expect(result.totalUnidades).toBe(200);
-    expect(result.costoUnitario).toBe(5_933.82);
-  });
-});
-
-describe("sanity IVA Calypso", () => {
-  it("592389.06 * 1.19", () => {
-    expect(round2(592_389.06 * 1.19)).toBe(704_942.98);
+    expect(result.costoUnitario).toBe(4_986.41);
   });
 });

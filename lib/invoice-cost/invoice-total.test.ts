@@ -21,11 +21,20 @@ describe("estimateInvoiceTotalWithIva", () => {
     ).toEqual({ amount: 119_000, source: "header_neto" });
   });
 
-  it("suma líneas × 1.19", () => {
+  it("suma VR TOTAL de líneas (IVA ya incluido)", () => {
     expect(
       estimateInvoiceTotalWithIva({
         lineNetos: [50_000, 50_000],
       }),
-    ).toEqual({ amount: 119_000, source: "lines_iva" });
+    ).toEqual({ amount: 100_000, source: "lines_iva" });
+  });
+
+  it("aplica 19 % si las líneas son netas", () => {
+    expect(
+      estimateInvoiceTotalWithIva({
+        lineNetos: [50_000, 50_000],
+        lineTotalsIncludeIva: false,
+      }),
+    ).toEqual({ amount: 119_000, source: "lines_neto" });
   });
 });

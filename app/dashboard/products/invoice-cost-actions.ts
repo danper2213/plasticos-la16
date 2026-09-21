@@ -14,6 +14,11 @@ import { detectInvoiceFileMime } from "@/lib/invoice-cost/detect-invoice-file";
 import { extractInvoiceLinesFromFile } from "@/lib/invoice-cost/extract-invoice";
 import { extractedToRawLines } from "@/lib/invoice-cost/extract-invoice-shared";
 import { estimateInvoiceTotalWithIva } from "@/lib/invoice-cost/invoice-total";
+import {
+  resolveInvoiceIvaInclusion,
+  type InvoiceIvaInclusion,
+  type InvoiceIvaSource,
+} from "@/lib/invoice-cost/resolve-invoice-iva";
 import { matchSupplierByName } from "@/lib/invoice-cost/match-supplier";
 import { suggestPayableDueDate } from "@/lib/invoice-cost/suggest-payable-due-date";
 import { formatDateLongEsCO, todayDateColombia } from "@/lib/calendar-date";
@@ -21,7 +26,27 @@ import {
   applySupabaseSearchFilter,
   productAutocompleteSearchFields,
 } from "@/lib/supabase-search-filter";
+import { geminiUserFacingMessage } from "@/lib/gemini-errors";
 import { requireAdmin } from "@/utils/supabase/require-user";
+
+export type InvoiceCostActionResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: string };
+
+function publicActionError(error: unknown, fallback: string): string {
+  return geminiUserFacingMessage(error, fallback);
+}
+
+function invoiceFileFromFormData(formData: FormData): File | null {
+  const raw = formData.get("file");
+  if (raw instanceof File && raw.size > 0) return raw;
+  if (raw instanceof Blob && raw.size > 0) {
+    return new File([raw], "factura", {
+      type: raw.type || "application/octet-stream",
+    });
+  }
+  return null;
+}
 
 type LearningRow = {
   id: string;
@@ -108,17 +133,29 @@ function mapProductMatchRow(row: ProductMatchRow): InvoiceMatchProduct {
 
 async function loadActiveProductsForMatch(): Promise<InvoiceMatchProduct[]> {
   const { supabase } = await requireAdmin();
+  const pageSize = 1000;
+  const products: InvoiceMatchProduct[] = [];
+  let from = 0;
 
-  const { data, error } = await supabase
-    .from("products")
-    .select(PRODUCTS_MATCH_SELECT)
-    .eq("is_active", true);
+  for (;;) {
+    const { data, error } = await supabase
+      .from("products")
+      .select(PRODUCTS_MATCH_SELECT)
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .range(from, from + pageSize - 1);
 
-  if (error) throw new Error(error.message);
+    if (error) throw new Error(error.message);
 
-  return (data ?? []).map((row) =>
-    mapProductMatchRow(row as unknown as ProductMatchRow),
-  );
+    const chunk = (data ?? []).map((row) =>
+      mapProductMatchRow(row as unknown as ProductMatchRow),
+    );
+    products.push(...chunk);
+    if (chunk.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return products;
 }
 
 /**
@@ -128,18 +165,29 @@ async function loadActiveProductsForMatch(): Promise<InvoiceMatchProduct[]> {
 export async function previewInvoiceCostUpdates(input: {
   lines: RawInvoiceLine[];
   supplierId?: string | null;
-}): Promise<ProcessedInvoiceLine[]> {
+}): Promise<InvoiceCostActionResult<ProcessedInvoiceLine[]>> {
   await requireAdmin();
 
-  const [products, learnings] = await Promise.all([
-    loadActiveProductsForMatch(),
-    listInvoiceCostLearnings(input.supplierId),
-  ]);
+  try {
+    const [products, learnings] = await Promise.all([
+      loadActiveProductsForMatch(),
+      listInvoiceCostLearnings(input.supplierId),
+    ]);
 
-  return processInvoiceLines(input.lines, products, {
-    learnings,
-    supplierId: input.supplierId ?? null,
-  });
+    return {
+      success: true,
+      data: processInvoiceLines(input.lines, products, {
+        learnings,
+        supplierId: input.supplierId ?? null,
+      }),
+    };
+  } catch (error) {
+    console.error("[previewInvoiceCostUpdates]", error);
+    return {
+      success: false,
+      error: publicActionError(error, "No se pudieron calcular los costos."),
+    };
+  }
 }
 
 export type InvoiceExtractMeta = {
@@ -148,10 +196,13 @@ export type InvoiceExtractMeta = {
   invoiceDate: string | null;
   invoiceTotalConIva: number | null;
   invoiceTotalNeto: number | null;
+  invoiceTotalIva: number | null;
   lineCount: number;
   fileName: string;
-  /** Suma de valorTotalNeto de líneas (para fallback de total). */
+  /** Suma de VR TOTAL de líneas tal como aparecen. */
   lineNetosSum: number;
+  ivaInclusion: InvoiceIvaInclusion;
+  ivaInclusionSource: InvoiceIvaSource;
 };
 
 export type ExtractAndPreviewResult = {
@@ -164,7 +215,7 @@ export type InvoicePayableDraft = {
   supplierLabel: string | null;
   invoiceNumber: string;
   invoiceAmount: number;
-  amountSource: "header_iva" | "header_neto" | "lines_iva";
+  amountSource: "header_iva" | "header_neto" | "lines_iva" | "lines_neto";
   receptionDate: string;
   dueDate: string;
   lastDueDate: string | null;
@@ -180,63 +231,103 @@ export type InvoicePayableDraft = {
  */
 export async function extractAndPreviewInvoiceCosts(
   formData: FormData,
-): Promise<ExtractAndPreviewResult> {
+): Promise<InvoiceCostActionResult<ExtractAndPreviewResult>> {
   await requireAdmin();
 
-  const file = formData.get("file");
-  if (!(file instanceof File)) {
-    throw new Error("Subí el PDF o la foto de la factura.");
+  try {
+    const file = invoiceFileFromFormData(formData);
+    if (!file) {
+      return {
+        success: false,
+        error: "Subí el PDF o la foto de la factura.",
+      };
+    }
+
+    const supplierIdRaw = String(formData.get("supplierId") ?? "").trim();
+    const supplierId = supplierIdRaw || null;
+
+    const detected = await detectInvoiceFileMime(file);
+    if (!detected.ok) return { success: false, error: detected.error };
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const [learnings, products] = await Promise.all([
+      listInvoiceCostLearnings(supplierId),
+      loadActiveProductsForMatch(),
+    ]);
+
+    const extracted = await extractInvoiceLinesFromFile({
+      bytes,
+      mimeType: detected.mime,
+      learnings,
+    });
+
+    const lines = extractedToRawLines(extracted);
+    if (lines.length === 0) {
+      return {
+        success: false,
+        error: "No se encontraron líneas de producto en la factura.",
+      };
+    }
+
+    const invoiceTotalConIva =
+      extracted.invoiceTotalConIva != null
+        ? Number(extracted.invoiceTotalConIva)
+        : null;
+    const invoiceTotalNeto =
+      extracted.invoiceTotalNeto != null
+        ? Number(extracted.invoiceTotalNeto)
+        : null;
+    const invoiceTotalIva =
+      extracted.invoiceTotalIva != null
+        ? Number(extracted.invoiceTotalIva)
+        : null;
+
+    const iva = resolveInvoiceIvaInclusion({
+      headerTotalWithIva: invoiceTotalConIva,
+      headerTotalNeto: invoiceTotalNeto,
+      headerIvaAmount: invoiceTotalIva,
+      lineTotals: lines.map((l) => l.valorTotalNeto),
+      lineIvas: lines.map((l) => l.valorIva),
+      extractorHint: extracted.lineTotalsIncludeIva,
+    });
+
+    const processed = processInvoiceLines(lines, products, {
+      learnings,
+      supplierId,
+      invoiceIvaInclusion: iva.inclusion,
+    });
+
+    const lineNetosSum = lines.reduce(
+      (acc, l) => acc + (l.valorTotalNeto || 0),
+      0,
+    );
+
+    return {
+      success: true,
+      data: {
+        processed,
+        meta: {
+          supplierName: extracted.supplierName?.trim() || null,
+          invoiceNumber: extracted.invoiceNumber?.trim() || null,
+          invoiceDate: extracted.invoiceDate?.trim().slice(0, 10) || null,
+          invoiceTotalConIva,
+          invoiceTotalNeto,
+          invoiceTotalIva,
+          lineCount: lines.length,
+          fileName: file.name,
+          lineNetosSum,
+          ivaInclusion: iva.inclusion,
+          ivaInclusionSource: iva.source,
+        },
+      },
+    };
+  } catch (error) {
+    console.error("[extractAndPreviewInvoiceCosts]", error);
+    return {
+      success: false,
+      error: publicActionError(error, "No se pudo extraer la factura."),
+    };
   }
-
-  const supplierIdRaw = String(formData.get("supplierId") ?? "").trim();
-  const supplierId = supplierIdRaw || null;
-
-  const detected = await detectInvoiceFileMime(file);
-  if (!detected.ok) throw new Error(detected.error);
-
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const [learnings, products] = await Promise.all([
-    listInvoiceCostLearnings(supplierId),
-    loadActiveProductsForMatch(),
-  ]);
-
-  const extracted = await extractInvoiceLinesFromFile({
-    bytes,
-    mimeType: detected.mime,
-    learnings,
-  });
-
-  const lines = extractedToRawLines(extracted);
-  if (lines.length === 0) {
-    throw new Error("No se encontraron líneas de producto en la factura.");
-  }
-
-  const processed = processInvoiceLines(lines, products, {
-    learnings,
-    supplierId,
-  });
-
-  const lineNetosSum = lines.reduce((acc, l) => acc + (l.valorTotalNeto || 0), 0);
-
-  return {
-    processed,
-    meta: {
-      supplierName: extracted.supplierName?.trim() || null,
-      invoiceNumber: extracted.invoiceNumber?.trim() || null,
-      invoiceDate: extracted.invoiceDate?.trim().slice(0, 10) || null,
-      invoiceTotalConIva:
-        extracted.invoiceTotalConIva != null
-          ? Number(extracted.invoiceTotalConIva)
-          : null,
-      invoiceTotalNeto:
-        extracted.invoiceTotalNeto != null
-          ? Number(extracted.invoiceTotalNeto)
-          : null,
-      lineCount: lines.length,
-      fileName: file.name,
-      lineNetosSum,
-    },
-  };
 }
 
 /**
@@ -253,75 +344,98 @@ export async function prepareInvoicePayableDraft(input: {
     | "invoiceTotalConIva"
     | "invoiceTotalNeto"
     | "lineNetosSum"
+    | "ivaInclusion"
   >;
-}): Promise<InvoicePayableDraft> {
+}): Promise<InvoiceCostActionResult<InvoicePayableDraft>> {
   const { supabase } = await requireAdmin();
 
-  const { data: suppliers, error: suppliersError } = await supabase
-    .from("suppliers")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name", { ascending: true });
+  try {
+    const { data: suppliers, error: suppliersError } = await supabase
+      .from("suppliers")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
 
-  if (suppliersError) throw new Error(suppliersError.message);
-
-  const supplierOptions = (suppliers ?? []) as { id: string; name: string }[];
-
-  let supplierId = (input.supplierId ?? "").trim();
-  let supplierLabel: string | null = null;
-
-  if (supplierId) {
-    const found = supplierOptions.find((s) => s.id === supplierId);
-    supplierLabel = found?.name ?? null;
-  } else {
-    const matched = matchSupplierByName(input.meta.supplierName, supplierOptions);
-    if (matched) {
-      supplierId = matched.id;
-      supplierLabel = matched.name;
+    if (suppliersError) {
+      return { success: false, error: suppliersError.message };
     }
+
+    const supplierOptions = (suppliers ?? []) as { id: string; name: string }[];
+
+    let supplierId = (input.supplierId ?? "").trim();
+    let supplierLabel: string | null = null;
+
+    if (supplierId) {
+      const found = supplierOptions.find((s) => s.id === supplierId);
+      supplierLabel = found?.name ?? null;
+    } else {
+      const matched = matchSupplierByName(
+        input.meta.supplierName,
+        supplierOptions,
+      );
+      if (matched) {
+        supplierId = matched.id;
+        supplierLabel = matched.name;
+      }
+    }
+
+    const total = estimateInvoiceTotalWithIva({
+      headerTotalWithIva: input.meta.invoiceTotalConIva,
+      headerTotalNeto: input.meta.invoiceTotalNeto,
+      lineNetos: [input.meta.lineNetosSum],
+      lineTotalsIncludeIva: input.meta.ivaInclusion !== "excluded",
+    });
+
+    const { data: lastRows, error: lastError } = await supabase
+      .from("accounts_payable")
+      .select("due_date")
+      .not("due_date", "is", "null")
+      .order("due_date", { ascending: false })
+      .limit(40);
+
+    if (lastError) {
+      return { success: false, error: lastError.message };
+    }
+
+    const suggestion = suggestPayableDueDate(
+      (lastRows ?? []).map((r) => r.due_date as string | null),
+      todayDateColombia(),
+    );
+
+    const receptionDate =
+      input.meta.invoiceDate && /^\d{4}-\d{2}-\d{2}$/.test(input.meta.invoiceDate)
+        ? input.meta.invoiceDate
+        : todayDateColombia();
+
+    return {
+      success: true,
+      data: {
+        supplierId,
+        supplierLabel,
+        invoiceNumber: (input.meta.invoiceNumber ?? "").trim(),
+        invoiceAmount: total.amount,
+        amountSource: total.source,
+        receptionDate,
+        dueDate: suggestion.suggestedDueDate,
+        lastDueDate: suggestion.lastDueDate,
+        lastDueDateLabel: suggestion.lastDueDate
+          ? formatDateLongEsCO(suggestion.lastDueDate)
+          : null,
+        suggestedDueDateLabel: formatDateLongEsCO(suggestion.suggestedDueDate),
+        dueDateSource: suggestion.source,
+        paymentNote: "",
+      },
+    };
+  } catch (error) {
+    console.error("[prepareInvoicePayableDraft]", error);
+    return {
+      success: false,
+      error: publicActionError(
+        error,
+        "No se pudo preparar el registro en CxP",
+      ),
+    };
   }
-
-  const total = estimateInvoiceTotalWithIva({
-    headerTotalWithIva: input.meta.invoiceTotalConIva,
-    headerTotalNeto: input.meta.invoiceTotalNeto,
-    lineNetos: [input.meta.lineNetosSum],
-  });
-
-  const { data: lastRows, error: lastError } = await supabase
-    .from("accounts_payable")
-    .select("due_date")
-    .not("due_date", "is", "null")
-    .order("due_date", { ascending: false })
-    .limit(40);
-
-  if (lastError) throw new Error(lastError.message);
-
-  const suggestion = suggestPayableDueDate(
-    (lastRows ?? []).map((r) => r.due_date as string | null),
-    todayDateColombia(),
-  );
-
-  const receptionDate =
-    input.meta.invoiceDate && /^\d{4}-\d{2}-\d{2}$/.test(input.meta.invoiceDate)
-      ? input.meta.invoiceDate
-      : todayDateColombia();
-
-  return {
-    supplierId,
-    supplierLabel,
-    invoiceNumber: (input.meta.invoiceNumber ?? "").trim(),
-    invoiceAmount: total.amount,
-    amountSource: total.source,
-    receptionDate,
-    dueDate: suggestion.suggestedDueDate,
-    lastDueDate: suggestion.lastDueDate,
-    lastDueDateLabel: suggestion.lastDueDate
-      ? formatDateLongEsCO(suggestion.lastDueDate)
-      : null,
-    suggestedDueDateLabel: formatDateLongEsCO(suggestion.suggestedDueDate),
-    dueDateSource: suggestion.source,
-    paymentNote: "",
-  };
 }
 
 /** Registra la factura en cuentas por pagar tras verificar cabecera. */
@@ -339,6 +453,18 @@ export async function registerInvoicePayable(input: unknown): Promise<{
   return createPayable(parsed.data);
 }
 
+/** Catálogo activo para búsqueda local al corregir matches. */
+export async function listProductsForInvoiceMatch(): Promise<
+  InvoiceMatchProduct[]
+> {
+  try {
+    return await loadActiveProductsForMatch();
+  } catch (error) {
+    console.error("[listProductsForInvoiceMatch]", error);
+    return [];
+  }
+}
+
 /** Búsqueda rápida para corregir match en la vista de confirmación. */
 export async function searchProductsForInvoiceMatch(
   query: string,
@@ -347,19 +473,27 @@ export async function searchProductsForInvoiceMatch(
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
-  let q = supabase
-    .from("products")
-    .select(PRODUCTS_MATCH_SELECT)
-    .eq("is_active", true);
+  try {
+    let q = supabase
+      .from("products")
+      .select(PRODUCTS_MATCH_SELECT)
+      .eq("is_active", true);
 
-  q = applySupabaseSearchFilter(q, trimmed, productAutocompleteSearchFields);
+    q = applySupabaseSearchFilter(q, trimmed, productAutocompleteSearchFields);
 
-  const { data, error } = await q.limit(20);
-  if (error) throw new Error(error.message);
+    const { data, error } = await q.limit(20);
+    if (error) {
+      console.error("[searchProductsForInvoiceMatch]", error);
+      return [];
+    }
 
-  return (data ?? []).map((row) =>
-    mapProductMatchRow(row as unknown as ProductMatchRow),
-  );
+    return (data ?? []).map((row) =>
+      mapProductMatchRow(row as unknown as ProductMatchRow),
+    );
+  } catch (error) {
+    console.error("[searchProductsForInvoiceMatch]", error);
+    return [];
+  }
 }
 
 export interface ConfirmInvoiceCostLineInput {
@@ -379,80 +513,98 @@ export interface ConfirmInvoiceCostLineInput {
 export async function confirmInvoiceCostUpdates(input: {
   supplierId?: string | null;
   lines: ConfirmInvoiceCostLineInput[];
-}): Promise<{ updatedCosts: number; learningsUpserted: number }> {
+}): Promise<
+  InvoiceCostActionResult<{ updatedCosts: number; learningsUpserted: number }>
+> {
   const { supabase } = await requireAdmin();
   const supplierId = input.supplierId ?? null;
 
-  let updatedCosts = 0;
-  let learningsUpserted = 0;
+  try {
+    let updatedCosts = 0;
+    let learningsUpserted = 0;
 
-  for (const line of input.lines) {
-    const fingerprint = buildDescriptionFingerprint(
-      line.descripcion,
-      supplierId,
-    );
+    for (const line of input.lines) {
+      const fingerprint = buildDescriptionFingerprint(
+        line.descripcion,
+        supplierId,
+      );
 
-    const { data: existing } = await supabase
-      .from("invoice_cost_learnings")
-      .select("id, confirm_count")
-      .eq("description_fingerprint", fingerprint)
-      .maybeSingle();
-
-    if (existing?.id) {
-      const { error } = await supabase
+      const { data: existing } = await supabase
         .from("invoice_cost_learnings")
-        .update({
+        .select("id, confirm_count")
+        .eq("description_fingerprint", fingerprint)
+        .maybeSingle();
+
+      if (existing?.id) {
+        const { error } = await supabase
+          .from("invoice_cost_learnings")
+          .update({
+            sample_description: line.descripcion,
+            product_id: line.productId,
+            unidades_por_empaque: line.unidadesPorEmpaque,
+            confirm_count: (existing.confirm_count ?? 1) + 1,
+            last_unit_cost: line.unitCost,
+            updated_at: new Date().toISOString(),
+            supplier_id: supplierId,
+          })
+          .eq("id", existing.id);
+        if (error) {
+          return { success: false, error: error.message };
+        }
+      } else {
+        const { error } = await supabase.from("invoice_cost_learnings").insert({
+          supplier_id: supplierId,
+          description_fingerprint: fingerprint,
           sample_description: line.descripcion,
           product_id: line.productId,
           unidades_por_empaque: line.unidadesPorEmpaque,
-          confirm_count: (existing.confirm_count ?? 1) + 1,
+          confirm_count: 1,
           last_unit_cost: line.unitCost,
+        });
+        if (error) {
+          return { success: false, error: error.message };
+        }
+      }
+
+      learningsUpserted += 1;
+
+      if (!line.applyCostUpdate) continue;
+
+      const { data: product, error: productError } = await supabase
+        .from("products")
+        .select("id, cost")
+        .eq("id", line.productId)
+        .maybeSingle();
+
+      if (productError) {
+        return { success: false, error: productError.message };
+      }
+      if (!product) continue;
+
+      const currentCost = Math.round(Number(product.cost ?? 0) * 100) / 100;
+      const nextCost = Math.round(line.unitCost * 100) / 100;
+      if (!(nextCost > 0) || nextCost === currentCost) continue;
+
+      const { error: updateError } = await supabase
+        .from("products")
+        .update({
+          cost: nextCost,
           updated_at: new Date().toISOString(),
-          supplier_id: supplierId,
         })
-        .eq("id", existing.id);
-      if (error) throw new Error(error.message);
-    } else {
-      const { error } = await supabase.from("invoice_cost_learnings").insert({
-        supplier_id: supplierId,
-        description_fingerprint: fingerprint,
-        sample_description: line.descripcion,
-        product_id: line.productId,
-        unidades_por_empaque: line.unidadesPorEmpaque,
-        confirm_count: 1,
-        last_unit_cost: line.unitCost,
-      });
-      if (error) throw new Error(error.message);
+        .eq("id", line.productId);
+
+      if (updateError) {
+        return { success: false, error: updateError.message };
+      }
+      updatedCosts += 1;
     }
 
-    learningsUpserted += 1;
-
-    if (!line.applyCostUpdate) continue;
-
-    const { data: product, error: productError } = await supabase
-      .from("products")
-      .select("id, cost")
-      .eq("id", line.productId)
-      .maybeSingle();
-
-    if (productError) throw new Error(productError.message);
-    if (!product) continue;
-
-    const currentCost = Math.round(Number(product.cost ?? 0) * 100) / 100;
-    const nextCost = Math.round(line.unitCost * 100) / 100;
-    if (!(nextCost > 0) || nextCost === currentCost) continue;
-
-    const { error: updateError } = await supabase
-      .from("products")
-      .update({
-        cost: nextCost,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", line.productId);
-
-    if (updateError) throw new Error(updateError.message);
-    updatedCosts += 1;
+    return { success: true, data: { updatedCosts, learningsUpserted } };
+  } catch (error) {
+    console.error("[confirmInvoiceCostUpdates]", error);
+    return {
+      success: false,
+      error: publicActionError(error, "No se pudieron confirmar los costos"),
+    };
   }
-
-  return { updatedCosts, learningsUpserted };
 }

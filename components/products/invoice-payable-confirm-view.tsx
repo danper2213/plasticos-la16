@@ -28,7 +28,8 @@ function parseAmountInput(input: string): number | undefined {
 const amountSourceLabel: Record<InvoicePayableDraft["amountSource"], string> = {
   header_iva: "Total con IVA leído de la factura",
   header_neto: "Neto de cabecera × 1,19",
-  lines_iva: "Suma de líneas × 1,19",
+  lines_iva: "Suma de líneas (IVA incluido)",
+  lines_neto: "Suma de líneas × 1,19",
 };
 
 interface InvoicePayableConfirmViewProps {

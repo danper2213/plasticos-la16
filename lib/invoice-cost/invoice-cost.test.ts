@@ -6,6 +6,7 @@ import {
   invoiceCostDelta,
   matchProductsBySimilarity,
   processInvoiceLine,
+  processInvoiceLines,
   stripPackNoise,
   upsertLearning,
   type InvoiceCostLearning,
@@ -18,7 +19,7 @@ const PRODUCTS: InvoiceMatchProduct[] = [
     name: "Contenedor Espumado 16 oz Blanco",
     presentation: "Con tapa espumada",
     packaging: "Cj x400",
-    cost: 580,
+    cost: 480,
     supplier_id: "sup-a",
   },
   {
@@ -116,6 +117,17 @@ describe("processInvoiceLine", () => {
     valorTotalNeto: 4_078_000,
   };
 
+  it("aplica IVA 19 % cuando la cabecera muestra que las líneas son netas", () => {
+    const [result] = processInvoiceLines([line], PRODUCTS, {
+      supplierId: "sup-a",
+      headerTotalWithIva: 4_078_000 * 1.19,
+    });
+
+    expect(result.cost.ivaInclusion).toBe("excluded");
+    expect(result.cost.valorTotalConIva).toBe(4_852_820);
+    expect(result.cost.costoUnitario).toBe(606.6);
+  });
+
   it("calcula costo y propone update si es mayor al de BD", () => {
     const result = processInvoiceLine({
       line,
@@ -124,9 +136,9 @@ describe("processInvoiceLine", () => {
     });
 
     expect(result.cost.unidadesPorEmpaque).toBe(400);
-    expect(result.cost.costoUnitario).toBe(606.6);
+    expect(result.cost.costoUnitario).toBe(509.75);
     expect(result.suggestedProduct?.id).toBe("p1");
-    expect(result.currentCost).toBe(580);
+    expect(result.currentCost).toBe(480);
     expect(result.shouldUpdate).toBe(true);
     expect(result.action).toBe("propose_update");
   });
@@ -173,7 +185,7 @@ describe("processInvoiceLine", () => {
     expect(result.suggestedProduct?.id).toBe("p1");
     expect(result.cost.unidadesPorEmpaque).toBe(400);
     expect(result.cost.unidadesPorEmpaqueSource).toBe("learning");
-    expect(result.cost.costoUnitario).toBe(606.6);
+    expect(result.cost.costoUnitario).toBe(509.75);
     expect(result.shouldUpdate).toBe(true);
   });
 });
