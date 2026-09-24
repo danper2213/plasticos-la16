@@ -1,12 +1,12 @@
 export const GA_MEASUREMENT_ID = "G-PNFM0B1WWQ";
 
-export const GOOGLE_TAG_SNIPPET = `<!-- Google tag (gtag.js) --><script async src="https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}"></script><script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
+/** Mismo texto que el `<script>` de `app/layout.tsx`. Si difiere, la home falla al hidratar. */
+export const GOOGLE_TAG_INLINE_SCRIPT = `window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GA_MEASUREMENT_ID}');`;
 
-  gtag('config', '${GA_MEASUREMENT_ID}');
-</script>`;
+export const GOOGLE_TAG_SNIPPET = `<!-- Google tag (gtag.js) --><script async src="https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}"></script><script>${GOOGLE_TAG_INLINE_SCRIPT}</script>`;
 
 const NEXT_GTAG_SRC_RE = new RegExp(
   `<script async(?:="")? src="https://www\\.googletagmanager\\.com/gtag/js\\?id=${GA_MEASUREMENT_ID}"></script>`,

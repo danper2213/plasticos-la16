@@ -20,7 +20,9 @@ import {
 } from "@/components/ui/table";
 import { searchIntelligent, toSearchProduct } from "@/lib/searchEngine";
 import {
+  costFromCatalogUnitPrice,
   defaultApplyCostUpdate,
+  extractCatalogPackUnits,
   invoiceCostDelta,
   type InvoiceMatchProduct,
   type ProcessedInvoiceLine,
@@ -35,6 +37,15 @@ function formatCost(value: number): string {
     maximumFractionDigits: 2,
   }).format(value);
 }
+
+const stickyCostHead =
+  "sticky right-[10.5rem] z-30 w-[8.5rem] bg-zinc-100 text-right shadow-[-8px_0_10px_-8px_rgba(0,0,0,0.45)] dark:bg-zinc-900";
+const stickyDiffHead =
+  "sticky right-0 z-30 w-[10.5rem] bg-zinc-100 text-right dark:bg-zinc-900";
+const stickyCostCell =
+  "sticky right-[10.5rem] z-10 w-[8.5rem] bg-card text-right tabular-nums shadow-[-8px_0_10px_-8px_rgba(0,0,0,0.45)]";
+const stickyDiffCell =
+  "sticky right-0 z-10 w-[10.5rem] bg-card text-right tabular-nums";
 
 function productOptionLabel(
   name: string,
@@ -61,6 +72,8 @@ export type ConfirmRowDraft = {
   ivaInclusion: ProcessedInvoiceLine["cost"]["ivaInclusion"];
   um: string;
   cantidad: number;
+  precioUnitario: number | null;
+  pricedFromUnitPrice: boolean;
   totalUnidades: number;
   numeroRollos: number;
   costBasis: ProcessedInvoiceLine["cost"]["costBasis"];
@@ -72,6 +85,10 @@ export type ConfirmRowDraft = {
   action: ProcessedInvoiceLine["action"];
   candidates: ProcessedInvoiceLine["candidates"];
   unidadesPorEmpaqueSource: ProcessedInvoiceLine["cost"]["unidadesPorEmpaqueSource"];
+  packaging: string | null;
+  /** Entrada al inventario en caja madre (paca, caja), no en unidades internas. */
+  receiveInventory: boolean;
+  inventoryQuantity: number;
 };
 
 export function buildConfirmRowDrafts(
@@ -100,6 +117,8 @@ export function buildConfirmRowDrafts(
       ivaInclusion: row.cost.ivaInclusion,
       um: row.line.um,
       cantidad: row.line.cantidad,
+      precioUnitario: row.line.precioUnitario ?? null,
+      pricedFromUnitPrice: row.cost.pricedFromUnitPrice,
       totalUnidades: row.cost.totalUnidades,
       numeroRollos: row.cost.numeroRollos ?? 1,
       costBasis: row.cost.costBasis,
@@ -116,6 +135,12 @@ export function buildConfirmRowDrafts(
       action: row.action,
       candidates: row.candidates,
       unidadesPorEmpaqueSource: row.cost.unidadesPorEmpaqueSource,
+      packaging: product?.packaging ?? null,
+      receiveInventory:
+        product != null &&
+        row.cost.costBasis !== "metraje" &&
+        row.line.cantidad > 0,
+      inventoryQuantity: row.line.cantidad,
     };
   });
 }
@@ -206,6 +231,7 @@ export function InvoiceCostConfirmView({
     const pendingDecreases = rows.filter(
       (r) =>
         r.productId != null &&
+        r.unitCost > 0 &&
         invoiceCostDelta(r.currentCost, r.unitCost) === "decrease" &&
         !r.applyCostUpdate,
     );
@@ -229,19 +255,33 @@ export function InvoiceCostConfirmView({
           patch.unidadesPorEmpaque != null &&
           patch.unidadesPorEmpaque !== row.unidadesPorEmpaque
         ) {
-          if (row.costBasis === "metraje") {
+          if (next.pricedFromUnitPrice && next.precioUnitario) {
+            const priced = costFromCatalogUnitPrice(
+              next.precioUnitario,
+              patch.unidadesPorEmpaque,
+            );
+            next.totalUnidades = patch.unidadesPorEmpaque;
+            next.valorTotalConIva = priced.valorConIva;
+            next.unitCost = priced.costoUnitario;
+            next.unitLabel = "un";
+            next.costBasis = "unidad";
+          } else if (row.costBasis === "metraje") {
             // Factor = metros/rollo; total = rollos × metros (no cantidad en kg)
             const rolls = next.numeroRollos > 0 ? next.numeroRollos : 1;
             next.numeroRollos = rolls;
             next.totalUnidades = rolls * patch.unidadesPorEmpaque;
             next.unitLabel = "m";
+            next.unitCost = recomputeUnitCost(
+              row.valorTotalConIva,
+              next.totalUnidades,
+            );
           } else {
             next.totalUnidades = row.cantidad * patch.unidadesPorEmpaque;
+            next.unitCost = recomputeUnitCost(
+              row.valorTotalConIva,
+              next.totalUnidades,
+            );
           }
-          next.unitCost = recomputeUnitCost(
-            row.valorTotalConIva,
-            next.totalUnidades,
-          );
         }
 
         if (
@@ -279,6 +319,7 @@ export function InvoiceCostConfirmView({
         if (!next.productId) {
           next.checked = false;
           next.applyCostUpdate = false;
+          next.receiveInventory = false;
         } else if (patch.productId != null) {
           // Al elegir/corregir match, marcar para aprender (y actualizar si aplica).
           next.checked = true;
@@ -292,7 +333,17 @@ export function InvoiceCostConfirmView({
   }
 
   function selectProduct(key: string, product: InvoiceMatchProduct) {
-    const unitCost = rows.find((r) => r.key === key)?.unitCost ?? 0;
+    const row = rows.find((r) => r.key === key);
+    if (!row) return;
+    const catalogUnits =
+      row.costBasis === "metraje"
+        ? null
+        : extractCatalogPackUnits(product.packaging);
+    const priced =
+      catalogUnits != null && row.precioUnitario != null && row.precioUnitario > 0
+        ? costFromCatalogUnitPrice(row.precioUnitario, catalogUnits)
+        : null;
+    const unitCost = priced?.costoUnitario ?? row.unitCost;
     updateRow(key, {
       productId: product.id,
       productName: product.name,
@@ -300,10 +351,21 @@ export function InvoiceCostConfirmView({
       currentCost: product.cost,
       checked: true,
       applyCostUpdate: defaultApplyCostUpdate(product.cost, unitCost),
-      matchConfidence:
-        rows.find((r) => r.key === key)?.matchConfidence === "learned"
-          ? "learned"
-          : "high",
+      matchConfidence: row.matchConfidence === "learned" ? "learned" : "high",
+      packaging: product.packaging ?? null,
+      receiveInventory: row.costBasis !== "metraje" && row.cantidad > 0,
+      ...(priced && catalogUnits != null
+        ? {
+            unidadesPorEmpaque: catalogUnits,
+            totalUnidades: catalogUnits,
+            unitCost: priced.costoUnitario,
+            valorTotalConIva: priced.valorConIva,
+            pricedFromUnitPrice: true,
+            unidadesPorEmpaqueSource: "catalog" as const,
+            unitLabel: "un" as const,
+            costBasis: "unidad" as const,
+          }
+        : {}),
     });
   }
 
@@ -332,6 +394,7 @@ export function InvoiceCostConfirmView({
               onChange(
                 rows.map((r) =>
                   invoiceCostDelta(r.currentCost, r.unitCost) === "decrease" &&
+                  r.unitCost > 0 &&
                   r.productId
                     ? { ...r, applyCostUpdate: true, checked: true }
                     : r,
@@ -343,9 +406,6 @@ export function InvoiceCostConfirmView({
           </button>
         ) : null}
         <span className="rounded-full border border-border px-2.5 py-1">
-          {summary.learnOnly} solo aprender match
-        </span>
-        <span className="rounded-full border border-border px-2.5 py-1">
           {summary.selected} seleccionadas
         </span>
         <span className="rounded-full border border-border px-2.5 py-1">
@@ -353,25 +413,29 @@ export function InvoiceCostConfirmView({
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-border">
-        <Table>
-          <TableHeader>
+      <Table
+        containerClassName="max-h-[min(48vh,34rem)] border-border shadow-none"
+        className="min-w-[1080px]"
+      >
+          <TableHeader className="sticky top-0 z-20">
             <TableRow>
-              <TableHead className="w-10" title="Incluir línea para aprender el match">
+              <TableHead className="w-10 bg-zinc-100 dark:bg-zinc-900" title="Incluir línea para aprender el match">
                 ✓
               </TableHead>
-              <TableHead className="min-w-[220px]">Línea factura</TableHead>
-              <TableHead className="min-w-[220px]">Producto</TableHead>
+              <TableHead className="min-w-[200px] bg-zinc-100 dark:bg-zinc-900">Línea factura</TableHead>
+              <TableHead className="min-w-[200px] bg-zinc-100 dark:bg-zinc-900">Producto</TableHead>
               <TableHead
-                className="w-36"
+                className="w-36 bg-zinc-100 dark:bg-zinc-900"
                 title="Metros por rollo y rollos (si aplica)"
               >
                 Metraje
               </TableHead>
-              <TableHead className="w-28 text-right">Costo BD</TableHead>
-              <TableHead className="w-28 text-right">Costo factura</TableHead>
+              <TableHead className="w-28 bg-zinc-100 dark:bg-zinc-900 text-right">Costo BD</TableHead>
+              <TableHead className={stickyCostHead}>
+                Costo factura
+              </TableHead>
               <TableHead
-                className="w-36 text-right"
+                className={stickyDiffHead}
                 title="Diferencia vs catálogo. Marcá para aplicar el costo de factura (incluye bajas)."
               >
                 Diff / aplicar
@@ -475,27 +539,43 @@ export function InvoiceCostConfirmView({
                       {costBadge}
                     </div>
                     <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground font-mono tabular-nums">
-                      {row.costBasis === "metraje"
-                        ? row.um.toUpperCase().startsWith("MT")
-                          ? `${row.cantidad} ${row.um} (= metraje total)`
-                          : `${row.numeroRollos} rollo(s) × ${row.unidadesPorEmpaque} m = ${row.totalUnidades.toLocaleString("es-CO")} m`
-                        : `${row.cantidad} ${row.um} × ${row.unidadesPorEmpaque} un = ${row.totalUnidades.toLocaleString("es-CO")} un`}
-                      <br />
-                      VR TOTAL {formatCost(row.valorTotalNeto)}
-                      {row.ivaInclusion === "excluded"
-                        ? row.valorIva != null
-                          ? ` + IVA ${formatCost(row.valorIva)} = ${formatCost(row.valorTotalConIva)}`
-                          : ` × 1,19 = ${formatCost(row.valorTotalConIva)}`
-                        : row.valorIva != null
-                          ? ` · IVA ${formatCost(row.valorIva)} (incluido)`
-                          : " (IVA incluido)"}
-                      <br />
-                      {formatCost(row.valorTotalConIva)} ÷{" "}
-                      {row.totalUnidades.toLocaleString("es-CO")} {row.unitLabel}{" "}
-                      ={" "}
-                      <span className="text-foreground font-semibold">
-                        {formatCost(row.unitCost)}/{row.unitLabel}
-                      </span>
+                      {row.pricedFromUnitPrice && row.precioUnitario ? (
+                        <>
+                          Precio unit. {formatCost(row.precioUnitario)} × 1,19 ={" "}
+                          {formatCost(row.valorTotalConIva)}
+                          <br />
+                          {formatCost(row.valorTotalConIva)} ÷{" "}
+                          {row.unidadesPorEmpaque.toLocaleString("es-CO")} un
+                          (catálogo) ={" "}
+                          <span className="text-foreground font-semibold">
+                            {formatCost(row.unitCost)}/un
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {row.costBasis === "metraje"
+                            ? row.um.toUpperCase().startsWith("MT")
+                              ? `${row.cantidad} ${row.um} (= metraje total)`
+                              : `${row.numeroRollos} rollo(s) × ${row.unidadesPorEmpaque} m = ${row.totalUnidades.toLocaleString("es-CO")} m`
+                            : `${row.cantidad} ${row.um} × ${row.unidadesPorEmpaque} un = ${row.totalUnidades.toLocaleString("es-CO")} un`}
+                          <br />
+                          VR TOTAL {formatCost(row.valorTotalNeto)}
+                          {row.ivaInclusion === "excluded"
+                            ? row.valorIva != null
+                              ? ` + IVA ${formatCost(row.valorIva)} = ${formatCost(row.valorTotalConIva)}`
+                              : ` × 1,19 = ${formatCost(row.valorTotalConIva)}`
+                            : row.valorIva != null
+                              ? ` · IVA ${formatCost(row.valorIva)} (incluido)`
+                              : " (IVA incluido)"}
+                          <br />
+                          {formatCost(row.valorTotalConIva)} ÷{" "}
+                          {row.totalUnidades.toLocaleString("es-CO")}{" "}
+                          {row.unitLabel} ={" "}
+                          <span className="text-foreground font-semibold">
+                            {formatCost(row.unitCost)}/{row.unitLabel}
+                          </span>
+                        </>
+                      )}
                     </p>
                   </TableCell>
                   <TableCell>
@@ -614,10 +694,14 @@ export function InvoiceCostConfirmView({
                             if (!Number.isFinite(n) || n <= 0) return;
                             updateRow(row.key, { unidadesPorEmpaque: n });
                           }}
-                          aria-label="Metros por rollo"
+                          aria-label={
+                            row.costBasis === "metraje"
+                              ? "Metros por rollo"
+                              : "Unidades por empaque"
+                          }
                         />
                         <span className="text-[10px] text-muted-foreground shrink-0">
-                          m/rollo
+                          {row.costBasis === "metraje" ? "m/rollo" : "un/empaque"}
                         </span>
                       </div>
                       {row.costBasis === "metraje" &&
@@ -642,7 +726,9 @@ export function InvoiceCostConfirmView({
                         </div>
                       ) : null}
                       <p className="text-[10px] text-muted-foreground">
-                        {row.unidadesPorEmpaqueSource === "learning"
+                        {row.unidadesPorEmpaqueSource === "catalog"
+                          ? "empaque del catálogo"
+                          : row.unidadesPorEmpaqueSource === "learning"
                           ? "aprendido"
                           : row.unidadesPorEmpaqueSource === "metraje"
                             ? "desde descripción"
@@ -655,10 +741,10 @@ export function InvoiceCostConfirmView({
                   <TableCell className="text-right tabular-nums text-sm">
                     {row.currentCost != null ? formatCost(row.currentCost) : "—"}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-sm font-medium">
+                  <TableCell className={cn(stickyCostCell, "text-sm font-medium")}>
                     {formatCost(row.unitCost)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-sm">
+                  <TableCell className={cn(stickyDiffCell, "text-sm")}>
                     {diff == null ? (
                       "—"
                     ) : (
@@ -705,7 +791,6 @@ export function InvoiceCostConfirmView({
             })}
           </TableBody>
         </Table>
-      </div>
     </div>
   );
 }

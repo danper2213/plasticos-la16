@@ -76,6 +76,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["unpdf"],
   experimental: {
     serverActions: {
       bodySizeLimit: "20mb",

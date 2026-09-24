@@ -60,6 +60,13 @@ export function isRetryableGeminiError(error: unknown): boolean {
   return /high demand|try again later|unavailable|overloaded/i.test(text);
 }
 
+export function isInvalidArgumentGeminiError(error: unknown): boolean {
+  const code = numericCode(error);
+  const status = normalizedStatus(error);
+  if (code === 400 || status === "INVALID_ARGUMENT") return true;
+  return /invalid argument/i.test(errorText(error));
+}
+
 export function isMissingGeminiModelError(error: unknown): boolean {
   const code = numericCode(error);
   const status = normalizedStatus(error);
@@ -81,6 +88,9 @@ export function geminiUserFacingMessage(
   }
   if (isMissingGeminiModelError(error)) {
     return "Gemini no pudo leer la factura con los modelos disponibles. Reintentá en unos segundos.";
+  }
+  if (isInvalidArgumentGeminiError(error)) {
+    return "Gemini no aceptó ese archivo. Reintentá: se vuelve a leer el texto del PDF.";
   }
   if (/GEMINI_API_KEY/i.test(errorText(error))) {
     return "Falta GEMINI_API_KEY en el servidor. Configurala en Vercel.";

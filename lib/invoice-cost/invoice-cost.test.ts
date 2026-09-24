@@ -188,6 +188,72 @@ describe("processInvoiceLine", () => {
     expect(result.cost.costoUnitario).toBe(509.75);
     expect(result.shouldUpdate).toBe(true);
   });
+
+  it("GRANEL X 500 no pisa el empaque ya aprendido", () => {
+    const descripcion = "BANDEJA 1 BLANCO ESPUMADO GRANEL X 500";
+    let learnings: InvoiceCostLearning[] = [];
+    learnings = upsertLearning(learnings, {
+      supplierId: "sup-a",
+      descripcion,
+      productId: "p1",
+      unidadesPorEmpaque: 25,
+    });
+
+    const result = processInvoiceLine({
+      line: {
+        descripcion,
+        um: "PACA",
+        cantidad: 12,
+        valorTotalNeto: 408_000,
+      },
+      products: PRODUCTS,
+      learnings,
+      supplierId: "sup-a",
+    });
+
+    expect(result.cost.unidadesPorEmpaque).toBe(25);
+    expect(result.cost.totalUnidades).toBe(300);
+    expect(result.cost.unidadesPorEmpaqueSource).toBe("learning");
+    expect(result.cost.pricedFromUnitPrice).toBe(false);
+  });
+
+  it("bandeja 1: precio 34.000 con IVA entre las 25 unidades aprendidas", () => {
+    const descripcion = "10283 BANDEJA 1 BLANCO ESPUMADO GRANEL X 500";
+    const bandeja: InvoiceMatchProduct = {
+      id: "bandeja",
+      name: "Bandeja 1",
+      presentation: "Pqt x20",
+      packaging: "Pqt x25",
+      cost: 1618.4,
+      supplier_id: "sup-a",
+    };
+    let learnings: InvoiceCostLearning[] = [];
+    learnings = upsertLearning(learnings, {
+      supplierId: "sup-a",
+      descripcion,
+      productId: "bandeja",
+      unidadesPorEmpaque: 25,
+    });
+
+    const result = processInvoiceLine({
+      line: {
+        descripcion,
+        um: "PACA",
+        cantidad: 12,
+        valorTotalNeto: 408_000,
+        precioUnitario: 34,
+      },
+      products: [bandeja],
+      learnings,
+      supplierId: "sup-a",
+    });
+
+    expect(result.line.precioUnitario).toBe(34_000);
+    expect(result.cost.unidadesPorEmpaque).toBe(25);
+    expect(result.cost.costoUnitario).toBe(1618.4);
+    expect(result.cost.pricedFromUnitPrice).toBe(true);
+    expect(result.cost.unidadesPorEmpaqueSource).toBe("learning");
+  });
 });
 
 describe("invoiceCostDelta", () => {

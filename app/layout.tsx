@@ -4,7 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import { Analytics } from "@vercel/analytics/react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
-import { GA_MEASUREMENT_ID } from "@/lib/google-tag";
+import { GA_MEASUREMENT_ID, GOOGLE_TAG_INLINE_SCRIPT } from "@/lib/google-tag";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -31,12 +31,7 @@ export default function RootLayout({
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: `
-window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', '${GA_MEASUREMENT_ID}');
-`,
+            __html: GOOGLE_TAG_INLINE_SCRIPT,
           }}
         />
       </head>

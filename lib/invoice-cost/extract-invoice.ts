@@ -9,6 +9,7 @@ import {
   type ExtractedInvoice,
   type InvoiceExtractMime,
 } from "@/lib/invoice-cost/extract-invoice-shared";
+import { tryParseInvoicePdf } from "@/lib/invoice-cost/parse-invoice-pdf";
 
 export type { ExtractedInvoice, InvoiceExtractMime };
 export {
@@ -52,6 +53,8 @@ function buildExtractionPrompt(learnings: InvoiceCostLearning[]): string {
     "- valorTotalNeto: columna VR TOTAL / VALOR TOTAL de la línea TAL COMO APARECE.",
     "  No lo multipliques ni le restes IVA. El sistema decide si ya trae IVA.",
     "- valorIva: VALOR IVA de la línea si está en una columna aparte (no lo restes del VR TOTAL).",
+    "- precioUnitario: columna VR UNITARIO / PRECIO UNITARIO / VALOR UNITARIO, sin IVA.",
+    "  No lo calcules ni lo multipliques. Si no aparece, omitilo.",
     "- codigoProveedor: código/SKU del proveedor si existe.",
     "",
     "METRAJE Calypso / film (obligatorio):",
@@ -78,37 +81,88 @@ function buildExtractionPrompt(learnings: InvoiceCostLearning[]): string {
   ].join("\n");
 }
 
+export type InvoiceExtractionSource = "local" | "gemini";
+
+export type InvoiceExtractionResult = {
+  invoice: ExtractedInvoice;
+  source: InvoiceExtractionSource;
+};
+
 /**
- * Extrae líneas de factura con Gemini a partir de PDF o imagen.
- * Usa aprendizajes previos del proveedor como ejemplos de estilo de descripción.
+ * Extrae líneas de factura. Los PDF con texto se leen en el servidor;
+ * fotos, escaneos y tablas no reconocidas siguen con Gemini.
  */
 export async function extractInvoiceLinesFromFile(input: {
   bytes: Uint8Array;
   mimeType: InvoiceExtractMime;
   learnings?: InvoiceCostLearning[];
-}): Promise<ExtractedInvoice> {
+}): Promise<InvoiceExtractionResult> {
   assertInvoiceFileSize(input.bytes.byteLength);
 
-  const base64 = Buffer.from(input.bytes).toString("base64");
+  if (input.mimeType === "application/pdf") {
+    const local = await tryParseInvoicePdf(input.bytes);
+    if (local.ok) {
+      console.info(
+        `[invoice-pdf] lectura local (${local.invoice.lines.length} líneas)`,
+      );
+      return { invoice: local.invoice, source: "local" };
+    }
+    console.info(`[invoice-pdf] uso Gemini: ${local.reason}`);
+    try {
+      const invoice = await extractInvoiceWithGemini({
+        ...input,
+        plainText: local.text,
+      });
+      return { invoice, source: "gemini" };
+    } catch (error) {
+      if (local.draft) {
+        console.warn(
+          "[invoice-pdf] Gemini falló; se usa la lectura local",
+          error,
+        );
+        return { invoice: local.draft, source: "local" };
+      }
+      throw error;
+    }
+  }
+
+  const invoice = await extractInvoiceWithGemini(input);
+  return { invoice, source: "gemini" };
+}
+
+async function extractInvoiceWithGemini(input: {
+  bytes: Uint8Array;
+  mimeType: InvoiceExtractMime;
+  learnings?: InvoiceCostLearning[];
+  /** Texto ya extraído del PDF. Evita enviar el binario, que Gemini a veces rechaza. */
+  plainText?: string;
+}): Promise<ExtractedInvoice> {
   const prompt = buildExtractionPrompt(input.learnings ?? []);
+  const plainText = input.plainText?.trim();
+  const textPrompt = plainText
+    ? `${prompt}\n\nEl PDF ya se convirtió a texto. Cada fila va en una línea y las columnas están separadas por " | ". Extraé la factura desde este texto:\n\n${plainText}`
+    : prompt;
+  const base64 = Buffer.from(input.bytes).toString("base64");
 
   const text = await generateGeminiJsonText({
     model: getGeminiInvoiceModel(),
     emptyTextError: "Gemini no devolvió texto al extraer la factura.",
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: prompt },
+    contents: plainText
+      ? textPrompt
+      : [
           {
-            inlineData: {
-              mimeType: input.mimeType,
-              data: base64,
-            },
+            role: "user",
+            parts: [
+              { text: textPrompt },
+              {
+                inlineData: {
+                  mimeType: input.mimeType,
+                  data: base64,
+                },
+              },
+            ],
           },
         ],
-      },
-    ],
     config: {
       temperature: 0.1,
       responseMimeType: "application/json",
@@ -133,6 +187,7 @@ export async function extractInvoiceLinesFromFile(input: {
                 valorTotalNeto: { type: Type.NUMBER },
                 valorIva: { type: Type.NUMBER, nullable: true },
                 codigoProveedor: { type: Type.STRING, nullable: true },
+                precioUnitario: { type: Type.NUMBER, nullable: true },
                 metrosPorUnidad: { type: Type.NUMBER, nullable: true },
                 numeroRollos: { type: Type.NUMBER, nullable: true },
                 metrajeTotal: { type: Type.NUMBER, nullable: true },

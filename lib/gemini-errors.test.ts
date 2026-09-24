@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   geminiUserFacingMessage,
+  isInvalidArgumentGeminiError,
   isMissingGeminiModelError,
   isQuotaGeminiError,
   isRetryableGeminiError,
@@ -51,5 +52,18 @@ describe("gemini errors", () => {
     expect(geminiUserFacingMessage(retired, "fallback")).toBe(
       "Gemini no pudo leer la factura con los modelos disponibles. Reintentá en unos segundos.",
     );
+    expect(
+      geminiUserFacingMessage(
+        new Error(
+          '{"error":{"code":400,"message":"Request contains an invalid argument.","status":"INVALID_ARGUMENT"}}',
+        ),
+        "fallback",
+      ),
+    ).toBe("Gemini no aceptó ese archivo. Reintentá: se vuelve a leer el texto del PDF.");
+    expect(
+      isInvalidArgumentGeminiError(
+        new Error("Request contains an invalid argument."),
+      ),
+    ).toBe(true);
   });
 });

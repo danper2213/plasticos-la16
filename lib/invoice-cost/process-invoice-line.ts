@@ -1,5 +1,8 @@
 import {
+  alignUnitPriceToLineTotal,
   calculateInvoiceUnitCost,
+  costFromCatalogUnitPrice,
+  extractCatalogPackUnits,
   isKgUm,
   isMetrajeUm,
   type InvoiceLineCostResult,
@@ -27,6 +30,8 @@ export interface RawInvoiceLine {
   valorTotalNeto: number;
   valorIva?: number;
   codigoProveedor?: string | null;
+  /** Precio unitario de la línea, antes de IVA. */
+  precioUnitario?: number | null;
   /** Metros por rollo (ej. 120ML → 120). */
   metrosPorUnidad?: number | null;
   /** Rollos cuando UM es KG. */
@@ -52,7 +57,14 @@ export type InvoiceLineAction =
 export interface ProcessedInvoiceLine {
   line: RawInvoiceLine;
   cost: InvoiceLineCostResult & {
-    unidadesPorEmpaqueSource: "learning" | "regex" | "fallback" | "metraje";
+    unidadesPorEmpaqueSource:
+      | "learning"
+      | "regex"
+      | "fallback"
+      | "metraje"
+      | "catalog";
+    /** Precio unitario × 1,19 / unidades del empaque en el catálogo. */
+    pricedFromUnitPrice: boolean;
   };
   learningHit: {
     productId: string;
@@ -114,11 +126,14 @@ export function processInvoiceLine(
         ? "regex"
         : "fallback";
 
-  // Aprendizaje: metros/rollo (KG) o unidades/empaque (CJ…). No pisar UM=MTR.
+  // El aprendizaje ya confirmado manda sobre el "X 500" de la descripción.
+  // El metraje (MTR/KG/120ML) no se reemplaza por unidades de empaque.
   const canApplyLearnedFactor =
     learnedFactor.source === "learning" &&
     learningHit?.learning.unidadesPorEmpaque != null &&
-    !isMetrajeUm(line.um);
+    !isMetrajeUm(line.um) &&
+    !isKgUm(line.um) &&
+    costBase.costBasis !== "metraje";
 
   if (canApplyLearnedFactor) {
     factor = learnedFactor.value;
@@ -154,6 +169,7 @@ export function processInvoiceLine(
     packPatternFound:
       costBase.packPatternFound || learnedFactor.source === "learning",
     unidadesPorEmpaqueSource,
+    pricedFromUnitPrice: false,
   };
 
   let suggestedProduct: InvoiceMatchProduct | null = null;
@@ -187,11 +203,13 @@ export function processInvoiceLine(
     }
   }
 
+  applyCatalogUnitPrice(cost, line, suggestedProduct);
+
   const currentCost = suggestedProduct?.cost ?? null;
   const shouldUpdate =
     suggestedProduct != null &&
     currentCost != null &&
-    costoUnitario > currentCost;
+    cost.costoUnitario > currentCost;
 
   const action = resolveAction({
     suggestedProduct,
@@ -245,6 +263,66 @@ export function processInvoiceLines(
       invoiceIvaInclusion,
     }),
   );
+}
+
+function applyCatalogUnitPrice(
+  cost: ProcessedInvoiceLine["cost"],
+  line: RawInvoiceLine,
+  product: InvoiceMatchProduct | null,
+): void {
+  if (cost.costBasis === "metraje" || isMetrajeUm(line.um) || isKgUm(line.um)) {
+    return;
+  }
+  const fromLearning = cost.unidadesPorEmpaqueSource === "learning";
+  const units = fromLearning
+    ? cost.unidadesPorEmpaque
+    : extractCatalogPackUnits(product?.packaging);
+  if (units == null || units <= 0) return;
+
+  const rawPrice = line.precioUnitario;
+  const precio =
+    rawPrice != null && Number.isFinite(rawPrice) && rawPrice > 0
+      ? alignUnitPriceToLineTotal(rawPrice, line.cantidad, line.valorTotalNeto)
+      : null;
+  const priceMatchesLine =
+    precio != null &&
+    line.cantidad > 0 &&
+    line.valorTotalNeto > 0 &&
+    (amountsClose(precio * line.cantidad, line.valorTotalNeto) ||
+      amountsClose(precio * line.cantidad * 1.19, line.valorTotalNeto));
+
+  if (precio != null && priceMatchesLine) {
+    const priced = costFromCatalogUnitPrice(precio, units);
+    line.precioUnitario = precio;
+    cost.unidadesPorEmpaque = units;
+    cost.totalUnidades = units;
+    cost.costoUnitario = priced.costoUnitario;
+    cost.valorTotalConIva = priced.valorConIva;
+    cost.unitLabel = "un";
+    cost.costBasis = "unidad";
+    cost.unidadesPorEmpaqueSource = fromLearning ? "learning" : "catalog";
+    cost.pricedFromUnitPrice = true;
+    return;
+  }
+
+  if (fromLearning) return;
+
+  const totalUnidades = line.cantidad * units;
+  cost.unidadesPorEmpaque = units;
+  cost.totalUnidades = totalUnidades;
+  cost.costoUnitario =
+    totalUnidades > 0
+      ? Math.round((cost.valorTotalConIva / totalUnidades) * 100) / 100
+      : 0;
+  cost.unitLabel = "un";
+  cost.costBasis = "unidad";
+  cost.unidadesPorEmpaqueSource = "catalog";
+  cost.pricedFromUnitPrice = false;
+}
+
+function amountsClose(a: number, b: number): boolean {
+  const scale = Math.max(Math.abs(a), Math.abs(b), 1);
+  return Math.abs(a - b) <= Math.max(1, scale * 0.02);
 }
 
 function resolveAction(args: {

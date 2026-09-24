@@ -3,6 +3,8 @@ import {
   defaultQuantityUnit,
   getLooseUnitLabel,
   maxOutInQuantityUnit,
+  motherBoxEntryLabel,
+  pluralMotherBoxLabel,
   quantityToStockUnits,
   resolveExitUnitOptions,
 } from "./inventory-quantity-unit";
@@ -55,5 +57,14 @@ describe("defaultQuantityUnit / maxOut", () => {
 describe("getLooseUnitLabel", () => {
   it("usa presentation", () => {
     expect(getLooseUnitLabel("Paca x500", "Tula")).toBe("Tula");
+  });
+});
+
+describe("motherBoxEntryLabel", () => {
+  it("nombra la caja madre de la factura", () => {
+    expect(motherBoxEntryLabel("PACA")).toBe("Paca");
+    expect(motherBoxEntryLabel("CJ")).toBe("Caja");
+    expect(pluralMotherBoxLabel(12, "PACA")).toBe("Pacas");
+    expect(pluralMotherBoxLabel(1, "CAJA")).toBe("Caja");
   });
 });

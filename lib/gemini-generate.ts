@@ -3,6 +3,7 @@ import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import {
   geminiUserFacingMessage,
+  isInvalidArgumentGeminiError,
   isMissingGeminiModelError,
   isRetryableGeminiError,
 } from "@/lib/gemini-errors";
@@ -81,7 +82,9 @@ export async function generateGeminiJsonText(input: {
       lastError = error;
       const hasNext = i < models.length - 1;
       const canSkip =
-        isRetryableGeminiError(error) || isMissingGeminiModelError(error);
+        isRetryableGeminiError(error) ||
+        isMissingGeminiModelError(error) ||
+        isInvalidArgumentGeminiError(error);
 
       if (!hasNext || !canSkip) {
         throw new Error(
@@ -90,7 +93,13 @@ export async function generateGeminiJsonText(input: {
       }
 
       console.warn(
-        `[gemini] ${model} no respondió (${isMissingGeminiModelError(error) ? "no existe" : "saturado/cuota"}), pruebo ${models[i + 1]}`,
+        `[gemini] ${model} no respondió (${
+          isMissingGeminiModelError(error)
+            ? "no existe"
+            : isInvalidArgumentGeminiError(error)
+              ? "argumento inválido"
+              : "saturado/cuota"
+        }), pruebo ${models[i + 1]}`,
         error instanceof Error ? error.message.slice(0, 180) : error,
       );
       await sleep(400);

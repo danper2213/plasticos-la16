@@ -9,6 +9,8 @@ export const extractedLineSchema = z.object({
   valorTotalNeto: z.coerce.number().nonnegative(),
   valorIva: z.coerce.number().nonnegative().optional(),
   codigoProveedor: z.string().optional().nullable(),
+  /** Precio unitario de la línea, antes de IVA. */
+  precioUnitario: z.coerce.number().positive().optional().nullable(),
   /** Metros por rollo desde descripción (ej. 120ML → 120). */
   metrosPorUnidad: z.coerce.number().positive().optional().nullable(),
   /** Rollos completos cuando UM es KG. */
@@ -77,6 +79,7 @@ export function extractedToRawLines(extracted: ExtractedInvoice): RawInvoiceLine
     valorTotalNeto: line.valorTotalNeto,
     valorIva: line.valorIva,
     codigoProveedor: line.codigoProveedor ?? null,
+    precioUnitario: line.precioUnitario ?? null,
     metrosPorUnidad: line.metrosPorUnidad ?? null,
     numeroRollos: line.numeroRollos ?? null,
     metrajeTotal: line.metrajeTotal ?? null,

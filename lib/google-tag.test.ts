@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { GA_MEASUREMENT_ID, GOOGLE_TAG_SNIPPET, placeGoogleTagAtStartOfHead } from "./google-tag";
+import {
+  GA_MEASUREMENT_ID,
+  GOOGLE_TAG_INLINE_SCRIPT,
+  GOOGLE_TAG_SNIPPET,
+  placeGoogleTagAtStartOfHead,
+} from "./google-tag";
 
 describe("placeGoogleTagAtStartOfHead", () => {
   it("inserts the official snippet immediately after <head>", () => {
@@ -8,15 +13,11 @@ describe("placeGoogleTagAtStartOfHead", () => {
 
     expect(result.startsWith(`<html><head>${GOOGLE_TAG_SNIPPET}`)).toBe(true);
     expect(result).toContain(`gtag/js?id=${GA_MEASUREMENT_ID}`);
+    expect(GOOGLE_TAG_SNIPPET).toContain(`<script>${GOOGLE_TAG_INLINE_SCRIPT}</script>`);
   });
 
   it("does not leave a second gtag.js script from Next.js", () => {
-    const html = `<html><head><script async="" src="https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}"></script><script>
-window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', '${GA_MEASUREMENT_ID}');
-</script></head></html>`;
+    const html = `<html><head><script async="" src="https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}"></script><script>${GOOGLE_TAG_INLINE_SCRIPT}</script></head></html>`;
 
     const result = placeGoogleTagAtStartOfHead(html);
     const scriptCount = result.split("googletagmanager.com/gtag/js").length - 1;

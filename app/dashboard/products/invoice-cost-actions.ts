@@ -203,6 +203,7 @@ export type InvoiceExtractMeta = {
   lineNetosSum: number;
   ivaInclusion: InvoiceIvaInclusion;
   ivaInclusionSource: InvoiceIvaSource;
+  extractionSource: "local" | "gemini";
 };
 
 export type ExtractAndPreviewResult = {
@@ -226,8 +227,8 @@ export type InvoicePayableDraft = {
 };
 
 /**
- * Extrae líneas desde PDF/foto con Gemini (usando aprendizajes del proveedor
- * como ejemplos), luego calcula costos y matches para la vista de confirmación.
+ * Extrae líneas desde PDF (texto local, o Gemini si es foto/escaneo) y
+ * calcula costos y matches para la vista de confirmación.
  */
 export async function extractAndPreviewInvoiceCosts(
   formData: FormData,
@@ -255,11 +256,12 @@ export async function extractAndPreviewInvoiceCosts(
       loadActiveProductsForMatch(),
     ]);
 
-    const extracted = await extractInvoiceLinesFromFile({
+    const extractedResult = await extractInvoiceLinesFromFile({
       bytes,
       mimeType: detected.mime,
       learnings,
     });
+    const extracted = extractedResult.invoice;
 
     const lines = extractedToRawLines(extracted);
     if (lines.length === 0) {
@@ -318,6 +320,7 @@ export async function extractAndPreviewInvoiceCosts(
           lineNetosSum,
           ivaInclusion: iva.inclusion,
           ivaInclusionSource: iva.source,
+          extractionSource: extractedResult.source,
         },
       },
     };

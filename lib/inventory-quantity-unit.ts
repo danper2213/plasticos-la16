@@ -173,3 +173,37 @@ export function formatQuantityInUnit(
             : `${packLabel}s`;
   return `${qty.toLocaleString("es-CO", { maximumFractionDigits: 6 })} ${plural}`;
 }
+
+/**
+ * Unidad de la entrada cuando la factura trae la caja madre
+ * (PACA, CAJA, CJ…), no las unidades internas del empaque.
+ */
+export function motherBoxEntryLabel(um: string | null | undefined): string {
+  const compact = (um ?? "").trim().toUpperCase().replace(/\./g, "");
+  if (compact.startsWith("PAC")) return "Paca";
+  if (
+    compact === "CJ" ||
+    compact === "CJA" ||
+    compact.startsWith("CAJ")
+  ) {
+    return "Caja";
+  }
+  if (compact === "BL" || compact.startsWith("BULT")) return "Bulto";
+  if (compact === "UN" || compact === "UND" || compact.startsWith("UNID")) {
+    return "Unidad";
+  }
+  const raw = (um ?? "").trim();
+  return raw || "Paca";
+}
+
+export function pluralMotherBoxLabel(
+  quantity: number,
+  um: string | null | undefined,
+): string {
+  const label = motherBoxEntryLabel(um);
+  if (Math.abs(quantity - 1) < 1e-9) return label;
+  if (label === "Paca") return "Pacas";
+  if (label === "Caja") return "Cajas";
+  if (label === "Unidad") return "Unidades";
+  return `${label}s`;
+}

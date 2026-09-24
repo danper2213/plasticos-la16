@@ -2,6 +2,8 @@ export {
   calculateInvoiceUnitCost,
   extractMetrosPorPieza,
   extractUnidadesPorEmpaque,
+  extractCatalogPackUnits,
+  costFromCatalogUnitPrice,
   isKgUm,
   isMetrajeUm,
   normalizeInvoiceUm,
@@ -53,5 +55,5 @@ export {
   type InvoiceCostDelta,
 } from "@/lib/invoice-cost/cost-delta";
 
-// extract-invoice / detect-invoice-file son server-only (Gemini).
+// extract-invoice / detect-invoice-file son server-only (PDF local o Gemini).
 // No reexportarlos desde este barrel para no romper imports de cliente.

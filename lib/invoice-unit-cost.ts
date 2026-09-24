@@ -17,6 +17,7 @@ import {
   type InvoiceIvaInclusion,
   resolveLineAmountWithIva,
 } from "@/lib/invoice-cost/resolve-invoice-iva";
+import { parsePackagingConversion } from "@/lib/parse-packaging";
 
 /** Sufijo de unidades sueltas: un, und, ud, uds, unidad(es). */
 const UNIT_SUFFIX = "(?:un(?:id(?:ad(?:es)?)?)?|uds?)";
@@ -113,6 +114,52 @@ export function extractUnidadesPorEmpaque(
   }
 
   return { unidadesPorEmpaque: 1, patternFound: false };
+}
+
+/** Unidades del empaque del catálogo (`Paca x20`, `Cj x400`). */
+export function extractCatalogPackUnits(
+  packaging: string | null | undefined,
+): number | null {
+  const parsed = parsePackagingConversion(packaging);
+  if (!parsed || parsed.factor <= 0) return null;
+  return parsed.factor;
+}
+
+/**
+ * Costo de catálogo: precio unitario de la factura (sin IVA) × 1,19,
+ * dividido por las unidades que el producto trae en la base.
+ */
+export function costFromCatalogUnitPrice(
+  precioUnitario: number,
+  unidades: number,
+): { valorConIva: number; costoUnitario: number } {
+  const valorConIva = round2(precioUnitario * COLOMBIA_IVA_FACTOR);
+  const costoUnitario = unidades > 0 ? round2(valorConIva / unidades) : 0;
+  return { valorConIva, costoUnitario };
+}
+
+/**
+ * Si el precio unitario quedó mil veces por debajo del total de la línea
+ * (`34` en vez de `34.000`), lo devuelve a pesos.
+ */
+export function alignUnitPriceToLineTotal(
+  precioUnitario: number,
+  cantidad: number,
+  valorTotal: number,
+): number {
+  if (!(precioUnitario > 0) || !(cantidad > 0) || !(valorTotal > 0)) {
+    return precioUnitario;
+  }
+  let aligned = precioUnitario;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const ratio = valorTotal / (aligned * cantidad);
+    if (ratio >= 800 && ratio <= 1200) {
+      aligned = round2(aligned * 1000);
+      continue;
+    }
+    break;
+  }
+  return aligned;
 }
 
 export interface InvoiceLineCostInput {
@@ -370,6 +417,9 @@ function matchSecondaryPackPattern(text: string): number | null {
     packAmountPattern("PQ", UNIT_SUFFIX),
     packAmountPattern("PQT", UNIT_SUFFIX),
     packAmountPattern("PAQ", UNIT_SUFFIX),
+    packAmountPattern("PACA", UNIT_SUFFIX),
+    // "GRANEL X 500" / "X 500". No toma "X 120ML" ni "X 300 m".
+    /(?:granel\s+)?[x×]\s*(\d{2,4})(?!\s*(?:ml|mts?|metros|mm)\b)/gi,
   ]);
 }
 

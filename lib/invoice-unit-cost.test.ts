@@ -1,9 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
+  alignUnitPriceToLineTotal,
   calculateInvoiceUnitCost,
+  costFromCatalogUnitPrice,
+  extractCatalogPackUnits,
   extractMetrosPorPieza,
   extractUnidadesPorEmpaque,
 } from "./invoice-unit-cost";
+
+describe("costFromCatalogUnitPrice", () => {
+  it("aplica IVA y divide por el empaque del catálogo", () => {
+    expect(extractCatalogPackUnits("Paca x20")).toBe(20);
+    expect(extractCatalogPackUnits("Cj x400")).toBe(400);
+    expect(costFromCatalogUnitPrice(27_193.28, 20)).toEqual({
+      valorConIva: 32_360,
+      costoUnitario: 1618,
+    });
+    expect(costFromCatalogUnitPrice(34_000, 25)).toEqual({
+      valorConIva: 40_460,
+      costoUnitario: 1618.4,
+    });
+    expect(alignUnitPriceToLineTotal(34, 12, 408_000)).toBe(34_000);
+  });
+});
 
 describe("extractUnidadesPorEmpaque", () => {
   it("prioriza CJ x N un cuando UM es CJ (aunque exista Pq x N)", () => {
@@ -35,6 +54,27 @@ describe("extractUnidadesPorEmpaque", () => {
     expect(
       extractUnidadesPorEmpaque("Item sin caja - Pq x 24 un", "CJ"),
     ).toEqual({ unidadesPorEmpaque: 24, patternFound: true });
+  });
+
+  it("lee GRANEL X 500 como unidades por paca, no como metraje", () => {
+    expect(
+      extractUnidadesPorEmpaque(
+        "BANDEJA 1 BLANCO ESPUMADO GRANEL X 500",
+        "PACA",
+      ),
+    ).toEqual({ unidadesPorEmpaque: 500, patternFound: true });
+
+    const result = calculateInvoiceUnitCost({
+      descripcion: "BANDEJA 1 BLANCO ESPUMADO GRANEL X 500",
+      um: "PACA",
+      cantidad: 12,
+      valorTotalNeto: 408_000,
+    });
+
+    expect(result.costBasis).toBe("unidad");
+    expect(result.unidadesPorEmpaque).toBe(500);
+    expect(result.totalUnidades).toBe(6_000);
+    expect(result.costoUnitario).toBe(68);
   });
 
   it("fallback a 1 si no hay patrón", () => {

@@ -19,6 +19,7 @@ import {
   type InvoiceExtractMeta,
   type InvoicePayableDraft,
 } from "@/app/dashboard/products/invoice-cost-actions";
+import { createMovementsBatch } from "@/app/dashboard/inventory/actions";
 import type { ActiveSupplierOption } from "@/app/dashboard/products/actions";
 import type { InvoiceMatchProduct } from "@/lib/invoice-cost";
 import {
@@ -26,12 +27,16 @@ import {
   buildConfirmRowDrafts,
   type ConfirmRowDraft,
 } from "@/components/products/invoice-cost-confirm-view";
+import {
+  InvoiceInventoryEntryView,
+  inventoryEntryCandidates,
+} from "@/components/products/invoice-inventory-entry-view";
 import { InvoiceCostProcessingOverlay } from "@/components/products/invoice-cost-processing-overlay";
 import { InvoiceCostUploadStep } from "@/components/products/invoice-cost-upload-step";
 import { geminiUserFacingMessage } from "@/lib/gemini-errors";
 import { InvoicePayableConfirmView } from "@/components/products/invoice-payable-confirm-view";
 
-type Step = "upload" | "confirm" | "payable";
+type Step = "upload" | "confirm" | "inventory" | "payable";
 
 interface InvoiceCostUpdateModalProps {
   open: boolean;
@@ -62,6 +67,7 @@ export function InvoiceCostUpdateModal({
   const [costResultSummary, setCostResultSummary] = useState<string | null>(
     null,
   );
+  const [inventoryReceipt, setInventoryReceipt] = useState<string | null>(null);
   const [matchCatalog, setMatchCatalog] = useState<InvoiceMatchProduct[]>([]);
 
   const busy = extracting || confirming || registering;
@@ -88,6 +94,7 @@ export function InvoiceCostUpdateModal({
     setConfirming(false);
     setRegistering(false);
     setCostResultSummary(null);
+    setInventoryReceipt(null);
   }
 
   function handleOpenChange(next: boolean) {
@@ -191,9 +198,92 @@ export function InvoiceCostUpdateModal({
 
       setCostResultSummary(summary);
       toast.success(summary);
+      if (inventoryEntryCandidates(confirmRows).length > 0) {
+        setStep("inventory");
+        return;
+      }
       await loadPayableDraft();
     } catch (err) {
       toast.error(geminiUserFacingMessage(err, "No se pudieron confirmar los costos"));
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  function inventoryLineToken(row: ConfirmRowDraft): string {
+    return `${row.key}:${row.productId}:${row.inventoryQuantity}`;
+  }
+
+  async function handleRegisterInventory() {
+    const entryLines = confirmRows.filter(
+      (row) =>
+        row.receiveInventory &&
+        row.costBasis !== "metraje" &&
+        row.productId != null &&
+        row.inventoryQuantity > 0,
+    );
+    if (entryLines.length === 0) {
+      toast.error("Indicá al menos una cantidad, u omití las entradas");
+      return;
+    }
+
+    const posted = new Set(
+      (inventoryReceipt ?? "").split("|").filter((token) => token.length > 0),
+    );
+    const pending = entryLines.filter(
+      (row) => !posted.has(inventoryLineToken(row)),
+    );
+
+    setConfirming(true);
+    try {
+      if (pending.length > 0) {
+        const invoiceRef = extractMeta?.invoiceNumber?.trim();
+        const inventory = await createMovementsBatch({
+          global_notes: [
+            "Entrada por factura",
+            invoiceRef || null,
+            "caja madre (pacas/cajas)",
+          ]
+            .filter((part): part is string => Boolean(part))
+            .join(" · "),
+          idempotency_key: crypto.randomUUID(),
+          lines: pending.map((row) => ({
+            product_id: row.productId!,
+            movement_type: "in" as const,
+            quantity: row.inventoryQuantity,
+            quantity_unit: "pack" as const,
+            historical_unit_cost:
+              row.unitCost > 0 ? row.unitCost : (row.currentCost ?? 0),
+          })),
+        });
+        if (!inventory.success) {
+          toast.error(inventory.error);
+          return;
+        }
+        for (const row of pending) posted.add(inventoryLineToken(row));
+        setInventoryReceipt([...posted].join("|"));
+        const entrySummary = `entrada de ${inventory.count} ${inventory.count === 1 ? "línea" : "líneas"} al inventario`;
+        setCostResultSummary((prev) =>
+          prev ? `${prev} · ${entrySummary}` : entrySummary,
+        );
+        toast.success(
+          `Entrada de ${inventory.count} ${inventory.count === 1 ? "línea" : "líneas"} al inventario`,
+        );
+      }
+      await loadPayableDraft();
+    } catch (err) {
+      toast.error(
+        geminiUserFacingMessage(err, "No se pudieron registrar las entradas"),
+      );
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  async function handleSkipInventory() {
+    setConfirming(true);
+    try {
+      await loadPayableDraft();
     } finally {
       setConfirming(false);
     }
@@ -273,19 +363,33 @@ export function InvoiceCostUpdateModal({
   const selectedCount = confirmRows.filter(
     (r) => r.checked && r.productId,
   ).length;
+  const inventoryCount = confirmRows.filter(
+    (row) =>
+      row.receiveInventory &&
+      row.costBasis !== "metraje" &&
+      row.productId != null &&
+      row.inventoryQuantity > 0,
+  ).length;
+  const hasInventoryStep = inventoryEntryCandidates(confirmRows).length > 0;
 
   const stepSubtitle =
     step === "upload"
       ? "Paso 1 · Subí el PDF o la foto para extraer con IA"
       : step === "confirm"
         ? "Paso 2 · Confirmá matches y costos"
-        : "Paso 3 · Verificá datos y registrá en cuentas por pagar";
+        : step === "inventory"
+          ? "Paso 3 · Entradas de inventario por caja madre"
+          : "Paso 4 · Verificá datos y registrá en cuentas por pagar";
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         overlayClassName="bg-black/50 backdrop-blur-md"
-        className="max-w-5xl w-full p-0 gap-0 border border-border rounded-[24px] shadow-2xl bg-card overflow-hidden data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100 dark:bg-zinc-950/95 dark:border-zinc-800"
+        className={`w-full p-0 gap-0 border border-border rounded-[24px] shadow-2xl bg-card overflow-hidden data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100 dark:bg-zinc-950/95 dark:border-zinc-800 ${
+          step === "confirm" || step === "inventory"
+            ? "max-w-[min(96rem,calc(100vw-1.5rem))]"
+            : "max-w-5xl"
+        }`}
         showCloseButton={!busy}
         onEscapeKeyDown={(e) => {
           if (busy) e.preventDefault();
@@ -295,8 +399,8 @@ export function InvoiceCostUpdateModal({
           Actualizar costos desde factura
         </DialogTitle>
         <DialogDescription className="sr-only">
-          Extraé líneas, confirmá costos y registrá la factura en cuentas por
-          pagar.
+          Extraé líneas, confirmá costos, registrá entradas de caja madre y la
+          factura en cuentas por pagar.
         </DialogDescription>
 
         <div className="relative bg-gradient-to-br from-primary/15 via-card to-card border-b border-border pl-6 pr-20 py-5 dark:from-blue-950/80 dark:via-zinc-900/90 dark:to-zinc-950 dark:border-zinc-800/80">
@@ -337,6 +441,11 @@ export function InvoiceCostUpdateModal({
                     <span className="rounded-full border border-border px-2.5 py-1">
                       {extractMeta.lineCount} líneas extraídas
                     </span>
+                    <span className="rounded-full border border-border px-2.5 py-1">
+                      {extractMeta.extractionSource === "local"
+                        ? "Leída en el servidor"
+                        : "Leída con Gemini"}
+                    </span>
                     {extractMeta.invoiceNumber ? (
                       <span className="rounded-full border border-border px-2.5 py-1">
                         Factura {extractMeta.invoiceNumber}
@@ -355,6 +464,26 @@ export function InvoiceCostUpdateModal({
                   </div>
                 ) : null}
                 <InvoiceCostConfirmView
+                  rows={confirmRows}
+                  onChange={setConfirmRows}
+                  catalog={matchCatalog}
+                />
+              </div>
+            ) : null}
+
+            {step === "inventory" ? (
+              <div className="space-y-4">
+                {costResultSummary ? (
+                  <p className="text-sm text-muted-foreground rounded-lg border border-border bg-muted/40 px-3 py-2">
+                    {costResultSummary}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground rounded-lg border border-border bg-muted/40 px-3 py-2">
+                    Los costos no se modificaron. Definí las entradas de caja
+                    madre o continuá a cuentas por pagar.
+                  </p>
+                )}
+                <InvoiceInventoryEntryView
                   rows={confirmRows}
                   onChange={setConfirmRows}
                   catalog={matchCatalog}
@@ -400,7 +529,7 @@ export function InvoiceCostUpdateModal({
               <ArrowLeft className="size-4" />
               Otra factura
             </Button>
-          ) : step === "payable" ? (
+          ) : step === "inventory" ? (
             <Button
               type="button"
               variant="ghost"
@@ -411,15 +540,48 @@ export function InvoiceCostUpdateModal({
               <ArrowLeft className="size-4" />
               Volver a precios
             </Button>
+          ) : step === "payable" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="gap-1.5 rounded-lg"
+              disabled={busy}
+              onClick={() => setStep(hasInventoryStep ? "inventory" : "confirm")}
+            >
+              <ArrowLeft className="size-4" />
+              {hasInventoryStep ? "Volver a entradas" : "Volver a precios"}
+            </Button>
           ) : (
             <span className="text-xs text-muted-foreground max-w-sm">
-              La IA lee la factura. Después de precios podés registrar en
-              cuentas por pagar.
+              La IA lee la factura. Después de precios podés dar entrada al
+              inventario y registrar en cuentas por pagar.
             </span>
           )}
 
           <div className="flex items-center gap-2 ml-auto">
-            {step === "payable" ? (
+            {step === "inventory" ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-lg"
+                  disabled={busy}
+                  onClick={() => void handleSkipInventory()}
+                >
+                  Omitir entradas
+                </Button>
+                <Button
+                  type="button"
+                  disabled={busy || inventoryCount === 0}
+                  onClick={() => void handleRegisterInventory()}
+                  className="rounded-lg gap-2"
+                >
+                  {confirming
+                    ? "Registrando…"
+                    : `Registrar entradas (${inventoryCount})`}
+                </Button>
+              </>
+            ) : step === "payable" ? (
               <>
                 <Button
                   type="button"
