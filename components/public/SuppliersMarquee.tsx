@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   LANDING_PAGE_GUTTER,
   LANDING_SECTION_PANEL,
@@ -22,15 +22,19 @@ interface SuppliersMarqueeProps {
 }
 
 function SupplierCard({ supplier }: { supplier: PublicSupplier }) {
+  const [logoFailed, setLogoFailed] = useState(false);
+  const showLogo = Boolean(supplier.logo_url) && !logoFailed;
+
   const content = (
     <article className="flex h-24 w-44 shrink-0 items-center justify-center px-2 md:h-28 md:w-52">
-      {supplier.logo_url ? (
+      {showLogo ? (
         <img
-          src={supplier.logo_url}
+          src={supplier.logo_url ?? undefined}
           alt={supplier.name}
           className="max-h-14 max-w-[10rem] object-contain opacity-90 transition duration-300 hover:opacity-100 md:max-h-16 md:max-w-[11rem]"
           loading="lazy"
           decoding="async"
+          onError={() => setLogoFailed(true)}
         />
       ) : (
         <p className="text-center text-sm font-semibold tracking-tight text-zinc-300">

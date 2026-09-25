@@ -13,9 +13,15 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/server";
 import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
+import { JsonLd } from "@/components/public/json-ld";
+import {
+  categoryPath,
+  productJsonLd,
+  productSearchDescription,
+  productSearchTitle,
+  productTitleIsAbsolute,
+} from "@/lib/public-seo";
 import { getPublicSocialSettings } from "@/utils/public-settings";
-
-const SITE_SUFFIX = " | PLASTICOS LA 16";
 
 const RELATED_CARD_THEMES = [
   "from-blue-500/30 to-cyan-500/20",
@@ -117,20 +123,21 @@ function resolveCategoryName(
 }
 
 function buildPageTitle(metaTitle: string | null, productName: string): string {
-  const base = metaTitle?.trim() || productName;
-  if (base.includes("PLASTICOS LA 16")) return base;
-  return `${base}${SITE_SUFFIX}`;
+  return productSearchTitle(productName, metaTitle);
 }
 
 function buildMetadataDescription(
   metaDescription: string | null,
   presentation: string,
   productName: string,
+  packaging?: string | null,
 ): string {
-  return (
-    metaDescription?.trim() ||
-    `${productName} — ${presentation}. Plásticos y empaques al por mayor en PLASTICOS LA 16.`
-  );
+  return productSearchDescription({
+    metaDescription,
+    name: productName,
+    presentation,
+    packaging,
+  });
 }
 
 function resolveDisplayImage(imageUrl: string | null, ogImage: string | null): string | null {
@@ -159,7 +166,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (!product) {
     return {
-      title: `Producto no encontrado${SITE_SUFFIX}`,
+      title: "Producto no encontrado",
       robots: { index: false, follow: false },
     };
   }
@@ -169,12 +176,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     product.meta_description,
     product.presentation,
     product.name,
+    product.packaging,
   );
   const ogImage = product.og_image?.trim() || product.image_url?.trim();
 
   return {
-    title,
+    title: productTitleIsAbsolute(title) ? { absolute: title } : title,
     description,
+    alternates: { canonical: `/productos/${product.slug}` },
     openGraph: {
       title,
       description,
@@ -204,6 +213,7 @@ export default async function PublicProductPage({ params }: PageProps) {
     product.meta_description,
     product.presentation,
     product.name,
+    product.packaging,
   );
   const descriptionParagraphs = splitDescriptionParagraphs(descriptionText);
 
@@ -227,28 +237,35 @@ export default async function PublicProductPage({ params }: PageProps) {
           <span aria-hidden className="text-zinc-600">
             /
           </span>
-          <Link href="/#catalogo" className="transition hover:text-zinc-200">
+          <Link href="/productos" className="transition hover:text-zinc-200">
             Catálogo
           </Link>
           <span aria-hidden className="text-zinc-600">
             /
           </span>
-          <span className="text-zinc-500">{categoryName}</span>
+          <Link href={categoryPath(categoryName)} className="transition hover:text-zinc-200">
+            {categoryName}
+          </Link>
           <span aria-hidden className="text-zinc-600">
             /
           </span>
           <span className="font-medium text-zinc-200">{product.name}</span>
         </nav>
 
-        <article
-          itemScope
-          itemType="https://schema.org/Product"
-          className={cn(LANDING_SECTION_PANEL, "overflow-hidden")}
-        >
+        <JsonLd
+          data={productJsonLd({
+            name: product.name,
+            description: descriptionText,
+            slug: product.slug,
+            imageUrl: displayImage,
+            categoryName,
+          })}
+        />
+        <article className={cn(LANDING_SECTION_PANEL, "overflow-hidden")}>
           <div className="grid gap-8 p-5 sm:p-8 lg:grid-cols-2 lg:gap-10 lg:p-10">
             <div className="flex flex-col gap-4">
               <Link
-                href="/#catalogo"
+                href="/productos"
                 className="inline-flex w-fit items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-blue-400"
               >
                 <ArrowLeft className="size-4 shrink-0" aria-hidden />
@@ -264,7 +281,6 @@ export default async function PublicProductPage({ params }: PageProps) {
                     priority
                     sizes="(max-width: 1024px) 100vw, 480px"
                     className="object-contain p-6 sm:p-8"
-                    itemProp="image"
                   />
                 ) : (
                   <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
@@ -286,10 +302,7 @@ export default async function PublicProductPage({ params }: PageProps) {
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-400/90">
                 {categoryName}
               </p>
-              <h1
-                className="mt-2 text-3xl font-black uppercase tracking-tight text-white sm:text-4xl lg:text-5xl"
-                itemProp="name"
-              >
+              <h1 className="mt-2 text-3xl font-black uppercase tracking-tight text-white sm:text-4xl lg:text-5xl">
                 {product.name}
               </h1>
 
@@ -327,10 +340,7 @@ export default async function PublicProductPage({ params }: PageProps) {
                     >
                       Descripción
                     </h2>
-                    <div
-                      className="mt-4 space-y-4 text-base leading-relaxed text-zinc-300"
-                      itemProp="description"
-                    >
+                    <div className="mt-4 space-y-4 text-base leading-relaxed text-zinc-300">
                       {descriptionParagraphs.map((paragraph, index) => (
                         <p key={index}>{paragraph}</p>
                       ))}
@@ -350,7 +360,7 @@ export default async function PublicProductPage({ params }: PageProps) {
                   Cotizar por WhatsApp
                 </a>
                 <Link
-                  href="/#catalogo"
+                  href="/productos"
                   className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/60 px-6 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800/80"
                 >
                   Ver más productos

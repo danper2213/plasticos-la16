@@ -59,7 +59,9 @@ describe("gemini errors", () => {
         ),
         "fallback",
       ),
-    ).toBe("Gemini no aceptó ese archivo. Reintentá: se vuelve a leer el texto del PDF.");
+    ).toBe(
+      "Gemini no aceptó ese archivo. Si el PDF es un escaneo, subí una foto nítida de la factura.",
+    );
     expect(
       isInvalidArgumentGeminiError(
         new Error("Request contains an invalid argument."),

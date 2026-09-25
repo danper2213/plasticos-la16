@@ -23,7 +23,11 @@ export async function tryParseInvoicePdf(
     0,
   );
   if (chars < MIN_TEXT_CHARS) {
-    return { ok: false, reason: "PDF sin texto suficiente" };
+    return {
+      ok: false,
+      reason: "PDF sin texto suficiente",
+      text: chars > 0 ? formatPdfRows(items) : undefined,
+    };
   }
 
   const parsed = parseInvoiceFromTextItems(items);

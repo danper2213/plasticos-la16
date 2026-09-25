@@ -1,15 +1,16 @@
+import type { ComponentType } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  TrendingUp,
-  TrendingDown,
-  PackageX,
   AlertCircle,
+  ArrowRight,
   CheckCircle2,
-  Package,
-  Receipt,
+  CreditCard,
   LayoutDashboard,
+  Package,
+  PackageX,
+  Receipt,
 } from "lucide-react";
 import { getDashboardSummary, getRecentActivity } from "./_lib/dashboard-data";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
@@ -19,6 +20,101 @@ import { formatCop } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DashboardPageHeader } from "@/components/layout/dashboard-page-header";
 
+function countPhrase(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+function situationMessage(input: {
+  isAdmin: boolean;
+  outOfStockCount: number;
+  overduePayablesCount: number;
+}): string {
+  const issues: string[] = [];
+  if (input.outOfStockCount > 0) {
+    issues.push(
+      countPhrase(input.outOfStockCount, "producto sin existencias", "productos sin existencias")
+    );
+  }
+  if (input.isAdmin && input.overduePayablesCount > 0) {
+    issues.push(
+      countPhrase(
+        input.overduePayablesCount,
+        "factura de proveedor vencida",
+        "facturas de proveedores vencidas"
+      )
+    );
+  }
+  if (issues.length === 0) {
+    return input.isAdmin
+      ? "Hoy no hay urgencias: todos los productos activos tienen existencias y ninguna factura de proveedor está vencida."
+      : "Hoy no hay urgencias: todos los productos activos tienen existencias.";
+  }
+  return `Hoy conviene revisar: ${issues.join(" y ")}.`;
+}
+
+function SummaryCard({
+  title,
+  explanation,
+  value,
+  reading,
+  needsAttention,
+  href,
+  actionLabel,
+  icon: Icon,
+}: {
+  title: string;
+  explanation: string;
+  value: string;
+  reading: string;
+  needsAttention: boolean;
+  href: string;
+  actionLabel: string;
+  icon: ComponentType<{ className?: string }>;
+}) {
+  return (
+    <article
+      className={cn(
+        "flex h-full flex-col rounded-2xl border bg-card p-5 shadow-sm",
+        needsAttention ? "border-amber-500/40" : "border-border"
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{explanation}</p>
+        </div>
+        <span
+          className={cn(
+            "flex size-10 shrink-0 items-center justify-center rounded-xl",
+            needsAttention
+              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          <Icon className="size-5" aria-hidden />
+        </span>
+      </div>
+      <p className="mt-5 text-3xl font-black tabular-nums tracking-tight text-foreground">{value}</p>
+      <p
+        className={cn(
+          "mt-2 text-sm leading-relaxed",
+          needsAttention ? "font-medium text-amber-800 dark:text-amber-200" : "text-muted-foreground"
+        )}
+      >
+        {reading}
+      </p>
+      <div className="mt-auto pt-4">
+        <Button asChild variant={needsAttention ? "default" : "outline"} className="w-fit gap-2">
+          <Link href={href}>
+            {actionLabel}
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
+        </Button>
+      </div>
+    </article>
+  );
+}
+
 export default async function DashboardPage() {
   const [summary, recentActivity] = await Promise.all([
     getDashboardSummary(),
@@ -26,153 +122,110 @@ export default async function DashboardPage() {
   ]);
   const today = new Date();
   const dateLabel = format(today, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es });
-  const dateLabelCapitalized =
-    dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1);
-
-  const hasAlerts =
-    summary.outOfStockCount > 0 || summary.overduePayablesCount > 0;
+  const dateLabelCapitalized = dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1);
+  const hasUrgency =
+    summary.outOfStockCount > 0 || (summary.isAdmin && summary.overduePayablesCount > 0);
 
   return (
     <div className="space-y-6">
       <DashboardPageHeader
         icon={LayoutDashboard}
-        title="Resumen Operativo - PLASTICOS LA 16"
-        description={dateLabelCapitalized}
+        title="Resumen operativo"
+        description={`${dateLabelCapitalized}. Un vistazo a lo que nos deben, lo que debemos y si falta producto.`}
       />
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Por Cobrar (Pendiente)
-            </CardTitle>
-            <TrendingUp className="size-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums text-foreground">
-              {formatCop(summary.pendingReceivables)}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Por Pagar (Pendiente)
-            </CardTitle>
-            <TrendingDown className="size-4 text-amber-600 dark:text-amber-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums text-foreground">
-              {formatCop(summary.pendingPayables)}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Productos Agotados
-            </CardTitle>
-            <PackageX className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div
-              className={cn(
-                "text-2xl font-semibold tabular-nums",
-                summary.outOfStockCount > 0
-                  ? "text-destructive"
-                  : "text-foreground"
-              )}
-            >
-              {summary.outOfStockCount}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Facturas Vencidas
-            </CardTitle>
-            <AlertCircle className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div
-              className={cn(
-                "text-2xl font-semibold tabular-nums",
-                summary.overduePayablesCount > 0
-                  ? "text-destructive"
-                  : "text-foreground"
-              )}
-            >
-              {summary.overduePayablesCount}
-            </div>
-          </CardContent>
-        </Card>
+      <section
+        className={cn(
+          "flex items-start gap-3 rounded-2xl border px-4 py-4",
+          hasUrgency
+            ? "border-amber-500/40 bg-amber-500/10"
+            : "border-emerald-500/30 bg-emerald-500/10"
+        )}
+      >
+        {hasUrgency ? (
+          <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
+        ) : (
+          <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-700 dark:text-emerald-300" aria-hidden />
+        )}
+        <p
+          className={cn(
+            "text-sm font-medium leading-relaxed",
+            hasUrgency ? "text-amber-950 dark:text-amber-100" : "text-emerald-950 dark:text-emerald-100"
+          )}
+        >
+          {situationMessage(summary)}
+        </p>
       </section>
 
-      <section>
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
-          Alertas Prioritarias
-        </h2>
-        {!hasAlerts ? (
-          <Card className="border-primary/30 bg-primary/5">
-            <CardContent className="flex items-center gap-3 py-4">
-              <CheckCircle2 className="size-5 shrink-0 text-primary" />
-              <p className="text-sm font-medium text-primary">
-                Todo al día. No hay alertas pendientes.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {summary.outOfStockCount > 0 && (
-              <Card className="border-amber-500/40 bg-amber-500/10">
-                <CardContent className="flex items-center gap-3 py-4">
-                  <PackageX className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                      Hay {summary.outOfStockCount} producto(s) agotado(s).
-                    </p>
-                    <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
-                      Revise el módulo de Inventario.
-                    </p>
-                  </div>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href="/dashboard/inventory">Ver Inventario</Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-            {summary.overduePayablesCount > 0 && (
-              <Card className="border-amber-500/40 bg-amber-500/10">
-                <CardContent className="flex items-center gap-3 py-4">
-                  <AlertCircle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                      Hay {summary.overduePayablesCount} factura(s) vencida(s) por pagar.
-                    </p>
-                    <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
-                      Revise el módulo de Cuentas por Pagar.
-                    </p>
-                  </div>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href="/dashboard/payables">Ver Cuentas por Pagar</Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <SummaryCard
+          title="Lo que nos deben los clientes"
+          explanation="Ventas registradas que el cliente todavía no ha pagado."
+          value={formatCop(summary.pendingReceivables)}
+          reading={
+            summary.pendingReceivables > 0
+              ? "Esta es la suma que falta por cobrar."
+              : "No hay deudas de clientes pendientes."
+          }
+          needsAttention={false}
+          href="/dashboard/receivables"
+          actionLabel="Ver quién debe"
+          icon={Receipt}
+        />
+        {summary.isAdmin ? (
+          <SummaryCard
+            title="Lo que debemos a proveedores"
+            explanation="Facturas de proveedores que la empresa todavía no ha pagado."
+            value={formatCop(summary.pendingPayables)}
+            reading={
+              summary.pendingPayables > 0
+                ? "Esta es la suma que falta por pagar."
+                : "No hay facturas de proveedores pendientes."
+            }
+            needsAttention={false}
+            href="/dashboard/payables"
+            actionLabel="Ver facturas por pagar"
+            icon={CreditCard}
+          />
+        ) : null}
+        <SummaryCard
+          title="Productos sin existencias"
+          explanation="Productos activos cuya cantidad en bodega está en cero."
+          value={countPhrase(summary.outOfStockCount, "producto", "productos")}
+          reading={
+            summary.outOfStockCount > 0
+              ? "Conviene reponerlos para poder seguir vendiéndolos."
+              : "Todos los productos activos tienen existencias."
+          }
+          needsAttention={summary.outOfStockCount > 0}
+          href="/dashboard/inventory"
+          actionLabel="Ver inventario"
+          icon={PackageX}
+        />
+        {summary.isAdmin ? (
+          <SummaryCard
+            title="Facturas de proveedores vencidas"
+            explanation="Facturas que siguen sin pagar y cuya fecha de pago ya pasó."
+            value={countPhrase(summary.overduePayablesCount, "factura", "facturas")}
+            reading={
+              summary.overduePayablesCount > 0
+                ? "Estas ya debían haberse pagado."
+                : "Ninguna factura pendiente está vencida."
+            }
+            needsAttention={summary.overduePayablesCount > 0}
+            href="/dashboard/payables"
+            actionLabel="Revisar cuentas por pagar"
+            icon={AlertCircle}
+          />
+        ) : null}
       </section>
 
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Actividad Reciente</CardTitle>
+            <CardTitle>Últimos movimientos</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Últimas actualizaciones
+              Cobros de clientes, pagos a proveedores y cambios de inventario.
             </p>
           </CardHeader>
           <CardContent>
@@ -181,24 +234,50 @@ export default async function DashboardPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Acciones Rápidas</CardTitle>
+            <CardTitle>Ir a una pantalla</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Accesos directos
+              Atajos a lo que más se consulta desde aquí.
             </p>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button asChild variant="default" className="gap-2">
-              <Link href="/dashboard/inventory">
-                <Package className="size-4" />
-                Inventario
+          <CardContent className="grid gap-3">
+            <Link
+              href="/dashboard/inventory"
+              className="flex items-start gap-3 rounded-xl border border-border p-4 transition-colors hover:bg-muted/50"
+            >
+              <Package className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
+              <span>
+                <span className="block text-sm font-semibold">Inventario</span>
+                <span className="mt-0.5 block text-sm text-muted-foreground">
+                  Ver cuánto hay de cada producto.
+                </span>
+              </span>
+            </Link>
+            <Link
+              href="/dashboard/receivables"
+              className="flex items-start gap-3 rounded-xl border border-border p-4 transition-colors hover:bg-muted/50"
+            >
+              <Receipt className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
+              <span>
+                <span className="block text-sm font-semibold">Cuentas por cobrar</span>
+                <span className="mt-0.5 block text-sm text-muted-foreground">
+                  Ver qué clientes todavía no han pagado.
+                </span>
+              </span>
+            </Link>
+            {summary.isAdmin ? (
+              <Link
+                href="/dashboard/payables"
+                className="flex items-start gap-3 rounded-xl border border-border p-4 transition-colors hover:bg-muted/50"
+              >
+                <CreditCard className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
+                <span>
+                  <span className="block text-sm font-semibold">Cuentas por pagar</span>
+                  <span className="mt-0.5 block text-sm text-muted-foreground">
+                    Ver qué facturas de proveedores faltan por pagar.
+                  </span>
+                </span>
               </Link>
-            </Button>
-            <Button asChild variant="outline" className="gap-2">
-              <Link href="/dashboard/receivables">
-                <Receipt className="size-4" />
-                Cuentas por Cobrar
-              </Link>
-            </Button>
+            ) : null}
           </CardContent>
         </Card>
       </section>

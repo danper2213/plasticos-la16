@@ -20,7 +20,9 @@ import {
   DEFAULT_PUBLIC_SOCIAL_SETTINGS,
   getPublicSocialSettings,
 } from "@/utils/public-settings";
+import { JsonLd } from "@/components/public/json-ld";
 import { getLandingFeaturedProducts } from "@/lib/landing-featured-products";
+import { localBusinessJsonLd } from "@/lib/public-seo";
 import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
 
 function rowsFromSupabase<T>(
@@ -198,6 +200,7 @@ export default async function HomePage() {
 
   return (
     <main className="relative z-10 pb-24">
+      <JsonLd data={localBusinessJsonLd(socialSettings.whatsapp_url)} />
       <Hero rotatingWords={rotatingWords} slogan={HERO_SLOGAN} />
 
       <AboutSection />

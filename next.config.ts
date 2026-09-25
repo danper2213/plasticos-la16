@@ -22,17 +22,12 @@ function buildContentSecurityPolicy(): string {
     ...(supabaseWsOrigin ? [supabaseWsOrigin] : []),
   ].join(" ");
 
+  // https: permite logos de aliados pegados como URL externa (no solo Supabase).
   const imgSrc = [
     "'self'",
     "data:",
     "blob:",
-    "https://images.unsplash.com",
-    "https://www.google.com",
-    "https://www.google-analytics.com",
-    "https://*.google-analytics.com",
-    "https://www.googletagmanager.com",
-    "https://*.googletagmanager.com",
-    "https://stats.g.doubleclick.net",
+    "https:",
     "https://*.supabase.co",
     ...(supabaseOrigin ? [supabaseOrigin] : []),
   ].join(" ");
@@ -57,7 +52,7 @@ function buildContentSecurityPolicy(): string {
     "font-src 'self' data:",
     `connect-src ${connectSrc}`,
     `media-src ${mediaSrc}`,
-    "frame-src 'self' https://www.googletagmanager.com https://tagassistant.google.com https://www.google.com",
+    "frame-src 'self' https://www.googletagmanager.com https://tagassistant.google.com https://www.google.com https://maps.google.com https://maps.googleapis.com",
   ].join("; ");
 }
 

@@ -11,8 +11,6 @@ import {
   Warehouse,
   Receipt,
   Landmark,
-  Calendar,
-  Calculator,
   Truck,
   CreditCard,
   UserCog,
@@ -59,8 +57,6 @@ const administracionGroup: NavGroup = {
   roles: ["admin"],
   children: [
     { href: "/dashboard/banks", label: "Cuentas Bancarias", icon: Landmark, roles: ["admin"] },
-    { href: "/dashboard/closures", label: "Cierres Diario", icon: Calendar, roles: ["admin"] },
-    { href: "/dashboard/closures/samit", label: "Cierres SAMIT", icon: Calculator, roles: ["admin"] },
     { href: "/dashboard/registro-diario", label: "Registro diario", icon: ClipboardList, roles: ["admin"] },
     { href: "/dashboard/proveedores", label: "Proveedores", icon: Truck, roles: ["admin"] },
     { href: "/dashboard/payables", label: "Cuentas por Pagar", icon: CreditCard, roles: ["admin"] },

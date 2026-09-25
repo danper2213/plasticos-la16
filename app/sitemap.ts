@@ -1,19 +1,14 @@
 import type { MetadataRoute } from "next";
-import { createClient } from "@/utils/supabase/server";
+import { getPublicCategories } from "@/lib/public-categories";
 import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
+import { getSiteUrl } from "@/lib/public-seo";
+import { createClient } from "@/utils/supabase/server";
 
 type SitemapProductRow = {
   slug: string;
   updated_at: string | null;
+  image_url: string | null;
 };
-
-function getSiteUrl(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (fromEnv) {
-    return fromEnv.replace(/\/$/, "");
-  }
-  return "http://localhost:3000";
-}
 
 function parseLastModified(value: string | null | undefined, fallback: Date): Date {
   if (!value?.trim()) return fallback;
@@ -26,18 +21,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
 
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const [{ data, error }, categories] = await Promise.all([
+    supabase
     .from(PUBLIC_PRODUCTS_TABLE)
-    .select("slug, updated_at")
+    .select("slug, updated_at, image_url")
     .not("slug", "is", null)
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false }),
+    getPublicCategories(),
+  ]);
 
   if (error) {
     console.error("sitemap products:", error);
   }
 
-  const products = ((data ?? []) as unknown as SitemapProductRow[]).filter((row) =>
-    Boolean(row.slug?.trim()),
+  const products = ((data ?? []) as unknown as SitemapProductRow[]).filter(
+    (row) => Boolean(row.slug?.trim()) && Boolean(row.image_url?.trim()),
   );
 
   const staticRoutes: MetadataRoute.Sitemap = [
@@ -53,6 +51,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "weekly",
       priority: 0.9,
     },
+    ...categories.map((category) => ({
+      url: `${baseUrl}/productos/categoria/${category.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.85,
+    })),
   ];
 
   const productRoutes: MetadataRoute.Sitemap = products.map((product) => {

@@ -90,7 +90,7 @@ export function geminiUserFacingMessage(
     return "Gemini no pudo leer la factura con los modelos disponibles. Reintentá en unos segundos.";
   }
   if (isInvalidArgumentGeminiError(error)) {
-    return "Gemini no aceptó ese archivo. Reintentá: se vuelve a leer el texto del PDF.";
+    return "Gemini no aceptó ese archivo. Si el PDF es un escaneo, subí una foto nítida de la factura.";
   }
   if (/GEMINI_API_KEY/i.test(errorText(error))) {
     return "Falta GEMINI_API_KEY en el servidor. Configurala en Vercel.";

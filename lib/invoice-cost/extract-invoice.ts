@@ -1,6 +1,7 @@
 import "server-only";
 
 import { Type } from "@google/genai";
+import { isInvalidArgumentGeminiError } from "@/lib/gemini-errors";
 import { generateGeminiJsonText } from "@/lib/gemini-generate";
 import type { InvoiceCostLearning } from "@/lib/invoice-cost/learning";
 import {
@@ -9,6 +10,7 @@ import {
   type ExtractedInvoice,
   type InvoiceExtractMime,
 } from "@/lib/invoice-cost/extract-invoice-shared";
+import { extractEmbeddedJpegImages } from "@/lib/invoice-cost/extract-pdf-images";
 import { tryParseInvoicePdf } from "@/lib/invoice-cost/parse-invoice-pdf";
 
 export type { ExtractedInvoice, InvoiceExtractMime };
@@ -20,6 +22,23 @@ export {
 
 /** Modelo por defecto para extracción de facturas. */
 export const DEFAULT_GEMINI_INVOICE_MODEL = "gemini-3.6-flash";
+
+function parseModelJson(text: string): unknown {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fenced?.[1] ?? trimmed).trim();
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  const slice =
+    start >= 0 && end > start ? candidate.slice(start, end + 1) : candidate;
+  return JSON.parse(slice);
+}
+
+function isGeminiFileRejection(error: unknown): boolean {
+  if (isInvalidArgumentGeminiError(error)) return true;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("no aceptó ese archivo");
+}
 
 function getGeminiInvoiceModel(): string {
   return process.env.GEMINI_INVOICE_MODEL?.trim() || DEFAULT_GEMINI_INVOICE_MODEL;
@@ -107,20 +126,37 @@ export async function extractInvoiceLinesFromFile(input: {
       );
       return { invoice: local.invoice, source: "local" };
     }
-    console.info(`[invoice-pdf] uso Gemini: ${local.reason}`);
+    const plainText = local.text?.trim();
+    const pagePhotos = plainText
+      ? []
+      : extractEmbeddedJpegImages(input.bytes)
+          .filter((image) => image.bytes.byteLength >= 20_000)
+          .slice(0, 4);
+
+    if (pagePhotos.length > 0) {
+      console.info(
+        `[invoice-pdf] sin texto; envío ${pagePhotos.length} foto(s) de la factura a Gemini`,
+      );
+    } else {
+      console.info(`[invoice-pdf] uso Gemini: ${local.reason}`);
+    }
+
     try {
-      const invoice = await extractInvoiceWithGemini({
+      return await extractInvoiceOrDraft(local.draft, {
         ...input,
-        plainText: local.text,
+        plainText,
+        pagePhotos,
       });
-      return { invoice, source: "gemini" };
     } catch (error) {
-      if (local.draft) {
-        console.warn(
-          "[invoice-pdf] Gemini falló; se usa la lectura local",
-          error,
+      if (!plainText && pagePhotos.length === 0 && isGeminiFileRejection(error)) {
+        throw new Error(
+          "Ese PDF no trae texto que se pueda leer. Subí una foto nítida de la factura.",
         );
-        return { invoice: local.draft, source: "local" };
+      }
+      if (pagePhotos.length > 0 && isGeminiFileRejection(error)) {
+        throw new Error(
+          "No se pudo leer la foto de esa factura. Subí una foto nítida, más de cerca.",
+        );
       }
       throw error;
     }
@@ -130,43 +166,94 @@ export async function extractInvoiceLinesFromFile(input: {
   return { invoice, source: "gemini" };
 }
 
-async function extractInvoiceWithGemini(input: {
+type GeminiInvoiceInput = {
   bytes: Uint8Array;
   mimeType: InvoiceExtractMime;
   learnings?: InvoiceCostLearning[];
   /** Texto ya extraído del PDF. Evita enviar el binario, que Gemini a veces rechaza. */
   plainText?: string;
-}): Promise<ExtractedInvoice> {
+  /** Fotos de página cuando el PDF no tiene texto seleccionable. */
+  pagePhotos?: { mimeType: "image/jpeg"; bytes: Uint8Array }[];
+  /** Segundo intento si Gemini rechaza el schema junto con el archivo. */
+  omitSchema?: boolean;
+};
+
+async function extractInvoiceOrDraft(
+  draft: ExtractedInvoice | undefined,
+  input: GeminiInvoiceInput,
+): Promise<InvoiceExtractionResult> {
+  try {
+    const invoice = await extractInvoiceWithGemini(input);
+    return { invoice, source: "gemini" };
+  } catch (error) {
+    if (isGeminiFileRejection(error) && !input.omitSchema) {
+      console.warn("[invoice-pdf] Gemini rechazó el pedido; reintento sin schema");
+      try {
+        const invoice = await extractInvoiceWithGemini({
+          ...input,
+          omitSchema: true,
+        });
+        return { invoice, source: "gemini" };
+      } catch (retryError) {
+        console.warn("[invoice-pdf] reintento sin schema falló", retryError);
+        if (draft) {
+          return { invoice: draft, source: "local" };
+        }
+        throw retryError;
+      }
+    }
+    if (draft) {
+      console.warn("[invoice-pdf] Gemini falló; se usa la lectura local", error);
+      return { invoice: draft, source: "local" };
+    }
+    throw error;
+  }
+}
+
+async function extractInvoiceWithGemini(input: GeminiInvoiceInput): Promise<ExtractedInvoice> {
   const prompt = buildExtractionPrompt(input.learnings ?? []);
   const plainText = input.plainText?.trim();
+  const pagePhotos = input.pagePhotos ?? [];
   const textPrompt = plainText
     ? `${prompt}\n\nEl PDF ya se convirtió a texto. Cada fila va en una línea y las columnas están separadas por " | ". Extraé la factura desde este texto:\n\n${plainText}`
-    : prompt;
-  const base64 = Buffer.from(input.bytes).toString("base64");
+    : pagePhotos.length > 0
+      ? `${prompt}\n\nEl PDF no tiene texto seleccionable. La factura está en la foto adjunta.`
+      : prompt;
+  const imageParts =
+    pagePhotos.length > 0
+      ? pagePhotos.map((photo) => ({
+          inlineData: {
+            mimeType: photo.mimeType,
+            data: Buffer.from(photo.bytes).toString("base64"),
+          },
+        }))
+      : plainText
+        ? []
+        : [
+            {
+              inlineData: {
+                mimeType: input.mimeType,
+                data: Buffer.from(input.bytes).toString("base64"),
+              },
+            },
+          ];
 
   const text = await generateGeminiJsonText({
     model: getGeminiInvoiceModel(),
     emptyTextError: "Gemini no devolvió texto al extraer la factura.",
-    contents: plainText
-      ? textPrompt
-      : [
-          {
-            role: "user",
-            parts: [
-              { text: textPrompt },
-              {
-                inlineData: {
-                  mimeType: input.mimeType,
-                  data: base64,
-                },
-              },
-            ],
-          },
-        ],
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: textPrompt }, ...imageParts],
+      },
+    ],
     config: {
       temperature: 0.1,
       responseMimeType: "application/json",
-      responseSchema: {
+      ...(input.omitSchema
+        ? {}
+        : {
+            responseSchema: {
         type: Type.OBJECT,
         properties: {
           supplierName: { type: Type.STRING, nullable: true },
@@ -197,13 +284,14 @@ async function extractInvoiceWithGemini(input: {
           },
         },
         required: ["lines"],
-      },
+            },
+          }),
     },
   });
 
   let parsedJson: unknown;
   try {
-    parsedJson = JSON.parse(text);
+    parsedJson = parseModelJson(text);
   } catch {
     throw new Error("La respuesta de extracción no es JSON válido.");
   }

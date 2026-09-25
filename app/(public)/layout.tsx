@@ -8,6 +8,11 @@ import { PublicPageBackdrop } from "@/components/public/PublicPageBackdrop";
 
 import { PublicSplashLoader } from "@/components/public/PublicSplashLoader";
 
+import {
+  PUBLIC_HOME_DESCRIPTION,
+  PUBLIC_HOME_TITLE,
+  PUBLIC_SITE_NAME,
+} from "@/lib/public-seo";
 import { getPublicSocialSettings } from "@/utils/public-settings";
 
 
@@ -23,13 +28,18 @@ const inter = Inter({
 
 
 export const metadata: Metadata = {
-
-  title: "PLASTICOS LA 16 | Inicio",
-
-  description:
-
-    "Plásticos y soluciones para tu negocio. Catálogo, mayoristas y contacto directo.",
-
+  title: {
+    default: PUBLIC_HOME_TITLE,
+    template: `${PUBLIC_SITE_NAME} | %s`,
+  },
+  description: PUBLIC_HOME_DESCRIPTION,
+  openGraph: {
+    type: "website",
+    locale: "es_CO",
+    siteName: PUBLIC_SITE_NAME,
+    title: PUBLIC_HOME_TITLE,
+    description: PUBLIC_HOME_DESCRIPTION,
+  },
 };
 
 

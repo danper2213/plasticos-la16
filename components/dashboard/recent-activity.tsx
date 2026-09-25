@@ -28,7 +28,7 @@ export function RecentActivity({ items }: RecentActivityProps) {
   if (items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Aún no hay movimientos registrados hoy.
+        Todavía no hay cobros, pagos ni cambios de inventario.
       </p>
     );
   }

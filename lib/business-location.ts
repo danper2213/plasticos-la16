@@ -22,7 +22,7 @@ export const BUSINESS_FULL_ADDRESS = `${BUSINESS_NAME}, ${BUSINESS_VENUE}, ${BUS
 
 const MAPS_QUERY = encodeURIComponent(BUSINESS_FULL_ADDRESS);
 
-export const BUSINESS_MAP_EMBED = `https://maps.google.com/maps?q=${MAPS_QUERY}&t=&z=17&ie=UTF8&iwloc=&output=embed`;
+export const BUSINESS_MAP_EMBED = `https://www.google.com/maps?q=${MAPS_QUERY}&hl=es&z=17&output=embed`;
 
 export const BUSINESS_MAP_SEARCH = `https://www.google.com/maps/search/?api=1&query=${MAPS_QUERY}`;
 

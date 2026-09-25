@@ -10,13 +10,20 @@ export interface DailyRegisterInputs {
 }
 
 export interface DailyRegisterDerived {
+  /** Efectivo + transferencias. */
   collected: number;
+  /** Ventas SAMIT menos gastos y pagos de facturas. */
+  expectedCollected: number;
+  /**
+   * Lo que debía entrar menos lo recaudado.
+   * Positivo: falta. Negativo: sobra.
+   */
   samitDifference: number;
   outflows: number;
   endingBalance: number;
 }
 
-/** Tolerancia en COP para considerar que el recaudo cuadra con SAMIT. */
+/** Tolerancia en COP para considerar que el recaudo cuadra. */
 export const CUADRE_TOLERANCE_COP = 1000;
 
 export function computeDailyRegister(
@@ -31,10 +38,11 @@ export function computeDailyRegister(
 
   const collected = cash + transfers;
   const outflows = expenses + payments;
-  const samitDifference = samit - collected;
+  const expectedCollected = samit - outflows;
+  const samitDifference = expectedCollected - collected;
   const endingBalance = previous + cash + transfers - expenses - payments;
 
-  return { collected, samitDifference, outflows, endingBalance };
+  return { collected, expectedCollected, samitDifference, outflows, endingBalance };
 }
 
 export function withDerived<T extends DailyRegisterInputs>(
@@ -63,22 +71,22 @@ export function buildDailyAdvice(
     advice.push({
       id: "cuadre",
       severity: "ok",
-      title: "Cuadre con SAMIT",
-      message: "El recaudo cuadra con SAMIT.",
+      title: "Cuadre de caja",
+      message: "Efectivo y transferencias coinciden con las ventas menos gastos y pagos.",
     });
   } else if (derived.samitDifference > 0) {
     advice.push({
       id: "falta",
       severity: "alert",
-      title: "Falta dinero vs SAMIT",
-      message: `Faltan ${formatCop(derived.samitDifference)} vs SAMIT. Revisa crédito, conteo o una transferencia no cargada.`,
+      title: "Falta en caja",
+      message: `Faltan ${formatCop(derived.samitDifference)}. Efectivo y transferencias deberían ser las ventas menos gastos y pagos.`,
     });
   } else {
     advice.push({
       id: "sobra",
       severity: "warning",
-      title: "Sobra vs SAMIT",
-      message: `Sobraron ${formatCop(Math.abs(derived.samitDifference))} vs SAMIT. Puede ser cobro de cartera o una venta no registrada.`,
+      title: "Sobra en caja",
+      message: `Sobran ${formatCop(Math.abs(derived.samitDifference))}. Entró más de lo que queda al restar gastos y pagos a las ventas.`,
     });
   }
 
@@ -131,8 +139,17 @@ export function buildDailyAdvice(
   return advice;
 }
 
+export type CuadreTone = "ok" | "short" | "over";
+
+export function cuadreTone(difference: number): CuadreTone {
+  if (Math.abs(difference) <= CUADRE_TOLERANCE_COP) return "ok";
+  if (difference > 0) return "short";
+  return "over";
+}
+
 export function samitDifferenceLabel(difference: number): string {
-  if (Math.abs(difference) <= CUADRE_TOLERANCE_COP) return "Cuadra";
-  if (difference > 0) return "Falta";
+  const tone = cuadreTone(difference);
+  if (tone === "ok") return "Cuadra";
+  if (tone === "short") return "Falta";
   return "Sobra";
 }

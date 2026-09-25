@@ -43,8 +43,9 @@ import {
 import {
   buildDailyAdvice,
   computeDailyRegister,
-  CUADRE_TOLERANCE_COP,
+  cuadreTone,
   samitDifferenceLabel,
+  type CuadreTone,
 } from "@/app/dashboard/registro-diario/calc";
 import { DailyAdviceList } from "@/components/registro-diario/daily-advice-list";
 import { localDateInputValue } from "@/lib/calendar-date";
@@ -195,6 +196,12 @@ export function DailyRegisterForm({
     derived
   );
   const diffLabel = samitDifferenceLabel(derived.samitDifference);
+  const tone = cuadreTone(derived.samitDifference);
+  const toneClass: Record<CuadreTone, string> = {
+    ok: "text-emerald-700 dark:text-emerald-300",
+    short: "text-red-600 dark:text-red-400",
+    over: "text-amber-700 dark:text-amber-300",
+  };
 
   async function onSubmit(values: DailyRegisterFormValues) {
     const result = editingRegisterId
@@ -218,21 +225,21 @@ export function DailyRegisterForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         overlayClassName="bg-black/50 backdrop-blur-md"
-        className="max-w-lg w-full p-0 gap-0 border border-border rounded-[24px] shadow-2xl bg-card overflow-hidden data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100 dark:bg-zinc-950/95 dark:border-zinc-800"
+        className="flex max-h-[min(92vh,860px)] w-full max-w-3xl flex-col gap-0 overflow-hidden rounded-[24px] border border-border bg-card p-0 shadow-2xl data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100 dark:border-zinc-800 dark:bg-zinc-950/95"
         showCloseButton={true}
       >
         <DialogTitle className="sr-only">
           {editingRegisterId ? "Editar registro diario" : "Registrar día"}
         </DialogTitle>
         <DialogDescription className="sr-only">
-          Venta SAMIT, efectivo, transferencias, gastos y pagos. El saldo se arrastra al día siguiente.
+          Las ventas menos gastos y pagos deben coincidir con el efectivo y las transferencias.
         </DialogDescription>
 
         <motion.div
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={modalSpring}
-          className="flex flex-col"
+          className="flex min-h-0 flex-1 flex-col"
         >
           <div className="relative bg-gradient-to-br from-primary/15 via-card to-card border-b border-border pl-6 pr-20 py-5 dark:from-blue-950/80 dark:via-zinc-900/90 dark:to-zinc-950 dark:border-zinc-800/80">
             <div className="flex items-center gap-3">
@@ -244,129 +251,168 @@ export function DailyRegisterForm({
                   {editingRegisterId ? "Editar registro del día" : "Registrar día"}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  Venta SAMIT, efectivo, transferencias, gastos y pagos. El saldo se arrastra.
+                  Ventas menos gastos y pagos, frente a efectivo y transferencias.
                 </p>
               </div>
             </div>
           </div>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col">
-              <div className="p-6 space-y-5 overflow-y-auto max-h-[60vh]">
-                <FormField
-                  control={form.control}
-                  name="register_date"
-                  render={({ field, fieldState }) => (
-                    <FormItem>
-                      <FormLabel className="text-muted-foreground flex items-center gap-2">
-                        <Calendar className="size-4 text-primary shrink-0" aria-hidden />
-                        Fecha
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          type="date"
-                          className={inputClassName}
-                          {...field}
-                          value={(field.value as string) ?? ""}
-                          aria-invalid={fieldState.invalid}
+            <form onSubmit={form.handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_17.5rem]">
+                  <div className="order-2 space-y-5 lg:order-1">
+                    <FormField
+                      control={form.control}
+                      name="register_date"
+                      render={({ field, fieldState }) => (
+                        <FormItem>
+                          <FormLabel className="text-muted-foreground flex items-center gap-2">
+                            <Calendar className="size-4 text-primary shrink-0" aria-hidden />
+                            Fecha
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type="date"
+                              className={inputClassName}
+                              {...field}
+                              value={(field.value as string) ?? ""}
+                              aria-invalid={fieldState.invalid}
+                            />
+                          </FormControl>
+                          <FormMessage>{fieldState.error?.message}</FormMessage>
+                        </FormItem>
+                      )}
+                    />
+
+                    <section className="space-y-3 rounded-2xl border border-border bg-muted/20 p-4">
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground">1. Ventas</h3>
+                        <p className="text-xs text-muted-foreground">
+                          El total de ventas SAMIT del día.
+                        </p>
+                      </div>
+                      <AmountField
+                        control={form.control}
+                        name="samit_sales_total"
+                        label="Total venta SAMIT"
+                        icon={<TrendingUp className="size-4 shrink-0 text-primary" aria-hidden />}
+                      />
+                    </section>
+
+                    <section className="space-y-3 rounded-2xl border border-border bg-muted/20 p-4">
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground">2. Se restan</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Gastos y pagos de facturas. Salen de las ventas.
+                        </p>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <AmountField
+                          control={form.control}
+                          name="expenses_total"
+                          label="Gastos"
+                          icon={
+                            <ArrowUpCircle className="size-4 shrink-0 text-primary" aria-hidden />
+                          }
                         />
-                      </FormControl>
-                      <FormMessage>{fieldState.error?.message}</FormMessage>
-                    </FormItem>
-                  )}
-                />
+                        <AmountField
+                          control={form.control}
+                          name="payments_total"
+                          label="Pagos de facturas"
+                          icon={<Receipt className="size-4 shrink-0 text-primary" aria-hidden />}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-background px-3 py-2.5 text-sm">
+                        <span className="text-muted-foreground">Debería entrar</span>
+                        <span className="font-semibold tabular-nums">
+                          {formatCop(derived.expectedCollected)}
+                        </span>
+                      </div>
+                    </section>
 
-                <AmountField
-                  control={form.control}
-                  name="previous_balance"
-                  label="Saldo anterior"
-                  hint="Se rellena con el saldo a arrastrar del último registro. Puede editarlo."
-                  allowNegative
-                />
-                <AmountField
-                  control={form.control}
-                  name="samit_sales_total"
-                  label="Total venta SAMIT"
-                  icon={<TrendingUp className="size-4 text-primary shrink-0" aria-hidden />}
-                />
-                <AmountField
-                  control={form.control}
-                  name="cash_total"
-                  label="Total efectivo"
-                  icon={<Banknote className="size-4 text-primary shrink-0" aria-hidden />}
-                />
-                <AmountField
-                  control={form.control}
-                  name="transfers_total"
-                  label="Total transferencias"
-                  icon={<ArrowDownCircle className="size-4 text-primary shrink-0" aria-hidden />}
-                />
-                <AmountField
-                  control={form.control}
-                  name="expenses_total"
-                  label="Total gastos"
-                  icon={<ArrowUpCircle className="size-4 text-primary shrink-0" aria-hidden />}
-                />
-                <AmountField
-                  control={form.control}
-                  name="payments_total"
-                  label="Total pagos"
-                  icon={<Receipt className="size-4 text-primary shrink-0" aria-hidden />}
-                />
+                    <section className="space-y-3 rounded-2xl border border-border bg-muted/20 p-4">
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground">3. Lo que entró</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Efectivo y transferencias. Tienen que coincidir con lo que debería entrar.
+                        </p>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <AmountField
+                          control={form.control}
+                          name="cash_total"
+                          label="Efectivo"
+                          icon={<Banknote className="size-4 shrink-0 text-primary" aria-hidden />}
+                        />
+                        <AmountField
+                          control={form.control}
+                          name="transfers_total"
+                          label="Transferencias"
+                          icon={
+                            <ArrowDownCircle className="size-4 shrink-0 text-primary" aria-hidden />
+                          }
+                        />
+                      </div>
+                    </section>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-border bg-muted/30 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                      Recaudado
-                    </p>
-                    <p className="text-lg font-black tabular-nums text-foreground">
-                      {formatCop(derived.collected)}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Efectivo + transferencias</p>
+                    <AmountField
+                      control={form.control}
+                      name="previous_balance"
+                      label="Saldo anterior"
+                      hint="Se rellena con el saldo a arrastrar del último registro. Puede editarlo."
+                      allowNegative
+                    />
                   </div>
-                  <div className="rounded-xl border border-border bg-muted/30 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                      Diferencia vs SAMIT
-                    </p>
-                    <p
-                      className={cn(
-                        "text-lg font-black tabular-nums",
-                        derived.samitDifference > CUADRE_TOLERANCE_COP
-                          ? "text-red-500"
-                          : derived.samitDifference < -CUADRE_TOLERANCE_COP
-                            ? "text-amber-500"
-                            : "text-foreground"
-                      )}
-                    >
-                      {formatCop(Math.abs(derived.samitDifference))}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{diffLabel}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-muted/30 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                      Saldo a arrastrar
-                    </p>
-                    <p
-                      className={cn(
-                        "text-lg font-black tabular-nums",
-                        derived.endingBalance < 0 ? "text-red-500" : "text-foreground"
-                      )}
-                    >
-                      {formatCop(derived.endingBalance)}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Para el día siguiente</p>
-                  </div>
-                </div>
 
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                    Consejos para mañana
-                  </p>
-                  <DailyAdviceList items={advice} compact />
+                  <aside className="order-1 space-y-3 lg:sticky lg:top-0 lg:order-2">
+                    <div className="rounded-2xl border border-border bg-muted/40 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Cuadre
+                      </p>
+                      <p className={cn("mt-1 text-3xl font-black tabular-nums tracking-tight", toneClass[tone])}>
+                        {diffLabel}
+                      </p>
+                      <p className={cn("text-sm font-semibold tabular-nums", toneClass[tone])}>
+                        {formatCop(Math.abs(derived.samitDifference))}
+                      </p>
+                      <dl className="mt-4 space-y-2.5 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <dt className="text-muted-foreground">Debería entrar</dt>
+                          <dd className="font-semibold tabular-nums">
+                            {formatCop(derived.expectedCollected)}
+                          </dd>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <dt className="text-muted-foreground">Efectivo + transferencias</dt>
+                          <dd className="font-semibold tabular-nums">
+                            {formatCop(derived.collected)}
+                          </dd>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5">
+                          <dt className="text-muted-foreground">Saldo para mañana</dt>
+                          <dd
+                            className={cn(
+                              "font-semibold tabular-nums",
+                              derived.endingBalance < 0 && "text-red-600 dark:text-red-400"
+                            )}
+                          >
+                            {formatCop(derived.endingBalance)}
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <div>
+                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Consejos para mañana
+                      </p>
+                      <DailyAdviceList items={advice} compact />
+                    </div>
+                  </aside>
                 </div>
               </div>
 
-              <div className="border-t border-border bg-muted/50 px-6 py-4 flex flex-wrap items-center justify-end gap-2 rounded-b-[24px]">
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 rounded-b-[24px] border-t border-border bg-muted/50 px-6 py-4">
                 <Button
                   type="button"
                   variant="outline"

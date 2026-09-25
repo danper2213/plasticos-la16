@@ -82,11 +82,9 @@ export async function generateGeminiJsonText(input: {
       lastError = error;
       const hasNext = i < models.length - 1;
       const canSkip =
-        isRetryableGeminiError(error) ||
-        isMissingGeminiModelError(error) ||
-        isInvalidArgumentGeminiError(error);
+        isRetryableGeminiError(error) || isMissingGeminiModelError(error);
 
-      if (!hasNext || !canSkip) {
+      if (isInvalidArgumentGeminiError(error) || !hasNext || !canSkip) {
         throw new Error(
           geminiUserFacingMessage(error, input.emptyTextError),
         );
@@ -94,11 +92,7 @@ export async function generateGeminiJsonText(input: {
 
       console.warn(
         `[gemini] ${model} no respondió (${
-          isMissingGeminiModelError(error)
-            ? "no existe"
-            : isInvalidArgumentGeminiError(error)
-              ? "argumento inválido"
-              : "saturado/cuota"
+          isMissingGeminiModelError(error) ? "no existe" : "saturado/cuota"
         }), pruebo ${models[i + 1]}`,
         error instanceof Error ? error.message.slice(0, 180) : error,
       );

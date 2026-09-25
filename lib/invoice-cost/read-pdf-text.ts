@@ -3,7 +3,9 @@ import type { PdfTextItem } from "@/lib/invoice-cost/parse-invoice-layout";
 
 /** Glifos con posición, una entrada por fragmento de texto del PDF. */
 export async function readPdfTextItems(bytes: Uint8Array): Promise<PdfTextItem[]> {
-  const { items } = await extractTextItems(bytes);
+  // unpdf transfiere el buffer y lo deja vacío. Hay que copiarlo:
+  // si no, se pierde la foto incrustada en facturas que son solo imagen.
+  const { items } = await extractTextItems(bytes.slice());
   const out: PdfTextItem[] = [];
 
   items.forEach((pageItems, index) => {

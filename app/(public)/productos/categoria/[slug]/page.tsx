@@ -1,32 +1,22 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Footer } from "@/components/public/Footer";
-import { PublicSectionBar, PublicSectionHeading } from "@/components/public/PublicSectionHeading";
+import { PublicSectionHeading } from "@/components/public/PublicSectionHeading";
 import {
   LANDING_PAGE_GUTTER,
   LANDING_SECTION_PANEL,
   LANDING_SECTION_PANEL_PAD,
 } from "@/components/public/landing-section-styles";
 import { ScrollFadeSection } from "@/components/public/ScrollFadeSection";
+import { getPublicCategoryBySlug, getPublicCategories } from "@/lib/public-categories";
+import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
+import { categorySearchDescription, categorySearchTitle } from "@/lib/public-seo";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/server";
-import { PUBLIC_PRODUCTS_TABLE } from "@/lib/public-products-table";
-import { getPublicCategories } from "@/lib/public-categories";
-import { PUBLIC_CATALOG_DESCRIPTION, PUBLIC_CATALOG_TITLE } from "@/lib/public-seo";
 import { getPublicSocialSettings } from "@/utils/public-settings";
-
-export const metadata: Metadata = {
-  title: PUBLIC_CATALOG_TITLE,
-  description: PUBLIC_CATALOG_DESCRIPTION,
-  alternates: { canonical: "/productos" },
-  openGraph: {
-    title: PUBLIC_CATALOG_TITLE,
-    description: PUBLIC_CATALOG_DESCRIPTION,
-    type: "website",
-  },
-};
 
 const CARD_THEMES = [
   "from-blue-500/30 to-cyan-500/20",
@@ -35,98 +25,104 @@ const CARD_THEMES = [
   "from-orange-500/30 to-rose-500/20",
 ] as const;
 
-type CatalogRow = {
+type CategoryProductRow = {
   id: string;
   name: string;
   slug: string;
   presentation: string;
   image_url: string | null;
-  og_image: string | null;
-  product_categories: { name: string } | { name: string }[] | null;
 };
 
-function categoryLabel(row: CatalogRow): string {
-  const c = row.product_categories;
-  const name = Array.isArray(c) ? c[0]?.name : c?.name;
-  return (name ?? "General").trim() || "General";
+type PageProps = {
+  params: Promise<{ slug: string }>;
+};
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const category = await getPublicCategoryBySlug(slug);
+  if (!category) {
+    return { title: "Categoría no encontrada", robots: { index: false, follow: false } };
+  }
+
+  const title = categorySearchTitle(category.name);
+  const description = categorySearchDescription(category.name);
+  return {
+    title,
+    description,
+    alternates: { canonical: `/productos/categoria/${category.slug}` },
+    openGraph: { title, description, type: "website" },
+  };
 }
 
-function displayImage(row: CatalogRow): string | null {
-  return row.image_url?.trim() || row.og_image?.trim() || null;
-}
+export default async function CategoryPage({ params }: PageProps) {
+  const { slug } = await params;
+  const category = await getPublicCategoryBySlug(slug);
+  if (!category) notFound();
 
-export default async function ProductosIndexPage() {
   const supabase = await createClient();
-  const [socialSettings, categories] = await Promise.all([
+  const [productsRes, socialSettings, categories] = await Promise.all([
+    supabase
+      .from(PUBLIC_PRODUCTS_TABLE)
+      .select("id, name, slug, presentation, image_url")
+      .eq("category_id", category.id)
+      .not("slug", "is", null)
+      .not("image_url", "is", null)
+      .order("name", { ascending: true }),
     getPublicSocialSettings(),
     getPublicCategories(),
   ]);
 
-  const { data, error } = await supabase
-    .from(PUBLIC_PRODUCTS_TABLE)
-    .select(
-      `
-      id,
-      name,
-      slug,
-      presentation,
-      image_url,
-      og_image,
-      product_categories ( name )
-    `,
-    )
-    .not("slug", "is", null)
-    .not("image_url", "is", null)
-    .order("name", { ascending: true })
-    .limit(400);
-
-  if (error) {
-    console.error("Catálogo público:", error);
+  if (productsRes.error) {
+    console.error("Category products:", productsRes.error);
   }
 
-  // Solo fichas con imagen real (image_url) y slug para enlace público.
-  const rows = ((data ?? []) as unknown as CatalogRow[]).filter(
-    (r) => Boolean(r.slug?.trim()) && Boolean(r.image_url?.trim()),
+  const products = ((productsRes.data ?? []) as unknown as CategoryProductRow[]).filter(
+    (row) => Boolean(row.slug?.trim()) && Boolean(row.image_url?.trim()),
   );
+  const description = categorySearchDescription(category.name);
 
   return (
     <main className="relative z-10 pb-24 pt-8 sm:pt-10">
       <ScrollFadeSection className="relative bg-transparent">
         <div className={LANDING_PAGE_GUTTER}>
           <Link
-            href="/#catalogo"
+            href="/productos"
             className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-blue-400"
           >
             <ArrowLeft className="size-4 shrink-0" aria-hidden />
-            Volver al inicio
+            Volver al catálogo
           </Link>
 
           <div className={cn(LANDING_SECTION_PANEL, LANDING_SECTION_PANEL_PAD)}>
-            <PublicSectionHeading size="compact">Catálogo completo</PublicSectionHeading>
-            <p className="mt-3 max-w-2xl text-zinc-400">{PUBLIC_CATALOG_DESCRIPTION}</p>
+            <PublicSectionHeading size="compact">{category.name} al por mayor y al detal</PublicSectionHeading>
+            <p className="mt-3 max-w-2xl text-zinc-400">{description}</p>
 
-            {categories.length > 0 ? (
-              <nav aria-label="Categorías" className="mt-6 flex flex-wrap gap-2">
-                {categories.map((category) => (
+            {categories.length > 1 ? (
+              <nav aria-label="Otras categorías" className="mt-6 flex flex-wrap gap-2">
+                {categories.map((item) => (
                   <Link
-                    key={category.id}
-                    href={`/productos/categoria/${category.slug}`}
-                    className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+                    key={item.id}
+                    href={`/productos/categoria/${item.slug}`}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition",
+                      item.slug === category.slug
+                        ? "border-blue-400/70 bg-blue-500/15 text-blue-100"
+                        : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white",
+                    )}
                   >
-                    {category.name}
+                    {item.name}
                   </Link>
                 ))}
               </nav>
             ) : null}
 
-            {rows.length === 0 ? (
+            {products.length === 0 ? (
               <div className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-8 text-center text-zinc-400">
-                No hay productos con imagen publicados aún. Volvé pronto o contactanos por WhatsApp.
+                Todavía no hay fotos publicadas en {category.name}. Mirá el resto del catálogo.
               </div>
             ) : (
               <ul className="mt-8 grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {rows.map((row, index) => {
-                  const img = displayImage(row);
+                {products.map((row, index) => {
                   const theme = CARD_THEMES[index % CARD_THEMES.length];
                   return (
                     <li key={row.id}>
@@ -141,19 +137,12 @@ export default async function ProductosIndexPage() {
                           )}
                           aria-hidden
                         />
-                        <div
-                          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.14),transparent_55%)]"
-                          aria-hidden
-                        />
                         <div className="relative z-10 flex flex-1 flex-col">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">
-                            {categoryLabel(row)}
-                          </p>
-                          {img ? (
+                          {row.image_url ? (
                             <div className="relative mx-auto mb-3 mt-2 h-24 w-full max-w-[120px]">
                               <Image
-                                src={img}
-                                alt=""
+                                src={row.image_url}
+                                alt={row.name}
                                 fill
                                 sizes="120px"
                                 className="object-contain object-center drop-shadow-md transition duration-300 group-hover:scale-[1.03]"
@@ -162,7 +151,7 @@ export default async function ProductosIndexPage() {
                           ) : null}
                           <h2 className="text-lg font-bold leading-tight text-zinc-100">{row.name}</h2>
                           <p className="mt-2 line-clamp-2 text-sm text-zinc-200/85">{row.presentation}</p>
-                          <span className="mt-auto pt-4 text-xs font-semibold uppercase tracking-[0.18em] text-blue-300/90 transition group-hover:text-blue-200">
+                          <span className="mt-auto pt-4 text-xs font-semibold uppercase tracking-[0.18em] text-blue-300/90">
                             Ver ficha
                           </span>
                         </div>

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Suspense } from "react";
+import { useTheme } from "next-themes";
 import {
   Bar,
   BarChart,
@@ -46,8 +47,10 @@ import { dailyRegisterSchema, type DailyRegisterFormValues } from "./schema";
 import {
   buildDailyAdvice,
   computeDailyRegister,
+  cuadreTone,
   samitDifferenceLabel,
   withDerived,
+  type CuadreTone,
   type DailyRegisterDerived,
 } from "./calc";
 import {
@@ -57,12 +60,44 @@ import {
 } from "./actions";
 import { MonthPaginator } from "@/components/payables/month-paginator";
 import { toast } from "sonner";
-import { ClipboardList, Pencil, Trash2 } from "lucide-react";
-import { formatDateOnlyEsCO } from "@/lib/calendar-date";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  ClipboardList,
+  Pencil,
+  Scale,
+  Trash2,
+  Wallet,
+} from "lucide-react";
+import { formatDateOnlyEsCO, localDateInputValue } from "@/lib/calendar-date";
 import { endOfMonth, getISODay, startOfMonth } from "date-fns";
 import { cn } from "@/lib/utils";
 
 type RegisterView = DailyRegister & DailyRegisterDerived;
+
+const TONE_STYLES: Record<
+  CuadreTone,
+  { text: string; chip: string; cell: string; dot: string }
+> = {
+  ok: {
+    text: "text-emerald-700 dark:text-emerald-300",
+    chip: "bg-emerald-500/10 text-emerald-800 ring-emerald-500/25 dark:text-emerald-200",
+    cell: "border-emerald-500/35 bg-emerald-500/[0.08] hover:border-emerald-500/55 hover:bg-emerald-500/[0.12]",
+    dot: "bg-emerald-500",
+  },
+  short: {
+    text: "text-red-700 dark:text-red-300",
+    chip: "bg-red-500/10 text-red-800 ring-red-500/25 dark:text-red-200",
+    cell: "border-red-500/30 bg-red-500/[0.06] hover:border-red-500/50 hover:bg-red-500/[0.1]",
+    dot: "bg-red-500",
+  },
+  over: {
+    text: "text-amber-800 dark:text-amber-200",
+    chip: "bg-amber-500/12 text-amber-900 ring-amber-500/30 dark:text-amber-100",
+    cell: "border-amber-500/40 bg-amber-500/[0.1] hover:border-amber-500/60 hover:bg-amber-500/[0.14]",
+    dot: "bg-amber-500",
+  },
+};
 
 function registerDateKey(register_date: string): string {
   return register_date.slice(0, 10);
@@ -94,8 +129,8 @@ function compactAxisCop(v: number): string {
 const WEEKDAYS_ES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"] as const;
 
 const CHART_COLORS = {
-  samit: "#38bdf8",
-  recaudado: "#34d399",
+  samit: "#0ea5e9",
+  recaudado: "#10b981",
 } as const;
 
 const MONTH_NAMES = [
@@ -120,6 +155,39 @@ interface RegistroDiarioClientProps {
   suggestedPreviousBalance: number;
 }
 
+function MetricCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  valueClassName,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  icon: React.ComponentType<{ className?: string }>;
+  valueClassName?: string;
+}) {
+  return (
+    <Card className="border-border/80 bg-card shadow-sm">
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+        <CardDescription className="text-xs font-medium uppercase tracking-wide">
+          {label}
+        </CardDescription>
+        <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+          <Icon className="size-4" aria-hidden />
+        </span>
+      </CardHeader>
+      <CardContent>
+        <p className={cn("text-2xl font-black tabular-nums tracking-tight", valueClassName)}>
+          {value}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function RegistroDiarioClient({
   registers,
   reportMonth,
@@ -127,6 +195,7 @@ export function RegistroDiarioClient({
   suggestedPreviousBalance,
 }: RegistroDiarioClientProps) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
   const [formOpen, setFormOpen] = React.useState(false);
   const [editingRegisterId, setEditingRegisterId] = React.useState<string | null>(null);
   const [editingInitialValues, setEditingInitialValues] =
@@ -139,6 +208,8 @@ export function RegistroDiarioClient({
   const [isDeleting, setIsDeleting] = React.useState(false);
 
   const registerMap = React.useMemo(() => buildRegisterMap(registers), [registers]);
+  const todayKey = localDateInputValue();
+  const chartDark = resolvedTheme === "dark";
 
   const monthStart = React.useMemo(
     () => startOfMonth(new Date(reportYear, reportMonth - 1, 1)),
@@ -180,13 +251,13 @@ export function RegistroDiarioClient({
   }, [kpis.last]);
 
   const chartData = React.useMemo(() => {
-    const rows: { dia: number; samit: number; recaudado: number }[] = [];
+    const rows: { dia: number; esperado: number; recaudado: number }[] = [];
     for (let d = 1; d <= lastDay; d++) {
       const key = ymd(reportYear, reportMonth, d);
       const row = registerMap.get(key);
       rows.push({
         dia: d,
-        samit: row?.samit_sales_total ?? 0,
+        esperado: row?.expectedCollected ?? 0,
         recaudado: row?.collected ?? 0,
       });
     }
@@ -287,97 +358,210 @@ export function RegistroDiarioClient({
   const selectedAdvice = selectedRegister
     ? buildDailyAdvice(selectedRegister, selectedRegister)
     : [];
+  const selectedTone = selectedRegister ? cuadreTone(selectedRegister.samitDifference) : "ok";
+
+  const axis = chartDark ? "#94a3b8" : "#64748b";
+  const grid = chartDark ? "#334155" : "#e2e8f0";
+  const tooltipStyle = {
+    backgroundColor: chartDark ? "#18181b" : "#ffffff",
+    border: chartDark ? "1px solid #3f3f46" : "1px solid #e2e8f0",
+    borderRadius: "12px",
+    color: chartDark ? "#fafafa" : "#0f172a",
+  };
 
   return (
-    <div
-      className={cn(
-        "space-y-6 rounded-2xl border border-slate-800/90 bg-slate-950 p-4 shadow-2xl sm:p-6",
-        "text-slate-100"
-      )}
-    >
+    <div className="space-y-6">
       <DashboardPageHeader
         icon={ClipboardList}
         title="Registro diario"
-        description="Un cierre por día: venta SAMIT, efectivo, transferencias, gastos y pagos. El saldo a arrastrar es el saldo anterior del día siguiente."
+        description="Efectivo y transferencias deben coincidir con la venta SAMIT menos gastos y pagos de facturas. El saldo a arrastrar es el saldo anterior del día siguiente."
         actions={
           <>
             <Suspense fallback={<div className="h-11 w-40 animate-pulse rounded-xl bg-muted" />}>
               <MonthPaginator basePath="/dashboard/registro-diario" />
             </Suspense>
-            <Button
-              onClick={openCreateDialog}
-              className="h-11 rounded-xl bg-blue-600 text-white hover:bg-blue-500 dark:bg-blue-600 dark:hover:bg-blue-500"
-            >
+            <Button onClick={openCreateDialog} className="h-11 rounded-xl">
               + Registrar día
             </Button>
           </>
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-slate-800/80 bg-slate-900/70 shadow-lg">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-slate-400">Venta SAMIT del mes</CardDescription>
-            <CardTitle className="text-2xl font-bold tabular-nums text-sky-400">
-              {formatCop(kpis.totalSamit)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-500">Suma del mes seleccionado</CardContent>
-        </Card>
-        <Card className="border-slate-800/80 bg-slate-900/70 shadow-lg">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-slate-400">Recaudado</CardDescription>
-            <CardTitle className="text-2xl font-bold tabular-nums text-emerald-400">
-              {formatCop(kpis.totalRecaudado)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-500">Efectivo + transferencias</CardContent>
-        </Card>
-        <Card className="border-slate-800/80 bg-slate-900/70 shadow-lg">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-slate-400">Gastos + pagos</CardDescription>
-            <CardTitle className="text-2xl font-bold tabular-nums text-orange-400">
-              {formatCop(kpis.totalSalidas)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-500">Salidas del mes</CardContent>
-        </Card>
-        <Card className="border-slate-800/80 bg-slate-900/70 shadow-lg">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-slate-400">Saldo a arrastrar</CardDescription>
-            <CardTitle className="text-2xl font-bold tabular-nums text-slate-100">
-              {registers.length === 0 ? "—" : formatCop(kpis.saldoProyectado)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-500">
-            Último día con registro en {monthName}
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Venta SAMIT"
+          value={formatCop(kpis.totalSamit)}
+          hint={`Suma de ${monthName}`}
+          icon={Scale}
+          valueClassName="text-sky-700 dark:text-sky-300"
+        />
+        <MetricCard
+          label="Recaudado"
+          value={formatCop(kpis.totalRecaudado)}
+          hint="Efectivo + transferencias"
+          icon={ArrowDownLeft}
+          valueClassName="text-emerald-700 dark:text-emerald-300"
+        />
+        <MetricCard
+          label="Gastos + pagos"
+          value={formatCop(kpis.totalSalidas)}
+          hint="Salidas del mes"
+          icon={ArrowUpRight}
+          valueClassName="text-orange-700 dark:text-orange-300"
+        />
+        <MetricCard
+          label="Saldo a arrastrar"
+          value={registers.length === 0 ? "—" : formatCop(kpis.saldoProyectado)}
+          hint={
+            kpis.last
+              ? `Último registro: ${formatDateOnlyEsCO(kpis.last.register_date)}`
+              : `Sin registros en ${monthName}`
+          }
+          icon={Wallet}
+          valueClassName={
+            kpis.last && kpis.saldoProyectado < 0 ? "text-red-600 dark:text-red-400" : undefined
+          }
+        />
       </div>
 
-      {kpis.last ? (
-        <Card className="border-slate-800/80 bg-slate-900/60 shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-lg text-slate-100">Consejos para mañana</CardTitle>
-            <CardDescription className="text-slate-400">
-              Según el registro del {formatDateOnlyEsCO(kpis.last.register_date)}
-            </CardDescription>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+        <Card className="border-border/80 shadow-sm xl:col-span-3">
+          <CardHeader className="gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-1">
+              <CardTitle className="text-lg">Calendario de {monthName}</CardTitle>
+              <CardDescription>
+                Cada día muestra el saldo a arrastrar. El color indica si efectivo y transferencias cuadran con las ventas menos gastos y pagos.
+              </CardDescription>
+            </div>
+            <ul className="flex flex-wrap gap-2 text-[11px] font-medium text-muted-foreground">
+              {(
+                [
+                  ["ok", "Cuadra"],
+                  ["short", "Falta"],
+                  ["over", "Sobra"],
+                ] as const
+              ).map(([tone, label]) => (
+                <li key={tone} className="inline-flex items-center gap-1.5">
+                  <span className={cn("size-2 rounded-full", TONE_STYLES[tone].dot)} aria-hidden />
+                  {label}
+                </li>
+              ))}
+            </ul>
           </CardHeader>
           <CardContent>
-            <DailyAdviceList items={lastAdvice} />
+            <div className="-mx-1 overflow-x-auto pb-1">
+              <div className="min-w-[640px] px-1">
+                <div className="grid grid-cols-7 gap-2">
+                  {WEEKDAYS_ES.map((w) => (
+                    <div
+                      key={w}
+                      className="pb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      {w}
+                    </div>
+                  ))}
+                  {calendarCells.map((cell, idx) => {
+                    if (cell.type === "blank") {
+                      return <div key={`b-${idx}`} className="min-h-[92px]" />;
+                    }
+                    const row = registerMap.get(cell.key);
+                    const hasData = Boolean(row);
+                    const tone = row ? cuadreTone(row.samitDifference) : "ok";
+                    const isToday = cell.key === todayKey;
+                    return (
+                      <button
+                        key={cell.key}
+                        type="button"
+                        disabled={!hasData}
+                        onClick={() => row && openDayDetail(row)}
+                        aria-label={
+                          hasData && row
+                            ? `${cell.day} de ${monthName}, saldo ${formatCop(row.endingBalance)}, ${samitDifferenceLabel(row.samitDifference)}`
+                            : `${cell.day} de ${monthName}, sin registro`
+                        }
+                        className={cn(
+                          "flex min-h-[92px] flex-col rounded-xl border p-2 text-left transition-colors",
+                          hasData
+                            ? cn("cursor-pointer", TONE_STYLES[tone].cell)
+                            : "cursor-default border-dashed border-border/70 bg-muted/20 text-muted-foreground",
+                          isToday && "ring-2 ring-primary/50 ring-offset-2 ring-offset-background"
+                        )}
+                      >
+                        <span className="flex items-center justify-between gap-1">
+                          <span
+                            className={cn(
+                              "text-xs font-semibold",
+                              isToday ? "text-primary" : "text-muted-foreground"
+                            )}
+                          >
+                            {cell.day}
+                          </span>
+                          {hasData ? (
+                            <span
+                              className={cn("size-1.5 rounded-full", TONE_STYLES[tone].dot)}
+                              aria-hidden
+                            />
+                          ) : null}
+                        </span>
+                        {hasData && row ? (
+                          <span className="mt-auto pt-2">
+                            <span className="block text-sm font-bold leading-tight tabular-nums text-foreground sm:text-base">
+                              {formatCop(row.endingBalance)}
+                            </span>
+                            <span
+                              className={cn(
+                                "mt-0.5 block text-[10px] font-semibold uppercase tracking-wide",
+                                TONE_STYLES[tone].text
+                              )}
+                            >
+                              {samitDifferenceLabel(row.samitDifference)}
+                            </span>
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
-      ) : null}
 
-      <Card className="border-slate-800/80 bg-slate-900/60 shadow-lg">
+        <div className="xl:col-span-2">
+          {kpis.last ? (
+            <Card className="h-full border-border/80 shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg">Consejos para mañana</CardTitle>
+                <CardDescription>
+                  Según el registro del {formatDateOnlyEsCO(kpis.last.register_date)}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <DailyAdviceList items={lastAdvice} />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="h-full border-dashed border-border/80 bg-muted/20 shadow-none">
+              <CardHeader>
+                <CardTitle className="text-lg">Sin cierres este mes</CardTitle>
+                <CardDescription>
+                  Registra el primer día para ver el saldo a arrastrar y los consejos.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      <Card className="border-border/80 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-lg text-slate-100">Venta SAMIT vs recaudado por día</CardTitle>
-          <CardDescription className="text-slate-400">
-            Comparación diaria en el mes seleccionado
+          <CardTitle className="text-lg">Lo que debía entrar vs lo recaudado</CardTitle>
+          <CardDescription>
+            Ventas menos gastos y pagos, frente a efectivo más transferencias. {monthName}.
           </CardDescription>
         </CardHeader>
         <CardContent className="pl-0 pr-2 pt-0 sm:pl-2">
-          <div className="h-[300px] w-full min-w-0">
+          <div className="h-[280px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={chartData}
@@ -385,49 +569,44 @@ export function RegistroDiarioClient({
                 barGap={2}
                 barCategoryGap="12%"
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.6} />
+                <CartesianGrid strokeDasharray="3 3" stroke={grid} opacity={0.9} />
                 <XAxis
                   dataKey="dia"
-                  tick={{ fill: "#94a3b8", fontSize: 11 }}
+                  tick={{ fill: axis, fontSize: 11 }}
                   tickLine={false}
-                  axisLine={{ stroke: "#475569" }}
+                  axisLine={{ stroke: grid }}
                   interval={lastDay > 20 ? 2 : 0}
                 />
                 <YAxis
-                  tick={{ fill: "#94a3b8", fontSize: 11 }}
+                  tick={{ fill: axis, fontSize: 11 }}
                   tickLine={false}
-                  axisLine={{ stroke: "#475569" }}
+                  axisLine={{ stroke: grid }}
                   tickFormatter={compactAxisCop}
                   width={48}
                 />
                 <Tooltip
-                  cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
-                  contentStyle={{
-                    backgroundColor: "#0f172a",
-                    border: "1px solid #334155",
-                    borderRadius: "8px",
-                    color: "#f1f5f9",
-                  }}
+                  cursor={{ fill: chartDark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.04)" }}
+                  contentStyle={tooltipStyle}
                   labelFormatter={(dia) => `Día ${dia}`}
                   formatter={(value, name) => {
                     const n = typeof value === "number" ? value : Number(value ?? 0);
                     const label =
-                      name === "samit" || name === "Venta SAMIT" ? "Venta SAMIT" : "Recaudado";
+                      name === "esperado" || name === "Debería entrar"
+                        ? "Debería entrar"
+                        : "Efectivo + transferencias";
                     return [formatCop(n), label];
                   }}
                 />
-                <Legend
-                  wrapperStyle={{ color: "#94a3b8", fontSize: "12px", paddingTop: "12px" }}
-                />
+                <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }} />
                 <Bar
-                  dataKey="samit"
-                  name="Venta SAMIT"
+                  dataKey="esperado"
+                  name="Debería entrar"
                   fill={CHART_COLORS.samit}
                   radius={[4, 4, 0, 0]}
                 />
                 <Bar
                   dataKey="recaudado"
-                  name="Recaudado"
+                  name="Efectivo + transferencias"
                   fill={CHART_COLORS.recaudado}
                   radius={[4, 4, 0, 0]}
                 />
@@ -436,55 +615,6 @@ export function RegistroDiarioClient({
           </div>
         </CardContent>
       </Card>
-
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-100">Calendario del mes</h2>
-        <p className="text-xs text-slate-500">
-          En cada día se muestra el saldo a arrastrar. Pulse un día con registro para ver el detalle.
-        </p>
-        <div className="-mx-1 overflow-x-auto pb-1">
-          <div className="min-w-[640px] px-1">
-            <div className="grid grid-cols-7 gap-2">
-              {WEEKDAYS_ES.map((w) => (
-                <div
-                  key={w}
-                  className="pb-1 text-center text-xs font-medium uppercase tracking-wide text-slate-500"
-                >
-                  {w}
-                </div>
-              ))}
-              {calendarCells.map((cell, idx) => {
-                if (cell.type === "blank") {
-                  return <div key={`b-${idx}`} className="min-h-[88px] rounded-lg bg-transparent" />;
-                }
-                const row = registerMap.get(cell.key);
-                const hasData = Boolean(row);
-                return (
-                  <button
-                    key={cell.key}
-                    type="button"
-                    disabled={!hasData}
-                    onClick={() => row && openDayDetail(row)}
-                    className={cn(
-                      "flex min-h-[88px] flex-col rounded-lg border p-2 text-left transition-colors",
-                      hasData
-                        ? "cursor-pointer border-slate-700/80 bg-slate-800/90 hover:border-slate-500 hover:bg-slate-800"
-                        : "cursor-default border-slate-800/50 bg-slate-950/50 opacity-50"
-                    )}
-                  >
-                    <span className="text-xs font-medium text-slate-400">{cell.day}</span>
-                    {hasData && row ? (
-                      <span className="flex flex-1 items-center justify-center text-center text-base font-semibold tabular-nums text-slate-50 sm:text-lg">
-                        {formatCop(row.endingBalance)}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
 
       <DailyRegisterForm
         open={formOpen}
@@ -502,21 +632,46 @@ export function RegistroDiarioClient({
           if (!open) setSelectedRegister(null);
         }}
       >
-        <SheetContent
-          side="right"
-          className="w-full overflow-y-auto border-slate-800 bg-slate-950 text-slate-100 sm:max-w-md"
-        >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
           <SheetHeader>
-            <SheetTitle className="text-slate-50">Detalle del registro</SheetTitle>
-            <SheetDescription className="text-slate-400">
+            <SheetTitle>Detalle del registro</SheetTitle>
+            <SheetDescription>
               {selectedRegister
                 ? formatDateOnlyEsCO(selectedRegister.register_date)
                 : "Seleccione un día con registro"}
             </SheetDescription>
           </SheetHeader>
           {selectedRegister ? (
-            <div className="mt-8 space-y-6">
-              <dl className="space-y-4">
+            <div className="mt-6 space-y-6">
+              <div className="rounded-2xl border border-border bg-muted/30 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Saldo a arrastrar
+                </p>
+                <p
+                  className={cn(
+                    "mt-1 text-3xl font-black tabular-nums tracking-tight",
+                    selectedRegister.endingBalance < 0 && "text-red-600 dark:text-red-400"
+                  )}
+                >
+                  {formatCop(selectedRegister.endingBalance)}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1",
+                      TONE_STYLES[selectedTone].chip
+                    )}
+                  >
+                    {samitDifferenceLabel(selectedRegister.samitDifference)}{" "}
+                    {formatCop(Math.abs(selectedRegister.samitDifference))}
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground ring-1 ring-border">
+                    Recaudado {formatCop(selectedRegister.collected)}
+                  </span>
+                </div>
+              </div>
+
+              <dl className="space-y-0">
                 {(
                   [
                     ["Saldo anterior", formatCop(selectedRegister.previous_balance)],
@@ -524,35 +679,29 @@ export function RegistroDiarioClient({
                     ["Efectivo", formatCop(selectedRegister.cash_total)],
                     ["Transferencias", formatCop(selectedRegister.transfers_total)],
                     ["Gastos", formatCop(selectedRegister.expenses_total)],
-                    ["Pagos", formatCop(selectedRegister.payments_total)],
-                    ["Recaudado", formatCop(selectedRegister.collected)],
-                    [
-                      `Diferencia vs SAMIT (${samitDifferenceLabel(selectedRegister.samitDifference)})`,
-                      formatCop(Math.abs(selectedRegister.samitDifference)),
-                    ],
-                    ["Saldo a arrastrar", formatCop(selectedRegister.endingBalance)],
+                    ["Pagos de facturas", formatCop(selectedRegister.payments_total)],
+                    ["Debería entrar", formatCop(selectedRegister.expectedCollected)],
                   ] as const
                 ).map(([label, value]) => (
                   <div
                     key={label}
-                    className="flex items-center justify-between gap-4 border-b border-slate-800/80 pb-3"
+                    className="flex items-center justify-between gap-4 border-b border-border/70 py-2.5"
                   >
-                    <dt className="text-sm text-slate-400">{label}</dt>
-                    <dd className="text-right text-sm font-medium tabular-nums text-slate-100">
-                      {value}
-                    </dd>
+                    <dt className="text-sm text-muted-foreground">{label}</dt>
+                    <dd className="text-right text-sm font-semibold tabular-nums">{value}</dd>
                   </div>
                 ))}
               </dl>
+
               <div>
-                <p className="mb-2 text-sm font-semibold text-slate-100">Consejos para mañana</p>
+                <p className="mb-2 text-sm font-semibold">Consejos para mañana</p>
                 <DailyAdviceList items={selectedAdvice} />
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
                   type="button"
                   variant="outline"
-                  className="flex-1 border-slate-700 text-slate-100 hover:bg-slate-800"
+                  className="flex-1"
                   onClick={() => void openEditFromSheet()}
                   disabled={isLoadingEdit}
                 >
@@ -562,7 +711,7 @@ export function RegistroDiarioClient({
                 <Button
                   type="button"
                   variant="outline"
-                  className="flex-1 border-red-900/50 text-red-400 hover:bg-red-950/40 hover:text-red-300"
+                  className="flex-1 border-red-900/40 text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400"
                   onClick={openDeleteFromSheet}
                 >
                   <Trash2 className="mr-2 size-4" aria-hidden />

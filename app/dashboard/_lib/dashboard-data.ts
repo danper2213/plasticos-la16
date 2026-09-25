@@ -83,6 +83,7 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
 }
 
 export interface DashboardSummary {
+  isAdmin: boolean;
   pendingReceivables: number;
   pendingPayables: number;
   outOfStockCount: number;
@@ -106,6 +107,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   }
 
   const result: DashboardSummary = {
+    isAdmin,
     pendingReceivables: 0,
     pendingPayables: 0,
     outOfStockCount: 0,

@@ -5,11 +5,13 @@ import { Analytics } from "@vercel/analytics/react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import { GA_MEASUREMENT_ID, GOOGLE_TAG_INLINE_SCRIPT } from "@/lib/google-tag";
+import { getSiteUrl, PUBLIC_HOME_DESCRIPTION } from "@/lib/public-seo";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(getSiteUrl()),
   title: "PLASTICOS LA 16",
-  description: "Pagina web oficial de PLASTICOS LA 16.",
+  description: PUBLIC_HOME_DESCRIPTION,
   icons: {
     icon: [{ url: "/logo.png", type: "image/png" }],
     shortcut: "/logo.png",
