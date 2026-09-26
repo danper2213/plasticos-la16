@@ -291,7 +291,11 @@ function tokenMatchesHaystack(haystack: string, token: string): boolean {
   if (!haystack || !token) return false;
 
   if (isNumericToken(token)) {
-    return new RegExp(`(^|\\s)${escapeRegExp(token)}($|\\s)`, "u").test(haystack);
+    // "8" coincide con "8" y con la medida compactada "8oz", no con "18" ni "80".
+    return new RegExp(
+      `(^|\\s)${escapeRegExp(token)}(?:${MEASURE_UNITS})?($|\\s)`,
+      "u",
+    ).test(haystack);
   }
 
   if (token.length <= 2) {

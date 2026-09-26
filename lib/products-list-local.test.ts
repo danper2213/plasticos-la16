@@ -44,6 +44,22 @@ describe("filterProductsCatalog", () => {
     expect(hits.map((p) => p.id)).toEqual(["1"]);
   });
 
+  it("encuentra la medida cuando el número va suelto", () => {
+    const catalog = [
+      product({ id: "8oz", name: "Tarrina 8 oz" }),
+      product({ id: "8oz-wau", name: "Tarrina 8 oz wau" }),
+      product({ id: "18oz", name: "Tarrina 18 oz" }),
+      product({ id: "80oz", name: "Tarrina 80 oz" }),
+    ];
+    const hits = filterProductsCatalog(catalog, {
+      search: "tarrina 8",
+      stockFilter: "all",
+      categoryId: "all",
+      supplierId: "all",
+    });
+    expect(hits.map((p) => p.id)).toEqual(["8oz", "8oz-wau"]);
+  });
+
   it("aplica filtro de stock y categoría", () => {
     const hits = filterProductsCatalog(catalog, {
       search: "",
