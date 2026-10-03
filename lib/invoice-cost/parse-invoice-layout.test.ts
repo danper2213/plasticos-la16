@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { tryParseInvoicePdf } from "./parse-invoice-pdf";
+import { extractedToRawLines } from "./extract-invoice-shared";
+import { processInvoiceLines } from "./process-invoice-line";
+import { formatPdfRows, tryParseInvoicePdf } from "./parse-invoice-pdf";
 import {
   parseCoAmount,
   parseCoAmountTokens,
@@ -75,6 +77,10 @@ describe("parseCoAmount", () => {
     expect(parseCoAmount("34,000")).toBe(34_000);
     expect(parseCoAmount("1,62")).toBe(1.62);
     expect(parseCoAmount("$ 300")).toBe(300);
+    expect(parseCoAmount("30.000")).toBe(30_000);
+    expect(parseCoAmount("30.000", "us")).toBe(30);
+    expect(parseCoAmount("22,269.00", "us")).toBe(22_269);
+    expect(parseCoAmount("668,070.00", "us")).toBe(668_070);
   });
 
   it("no pega cantidad y precio en un solo número", () => {
@@ -305,6 +311,102 @@ describe("parseInvoiceFromTextItems", () => {
     ]);
     expect(parseInvoiceFromTextItems(items).ok).toBe(false);
   });
+
+  it("lee una factura SIESA sin pegar el pie ni el 30.000 como precio", () => {
+    const parsed = parseInvoiceFromTextItems(siesaItems());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    expect(parsed.invoice.supplierName).toBe("DISTRIBUIDORA CALIPLASTICOS LTDA");
+    expect(parsed.invoice.invoiceNumber).toBe("RIBA3426");
+    expect(parsed.invoice.invoiceDate).toBe("2026-09-19");
+    expect(parsed.invoice.invoiceTotalNeto).toBe(668_070);
+    expect(parsed.invoice.invoiceTotalIva).toBe(126_933);
+    expect(parsed.invoice.invoiceTotalConIva).toBe(795_003);
+    expect(parsed.invoice.lines).toEqual([
+      {
+        descripcion: "PISO CIRCULIN TRANSPARENTE X 1.40",
+        um: "MT",
+        cantidad: 30,
+        valorTotalNeto: 668_070,
+        precioUnitario: 22_269,
+        codigoProveedor: "015267",
+      },
+    ]);
+  });
+});
+
+describe("factura Lastra", () => {
+  it("no toma el número de línea como cantidad ni el conteo de líneas como total", () => {
+    const parsed = parseInvoiceFromTextItems(lastraItems());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    expect(parsed.invoice.supplierName).toBe("REPRESENTACIONES LASTRA S.A.S");
+    expect(parsed.invoice.invoiceTotalNeto).toBe(2_834_714);
+    expect(parsed.invoice.invoiceTotalIva).toBe(538_596);
+    expect(parsed.invoice.invoiceTotalConIva).toBe(3_373_310);
+    expect(parsed.invoice.lines).toEqual([
+      {
+        descripcion: "10716 PLATO HONDO 25 ONZ ESPUMADO BLANCO",
+        um: "C24",
+        cantidad: 15,
+        valorTotalNeto: 1_419_000,
+        precioUnitario: 94_600,
+      },
+      {
+        descripcion: "10264 PLATO PANDO 15.5 CM ESPUMADO BLANCO",
+        um: "C24",
+        cantidad: 20,
+        valorTotalNeto: 836_000,
+        precioUnitario: 41_800,
+      },
+      {
+        descripcion: "10810 VASO 22 ONZ BIO GOLD",
+        um: "C24",
+        cantidad: 2,
+        valorTotalNeto: 579_714,
+        precioUnitario: 289_856.8,
+      },
+    ]);
+
+    const processed = processInvoiceLines(
+      extractedToRawLines(parsed.invoice),
+      parsed.invoice.lines.map((line, index) => ({
+        id: `p${index}`,
+        name: line.descripcion,
+        packaging: "Cj x24",
+        cost: 100,
+      })),
+      {
+        headerTotalWithIva: parsed.invoice.invoiceTotalConIva,
+        headerTotalNeto: parsed.invoice.invoiceTotalNeto,
+        headerIvaAmount: parsed.invoice.invoiceTotalIva,
+      },
+    );
+
+    expect(processed.map((line) => line.cost.pricedFromUnitPrice)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(processed.map((line) => line.cost.costoUnitario)).toEqual([
+      4_690.58,
+      2_072.58,
+      14_372.07,
+    ]);
+  });
+
+  it("arma el texto de Gemini de izquierda a derecha", () => {
+    const text = formatPdfRows([
+      { text: "1,419,000.00", x: 555, y: 532.8, width: 40, page: 1 },
+      { text: "1", x: 26, y: 532.6, width: 4, page: 1 },
+      { text: "C24", x: 252, y: 532.1, width: 12, page: 1 },
+      { text: "10716 PLATO HONDO", x: 49, y: 531.8, width: 170, page: 1 },
+      { text: "15", x: 317, y: 532.8, width: 8, page: 1 },
+    ]);
+    expect(text).toBe("1 | 10716 PLATO HONDO | C24 | 15 | 1,419,000.00");
+  });
 });
 
 describe("tryParseInvoicePdf", () => {
@@ -346,6 +448,164 @@ describe("tryParseInvoicePdf", () => {
     });
   });
 });
+
+function lastraItems(): PdfTextItem[] {
+  return [
+    ...row(1, 760, [
+      { text: "FACTURA ELECTRONICA DE", x: 27, width: 120 },
+      { text: "REPRESENTACIONES LASTRA S.A.S", x: 160, width: 180 },
+    ]),
+    ...row(1, 740, [{ text: "VENTA", x: 27, width: 30 }]),
+    ...row(1, 546, [
+      { text: "Reg", x: 25.6, width: 15.1 },
+      { text: "Descripcion", x: 46.7, width: 45.8 },
+      { text: "U.M.", x: 254.5, width: 16.9 },
+      { text: "Cantidad", x: 288.2, width: 34.2 },
+      { text: "Precio unitario", x: 335.5, width: 55.9 },
+      { text: "Descuento", x: 402.8, width: 40.9 },
+      { text: "Impuestos", x: 461.3, width: 40 },
+      { text: "%", x: 510.7, width: 7.1 },
+      { text: "Valor total", x: 539.1, width: 39.1 },
+    ]),
+    ...row(1, 532, [
+      { text: "1", x: 26.3, width: 3.9 },
+      { text: "10716 PLATO HONDO 25 ONZ ESPUMADO BLANCO", x: 49.1, width: 171.4 },
+      { text: "C24", x: 252.2, width: 12.4 },
+      { text: "15", x: 317, width: 7.5 },
+      { text: "94,600.00", x: 332, width: 30 },
+      { text: "$0", x: 447.6, width: 7.5 },
+      { text: "$269,610", x: 475, width: 28.1 },
+      { text: "19", x: 512.5, width: 7.5 },
+      { text: "1,419,000.00", x: 555.7, width: 39.4 },
+    ]),
+    ...row(1, 522, [
+      { text: "2", x: 26.3, width: 3.9 },
+      { text: "10264 PLATO PANDO 15.5 CM ESPUMADO BLANCO", x: 49.1, width: 172.2 },
+      { text: "C24", x: 252.2, width: 12.4 },
+      { text: "20", x: 317, width: 7.5 },
+      { text: "41,800.00", x: 332, width: 30 },
+      { text: "$0", x: 447.6, width: 7.5 },
+      { text: "$158,840", x: 475, width: 28.1 },
+      { text: "19", x: 512.5, width: 7.5 },
+      { text: "836,000.00", x: 561.3, width: 33.8 },
+    ]),
+    ...row(1, 511, [
+      { text: "3", x: 26.3, width: 3.9 },
+      { text: "10810 VASO 22 ONZ BIO GOLD", x: 49.1, width: 103 },
+      { text: "C24", x: 252.2, width: 12.4 },
+      { text: "2", x: 320.7, width: 3.8 },
+      { text: "289,856.80", x: 332, width: 33.8 },
+      { text: "$0", x: 447.6, width: 7.5 },
+      { text: "$110,146", x: 475, width: 28.1 },
+      { text: "19", x: 512.5, width: 7.5 },
+      { text: "579,714.00", x: 561.3, width: 33.8 },
+    ]),
+    ...row(1, 330, [
+      { text: "TOTAL NRO LINEAS :", x: 25.6, width: 83 },
+      { text: "3", x: 175.9, width: 4.4 },
+    ]),
+    ...row(1, 307, [
+      {
+        text: "de cambio Art. 779 del Codigo de Comercio. Se causara intereses por mora",
+        x: 31.9,
+        width: 385,
+      },
+      { text: "Valor Bruto:", x: 445.6, width: 46.2 },
+      { text: "$2,834,714", x: 555.2, width: 40 },
+    ]),
+    ...row(1, 277, [
+      { text: "Subtotal:", x: 445.3, width: 40 },
+      { text: "$2,834,714", x: 555.1, width: 40 },
+    ]),
+    ...row(1, 263, [
+      { text: "IVA:", x: 445.3, width: 20 },
+      { text: "$538,596", x: 561.8, width: 36 },
+    ]),
+    ...row(1, 214.8, [{ text: "Firma y Sello:", x: 249.7, width: 50 }]),
+    ...row(1, 213.2, [{ text: "Total:", x: 445.3, width: 28 }]),
+    ...row(1, 211.4, [{ text: "$3,373,310", x: 545.4, width: 40 }]),
+  ];
+}
+
+function siesaItems(): PdfTextItem[] {
+  return [
+    ...row(1, 753.2, [
+      { text: "DISTRIBUIDORA CALIPLASTICOS LTDA", x: 211.7, width: 134.4 },
+      { text: "+----------------------------------------+", x: 421.7, width: 176.4 },
+    ]),
+    ...row(1, 721.7, [{ text: "| Numero: RIBA3426", x: 421.7, width: 75.6 }]),
+    ...row(1, 711.2, [
+      { text: "| Fecha de Emision: 2026-SEP-19", x: 421.7, width: 130.2 },
+    ]),
+    ...row(1, 574.7, [
+      { text: "|Reg", x: 22.7, width: 16.8 },
+      { text: "Referencia", x: 43.7, width: 42 },
+      { text: "D e s c r i p c i o n", x: 127.7, width: 88.2 },
+      { text: "Mo", x: 299.9, width: 8.4 },
+      { text: "Cantidad", x: 329.3, width: 33.6 },
+      { text: "U.M Precio_Unit.", x: 371.3, width: 67.2 },
+      { text: "Descuento", x: 459.5, width: 37.8 },
+      { text: "Valor_Total", x: 514.1, width: 46.2 },
+      { text: "Impto", x: 568.7, width: 21 },
+    ]),
+    ...row(1, 553.7, [
+      { text: "|001", x: 22.7, width: 16.8 },
+      { text: "015267", x: 43.7, width: 25.2 },
+      { text: "PISO CIRCULIN TRANSPARENTE X 1.40", x: 127.7, width: 138.6 },
+      { text: "70", x: 299.9, width: 8.4 },
+      { text: "30.000", x: 337.7, width: 25.2 },
+      { text: "MT", x: 371.3, width: 8.4 },
+      { text: "22,269.00", x: 400.7, width: 37.8 },
+      { text: "0.00", x: 480.5, width: 16.8 },
+      { text: "668,070.00", x: 518.3, width: 42 },
+      { text: "19.00", x: 568.7, width: 21 },
+    ]),
+    ...row(1, 364.7, [
+      { text: "|Total", x: 22.7, width: 25.2 },
+      { text: "de", x: 52.1, width: 8.4 },
+      { text: "Registros:", x: 64.7, width: 42 },
+      { text: "000001", x: 110.9, width: 25.2 },
+      { text: "Total Cantidades:", x: 157.1, width: 71.4 },
+      { text: "30.000", x: 287.3, width: 25.2 },
+    ]),
+    ...row(1, 343.7, [
+      { text: "TOTAL_BRUTO", x: 43.7, width: 46.2 },
+      { text: "DSCTO x LINEA", x: 115.1, width: 54.6 },
+      { text: "DSCTO_GLOBAL 0.00% |", x: 194.9, width: 84 },
+      { text: "SUB-TOTAL", x: 299.9, width: 37.8 },
+      { text: "IMPUESTOS", x: 379.7, width: 37.8 },
+      { text: "| TOTAL RETENCIONES|", x: 434.3, width: 84 },
+      { text: "T", x: 539.3, width: 4.2 },
+      { text: "O", x: 547.7, width: 4.2 },
+      { text: "T", x: 556.1, width: 4.2 },
+      { text: "A", x: 564.5, width: 4.2 },
+      { text: "L", x: 572.9, width: 4.2 },
+    ]),
+    ...row(1, 333.2, [
+      { text: "668,070.00", x: 56.3, width: 42 },
+      { text: "0.00 |", x: 161.3, width: 25.2 },
+      { text: "0.00", x: 249.5, width: 16.8 },
+      { text: "668,070.00 |", x: 308.3, width: 50.4 },
+      { text: "126,933.00 |", x: 388.1, width: 50.4 },
+      { text: "0.00", x: 493.1, width: 16.8 },
+      { text: "795,003.00", x: 547.7, width: 42 },
+    ]),
+    ...row(1, 312.2, [
+      {
+        text: "| Valor Letras : SETECIENTOS NOVENTA Y CINCO MIL TRES PESOS MCTE.",
+        x: 22.7,
+        width: 280,
+      },
+    ]),
+    ...row(1, 217.7, [
+      {
+        text: "| Observacion: REMISION FACTURA ELECTRONICA No 0592",
+        x: 22.7,
+        width: 220,
+      },
+    ]),
+  ];
+}
 
 function buildPdf(stream: string): Uint8Array {
   const streamBody = stream.endsWith("\n") ? stream : `${stream}\n`;

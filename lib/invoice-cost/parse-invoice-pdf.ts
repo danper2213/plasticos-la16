@@ -36,26 +36,41 @@ export async function tryParseInvoicePdf(
 }
 
 /** Texto por filas para que Gemini lea la tabla sin recibir el PDF binario. */
-function formatPdfRows(items: PdfTextItem[]): string {
+export function formatPdfRows(items: PdfTextItem[]): string {
   const sorted = [...items].sort(
     (a, b) => a.page - b.page || b.y - a.y || a.x - b.x,
   );
   const lines: string[] = [];
-  let current = "";
-  let lastY = Number.NaN;
-  let lastPage = -1;
+  let bucket: PdfTextItem[] = [];
+  let anchorY = Number.NaN;
+  let anchorPage = -1;
+
+  const flush = () => {
+    if (bucket.length === 0) return;
+    const text = [...bucket]
+      .sort((a, b) => a.x - b.x)
+      .map((item) => item.text.trim())
+      .filter((value) => value.length > 0)
+      .join(" | ");
+    if (text) lines.push(text);
+    bucket = [];
+  };
+
   for (const item of sorted) {
     const text = item.text.trim();
     if (!text) continue;
-    if (item.page !== lastPage || Math.abs(item.y - lastY) > 2.5) {
-      if (current.trim()) lines.push(current.trim());
-      current = text;
-      lastY = item.y;
-      lastPage = item.page;
-    } else {
-      current = `${current} | ${text}`;
+    if (
+      bucket.length > 0 &&
+      (item.page !== anchorPage || Math.abs(item.y - anchorY) > 2.5)
+    ) {
+      flush();
     }
+    if (bucket.length === 0) {
+      anchorY = item.y;
+      anchorPage = item.page;
+    }
+    bucket.push(item);
   }
-  if (current.trim()) lines.push(current.trim());
+  flush();
   return lines.join("\n").slice(0, 60_000);
 }
