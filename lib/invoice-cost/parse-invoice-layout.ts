@@ -2,7 +2,11 @@ import {
   extractedInvoiceSchema,
   type ExtractedInvoice,
 } from "@/lib/invoice-cost/extract-invoice-shared";
-import { COLOMBIA_IVA_FACTOR } from "@/lib/invoice-cost/resolve-invoice-iva";
+import {
+  COLOMBIA_IVA_FACTOR,
+  COLOMBIA_IVA_RATE,
+  classifyLineIva,
+} from "@/lib/invoice-cost/resolve-invoice-iva";
 
 export type PdfTextItem = {
   text: string;
@@ -57,7 +61,7 @@ const TOTAL_RELATIVE_TOLERANCE = 0.08;
 const TOTAL_ABSOLUTE_TOLERANCE = 2000;
 
 const SUPPLIER_SKIP =
-  /factura|nit\b|dian|direcci[oó]n|tel[eé]fono|cliente|se[nñ]ores|fecha|n[uú]mero|resoluci|r[eé]gimen|actividad|p[aá]gina|cufe|responsable|correo|e-?mail|www\.|http/i;
+  /factura|nit\b|dian|direcci[oó]n|tel[eé]fono|cliente|se[nñ]ores|fecha|n[uú]mero|resoluci|r[eé]gimen|actividad|p[aá]gina|cufe|responsable|correo|e-?mail|www\.|http|habilita|documento oficial/i;
 
 /**
  * Montos colombianos: punto de miles y coma decimal (`34.000` → 34000).
@@ -309,7 +313,11 @@ export function parseInvoiceFromTextItems(
       continue;
     }
 
-    const valorIva = lastPositiveAmount(cells.valorIva, style);
+    const valorIva = lineIvaAmount(
+      lastPositiveAmount(cells.valorIva, style),
+      valorTotal,
+      cantidad,
+    );
     const codigo = cleanCode(cells.codigo);
     lines.push({
       descripcion,
@@ -466,6 +474,29 @@ function priceTimesQtyMatches(
   );
 }
 
+/**
+ * World Office pone en "Valor IVA" el impuesto de UNA unidad
+ * (74.400 × 19 % = 14.136), no el de la línea. Sumarlo al total
+ * deja el costo por debajo del precio con IVA.
+ * Si cantidad × columna cuadra con el 19 % del total, se guarda el IVA de la línea.
+ */
+function lineIvaAmount(
+  columnIva: number | null,
+  valorTotal: number,
+  cantidad: number | null,
+): number | undefined {
+  if (columnIva == null || columnIva <= 0 || valorTotal <= 0) return undefined;
+  if (classifyLineIva(valorTotal, columnIva) != null) return columnIva;
+  if (
+    cantidad != null &&
+    cantidad > 0 &&
+    classifyLineIva(valorTotal, columnIva * cantidad) != null
+  ) {
+    return Math.round(valorTotal * COLOMBIA_IVA_RATE * 100) / 100;
+  }
+  return columnIva;
+}
+
 function isHeaderRow(row: TextRow): boolean {
   const keys = new Set(headerCells(row).map((cell) => cell.key));
   return (
@@ -501,14 +532,14 @@ const HEADER_RULES: Array<{ key: BoundKey; re: RegExp }> = [
   },
   { key: "descripcion", re: /descripcion/g },
   { key: "cantidad", re: /cantidad/g },
-  { key: "codigo", re: /referencia|codigo|sku|(?<![a-z])(?:ref|item)(?![a-z])/g },
+  { key: "codigo", re: /referencia|codigo|sku|(?<![a-z])ref(?![a-z])/g },
   {
     key: "ignore",
-    re: /impto|impuestos?|descuento|dscto|(?<![a-z])(?:reg|mo)(?![a-z])/g,
+    re: /impto|impuestos?|descuento|dscto|(?<![a-z])(?:reg|mo|item)(?![a-z])/g,
   },
   {
     key: "um",
-    re: /um(?=precio)|(?<![a-z])(?:um|und|unidad|unidades|medida)(?![a-z])|unidaddemedida/g,
+    re: /um(?=precio)|(?<![a-z])(?:um|und|unidad|unidades|medida)(?![a-z])|unidaddemedida|umedida/g,
   },
   { key: "valorIva", re: /(?<![a-z])iva(?![a-z])|(?<=valor)iva(?![a-z])/g },
 ];
@@ -669,12 +700,40 @@ function columnForItem(
   const contained = columns.find((column) => itemInsideHeader(item, column));
   if (contained) return contained;
   const numeric = isNumericText(item.text, style);
+  if (!numeric) {
+    const overlapped = columnByOverlap(item, columns);
+    if (overlapped) return overlapped;
+  }
   const anchor = numeric
     ? item.x + item.width - 0.01
     : item.x + Math.min(item.width, 8) / 2;
   return columns.find(
     (candidate) => anchor >= candidate.left && anchor < candidate.right,
   );
+}
+
+/**
+ * World Office centra el rótulo "Descripción" y el texto empieza más a la
+ * izquierda. El ancla del borde izquierdo caía en Código; el solapamiento
+ * elige la columna que cubre más texto.
+ */
+function columnByOverlap(
+  item: PdfTextItem,
+  columns: ColumnBound[],
+): ColumnBound | undefined {
+  const left = item.x;
+  const right = item.x + Math.max(item.width, 1);
+  let best: ColumnBound | undefined;
+  let bestOverlap = 0;
+  for (const column of columns) {
+    if (column.key === "ignore") continue;
+    const overlap = Math.min(right, column.right) - Math.max(left, column.left);
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      best = column;
+    }
+  }
+  return best;
 }
 
 function itemInsideHeader(item: PdfTextItem, column: ColumnBound): boolean {
@@ -799,7 +858,7 @@ function sideTotalRole(text: string): "neto" | "iva" | "conIva" | null {
   }
   if (/^(iva|valor iva|impuesto|impuestos)$/.test(compact)) return "iva";
   if (
-    /^(total|total a pagar|valor a pagar|total factura|total general|neto a pagar|valor total)$/.test(
+    /^(total|total a pagar|valor a pagar|total factura|total general|neto a pagar|valor total|total de la operacion)$/.test(
       compact,
     )
   ) {
@@ -958,7 +1017,7 @@ function extractSupplierName(rows: TextRow[]): string | null {
 
   for (const row of rows) {
     const text = rowText(row).trim();
-    if (text.length < 4 || /^venta$/i.test(text)) continue;
+    if (text.length < 4 || /^venta$/i.test(text) || /^\d{6,}\b/.test(text)) continue;
     if (SUPPLIER_SKIP.test(text)) {
       const sibling = companySibling(row);
       if (sibling) return sibling;
@@ -981,7 +1040,10 @@ function companySibling(row: TextRow): string | null {
       return /[A-Za-zÁÉÍÓÚÑáéíóúñ]{3}/.test(text);
     });
   return (
-    names.find((text) => /\b(s\.?\s*a\.?\s*s\.?|ltda|s\.?\s*a\.?)\b/i.test(text)) ??
+    names.find((text) =>
+      /\b(s\.?\s*a\.?\s*s\.?|ltda|e\.?\s*u\.?|s\.?\s*a\.?)\b/i.test(text),
+    ) ??
+    names[0] ??
     null
   );
 }
@@ -991,13 +1053,17 @@ function extractInvoiceNumber(text: string): string | null {
   if (direct?.[1]) return direct[1].replace(/\s+/g, "");
 
   const patterns = [
+    /\b([A-Z]{2,4})\s+No\.?\s+(\d{3,8})\b/gi,
     /factura(?:\s+electr[oó]nica)?(?:\s+de\s+venta)?\s*(?:no\.?|nro\.?|n[°ºo]\.?|#|:)\s*([A-Z0-9][A-Z0-9-]{1,24})/gi,
     /(?:n[uú]mero|nro\.?|no\.?)\s*(?:de\s*)?(?:factura|documento)\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{1,24})/gi,
     /\b((?:FE|FV|FC|SETP|SETT)\s*-?\s*\d{2,12})\b/gi,
   ];
   for (const pattern of patterns) {
     for (const match of text.matchAll(pattern)) {
-      const value = match[1]?.replace(/\s+/g, "");
+      const value = [match[1], match[2]]
+        .filter((part) => part != null && part !== "")
+        .join("")
+        .replace(/\s+/g, "");
       if (!value) continue;
       const at = match.index ?? 0;
       const before = text.slice(Math.max(0, at - 24), at);
@@ -1012,8 +1078,13 @@ function extractInvoiceDate(text: string): string | null {
   const match = text.match(
     /fecha(?:\s+de)?(?:\s+emisi[oó]n|\s+factura|\s+generaci[oó]n|\s+expedici[oó]n)?\s*[:\s]*(\d{4}-[A-Za-z]{3}-\d{1,2}|\d{4}-\d{2}-\d{2}|\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})/i,
   );
-  if (!match?.[1]) return null;
-  return normalizeDate(match[1]);
+  if (match?.[1]) return normalizeDate(match[1]);
+
+  const belowLabel = text.match(
+    /fecha\s+factura[\s\S]{0,120}?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})/i,
+  );
+  if (!belowLabel?.[1]) return null;
+  return normalizeDate(belowLabel[1]);
 }
 
 const MONTHS: Record<string, number> = {

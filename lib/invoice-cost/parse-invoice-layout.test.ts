@@ -409,6 +409,96 @@ describe("factura Lastra", () => {
   });
 });
 
+describe("factura World Office (Icoporama)", () => {
+  it("toma el precio unitario con IVA y no el IVA de una sola unidad", () => {
+    const parsed = parseInvoiceFromTextItems(worldOfficeItems());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    expect(parsed.invoice.supplierName).toBe("ICOPORAMA E U");
+    expect(parsed.invoice.invoiceNumber).toBe("IC8574");
+    expect(parsed.invoice.invoiceDate).toBe("2026-10-16");
+    expect(parsed.invoice.invoiceTotalNeto).toBe(3_726_500);
+    expect(parsed.invoice.invoiceTotalIva).toBe(708_035);
+    expect(parsed.invoice.invoiceTotalConIva).toBe(4_434_535);
+    expect(parsed.invoice.lines).toEqual([
+      {
+        descripcion: "TANQUE DE ICOPOR *125LTS",
+        um: "UND",
+        cantidad: 6,
+        precioUnitario: 74_400,
+        valorTotalNeto: 446_400,
+        valorIva: 84_816,
+        codigoProveedor: "T125",
+      },
+      {
+        descripcion: "TANQUE DE ICOPOR * 76 LTS",
+        um: "UND",
+        cantidad: 12,
+        precioUnitario: 44_550,
+        valorTotalNeto: 534_600,
+        valorIva: 101_574,
+        codigoProveedor: "T76I",
+      },
+      {
+        descripcion: "NEVERA DE ICOPOR GRANDE *42 LTS",
+        um: "UND",
+        cantidad: 36,
+        precioUnitario: 29_900,
+        valorTotalNeto: 1_076_400,
+        valorIva: 204_516,
+        codigoProveedor: "N42",
+      },
+      {
+        descripcion: "NEVERA DE ICOPOR MEDIANA *20 LTS",
+        um: "UND",
+        cantidad: 42,
+        precioUnitario: 15_950,
+        valorTotalNeto: 669_900,
+        valorIva: 127_281,
+        codigoProveedor: "N20",
+      },
+      {
+        descripcion: "NEVERA DE ICOPOR PEQUEÑA *10 LT",
+        um: "UND",
+        cantidad: 18,
+        precioUnitario: 11_900,
+        valorTotalNeto: 214_200,
+        valorIva: 40_698,
+        codigoProveedor: "N10",
+      },
+      {
+        descripcion: "NEVERA DE ICOPOR MINI",
+        um: "UND",
+        cantidad: 100,
+        precioUnitario: 7_850,
+        valorTotalNeto: 785_000,
+        valorIva: 149_150,
+        codigoProveedor: "N5",
+      },
+    ]);
+
+    const processed = processInvoiceLines(
+      extractedToRawLines(parsed.invoice),
+      [],
+      {
+        headerTotalWithIva: parsed.invoice.invoiceTotalConIva,
+        headerTotalNeto: parsed.invoice.invoiceTotalNeto,
+        headerIvaAmount: parsed.invoice.invoiceTotalIva,
+      },
+    );
+
+    expect(processed.map((line) => line.cost.costoUnitario)).toEqual([
+      88_536,
+      53_014.5,
+      35_581,
+      18_980.5,
+      14_161,
+      9_341.5,
+    ]);
+  });
+});
+
 describe("tryParseInvoicePdf", () => {
   it("rechaza un PDF sin texto", async () => {
     const parsed = await tryParseInvoicePdf(buildPdf("BT ET\n"));
@@ -448,6 +538,142 @@ describe("tryParseInvoicePdf", () => {
     });
   });
 });
+
+function worldOfficeItems(): PdfTextItem[] {
+  return [
+    ...row(1, 731, [
+      { text: "Factura Electrónica De Venta No", x: 312.2, width: 215.6 },
+    ]),
+    ...row(1, 707.1, [
+      { text: "IC", x: 343.3, width: 14 },
+      { text: "No.", x: 397.6, width: 22.5 },
+      { text: "8574", x: 429.4, width: 31.1 },
+    ]),
+    ...row(1, 681.3, [
+      {
+        text: "Documento Oficial de Autorización de Numeración Facturación Electrónica No.",
+        x: 264.9,
+        width: 301.4,
+      },
+    ]),
+    ...row(1, 671.8, [
+      {
+        text: "18764091744018 que habilita desde IC 7001 hasta IC 15000. Vence 2027-04-09",
+        x: 269.8,
+        width: 293.5,
+      },
+    ]),
+    ...row(1, 644.5, [
+      { text: "ICOPORAMA E U", x: 23.6, width: 99.9 },
+      { text: "IVA Régimen Común No somos Agentes de", x: 340.9, width: 165.2 },
+    ]),
+    ...row(1, 544.3, [
+      { text: "FECHA FACTURA", x: 64.7, width: 67.6 },
+      { text: "FECHA VENCIMIENTO", x: 204.6, width: 85.3 },
+    ]),
+    ...row(1, 532, [
+      { text: "16/10/2026", x: 78.2, width: 40 },
+      { text: "16/10/2026", x: 227.2, width: 40 },
+    ]),
+    ...row(1, 516.8, [
+      { text: "Item", x: 28.3, width: 16.4 },
+      { text: "Código", x: 60.3, width: 27.6 },
+      { text: "Descripción", x: 164.7, width: 45.8 },
+      { text: "Cantidad", x: 278.8, width: 34.2 },
+      { text: "U Medida", x: 320.2, width: 35.8 },
+      { text: "Valor Unitario", x: 364.4, width: 52.7 },
+      { text: "IVA", x: 428.6, width: 13.4 },
+      { text: "Valor IVA", x: 457.1, width: 35.8 },
+      { text: "Total", x: 531.7, width: 19 },
+    ]),
+    ...row(1, 504.3, [
+      { text: "1", x: 34.4, width: 4.4 },
+      { text: "T125", x: 50, width: 18.2 },
+      { text: "TANQUE DE ICOPOR *125LTS", x: 99.9, width: 114.1 },
+      { text: "6", x: 293.7, width: 4.4 },
+      { text: "Und.", x: 329.6, width: 16.8 },
+      { text: "74.400", x: 393.3, width: 24.4 },
+      { text: "19%", x: 427.1, width: 16 },
+      { text: "14.136", x: 472.6, width: 24.4 },
+      { text: "446.400", x: 550, width: 28.9 },
+    ]),
+    ...row(1, 491.5, [
+      { text: "2", x: 34.4, width: 4.4 },
+      { text: "T76I", x: 50, width: 16 },
+      { text: "TANQUE DE ICOPOR * 76 LTS", x: 99.9, width: 114.2 },
+      { text: "12", x: 291.5, width: 8.9 },
+      { text: "Und.", x: 329.6, width: 16.8 },
+      { text: "44.550", x: 393.3, width: 24.4 },
+      { text: "19%", x: 427.1, width: 16 },
+      { text: "8.465", x: 477.1, width: 20 },
+      { text: "534.600", x: 550, width: 28.9 },
+    ]),
+    ...row(1, 478.8, [
+      { text: "3", x: 34.4, width: 4.4 },
+      { text: "N42", x: 50, width: 14.6 },
+      { text: "NEVERA DE ICOPOR GRANDE *42 LTS", x: 99.9, width: 148.1 },
+      { text: "36", x: 291.5, width: 8.9 },
+      { text: "Und.", x: 329.6, width: 16.8 },
+      { text: "29.900", x: 393.3, width: 24.4 },
+      { text: "19%", x: 427.1, width: 16 },
+      { text: "5.681", x: 477.1, width: 20 },
+      { text: "1.076.400", x: 543.3, width: 35.5 },
+    ]),
+    ...row(1, 466.1, [
+      { text: "4", x: 34.4, width: 4.4 },
+      { text: "N20", x: 50, width: 14.6 },
+      { text: "NEVERA DE ICOPOR MEDIANA *20 LTS", x: 99.9, width: 150.4 },
+      { text: "42", x: 291.5, width: 8.9 },
+      { text: "Und.", x: 329.6, width: 16.8 },
+      { text: "15.950", x: 393.3, width: 24.4 },
+      { text: "19%", x: 427.1, width: 16 },
+      { text: "3.031", x: 477.1, width: 20 },
+      { text: "669.900", x: 550, width: 28.9 },
+    ]),
+    ...row(1, 453.4, [
+      { text: "5", x: 34.4, width: 4.4 },
+      { text: "N10", x: 50, width: 14.6 },
+      { text: "NEVERA DE ICOPOR PEQUEÑA *10 LT", x: 99.9, width: 147.8 },
+      { text: "18", x: 291.5, width: 8.9 },
+      { text: "Und.", x: 329.6, width: 16.8 },
+      { text: "11.900", x: 393.3, width: 24.4 },
+      { text: "19%", x: 427.1, width: 16 },
+      { text: "2.261", x: 477.1, width: 20 },
+      { text: "214.200", x: 550, width: 28.9 },
+    ]),
+    ...row(1, 440.6, [
+      { text: "6", x: 34.4, width: 4.4 },
+      { text: "N5", x: 50, width: 10.2 },
+      { text: "NEVERA DE ICOPOR MINI", x: 99.9, width: 99.5 },
+      { text: "100", x: 289.2, width: 13.3 },
+      { text: "Und.", x: 329.6, width: 16.8 },
+      { text: "7.850", x: 397.7, width: 20 },
+      { text: "19%", x: 427.1, width: 16 },
+      { text: "1.492", x: 477.1, width: 20 },
+      { text: "785.000", x: 550, width: 28.9 },
+    ]),
+    ...row(1, 262.4, [
+      { text: "Total Item", x: 26.2, width: 35.7 },
+      { text: "6", x: 80.3, width: 4.4 },
+      { text: "SUBTOTAL", x: 361.4, width: 43 },
+      { text: "3.726.500", x: 543.3, width: 35.5 },
+    ]),
+    ...row(1, 248.8, [
+      { text: "Valor en Letras", x: 23.4, width: 58 },
+      { text: "DESCUENTO", x: 361.4, width: 50.2 },
+      { text: "0", x: 574.6, width: 4.4 },
+    ]),
+    ...row(1, 237.7, [
+      { text: "IVA", x: 361.4, width: 13.4 },
+      { text: "708.035", x: 550.1, width: 28.9 },
+    ]),
+    ...row(1, 225.2, [
+      { text: "TREINTA Y CINCO PESOS M/CTE", x: 23.6, width: 127.3 },
+      { text: "TOTAL DE LA OPERACIÓN", x: 361.4, width: 102.5 },
+      { text: "4.434.535", x: 543.3, width: 35.5 },
+    ]),
+  ];
+}
 
 function lastraItems(): PdfTextItem[] {
   return [
