@@ -1,3 +1,4 @@
+import { payableBalanceDue, roundMoney } from "@/lib/payable-balance";
 import { requireUser } from "@/utils/supabase/require-user";
 import type { UserRole } from "@/components/layout/sidebar";
 
@@ -17,6 +18,44 @@ function safeSum(values: (number | null | undefined)[]): number {
   return values.reduce<number>(
     (acc, v) => acc + (typeof v === "number" && !Number.isNaN(v) ? v : 0),
     0
+  );
+}
+
+async function sumPendingPayableBalances(
+  supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
+  pendingRows: Array<{ id?: string; invoice_amount?: number | null }>,
+): Promise<number> {
+  const ids = pendingRows.map((row) => row.id).filter((id): id is string => Boolean(id));
+  const paidByPayable = new Map<string, number>();
+
+  if (ids.length > 0) {
+    const { data } = await supabase
+      .from("payable_payments")
+      .select("account_payable_id, amount_paid")
+      .in("account_payable_id", ids);
+
+    for (const payment of data ?? []) {
+      const id = String(
+        (payment as { account_payable_id?: string }).account_payable_id ?? "",
+      );
+      if (!id) continue;
+      paidByPayable.set(
+        id,
+        roundMoney(
+          (paidByPayable.get(id) ?? 0) +
+            (Number((payment as { amount_paid?: number }).amount_paid) || 0),
+        ),
+      );
+    }
+  }
+
+  return safeSum(
+    pendingRows.map((row) =>
+      payableBalanceDue(
+        Number(row.invoice_amount) || 0,
+        row.id ? (paidByPayable.get(row.id) ?? 0) : 0,
+      ),
+    ),
   );
 }
 
@@ -50,7 +89,7 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
         supabase.from("bank_accounts").select("current_balance"),
         supabase
           .from("accounts_payable")
-          .select("invoice_amount")
+          .select("id, invoice_amount")
           .eq("status", "pending"),
         supabase
           .from("accounts_receivable")
@@ -59,7 +98,10 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
       ]);
 
       bankBalanceTotal = safeSum((bankRes.data ?? []).map((r) => r.current_balance));
-      accountsPayableTotal = safeSum((payablesRes.data ?? []).map((r) => r.invoice_amount));
+      accountsPayableTotal = await sumPendingPayableBalances(
+        supabase,
+        payablesRes.data ?? [],
+      );
       accountsReceivableTotal = safeSum((receivablesRes.data ?? []).map((r) => r.total_amount));
     }
 
@@ -138,7 +180,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       const [payablesRes, overdueRes] = await Promise.all([
         supabase
           .from("accounts_payable")
-          .select("invoice_amount")
+          .select("id, invoice_amount")
           .eq("status", "pending"),
         supabase
           .from("accounts_payable")
@@ -147,8 +189,9 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
           .lt("due_date", today),
       ]);
 
-      result.pendingPayables = safeSum(
-        (payablesRes.data ?? []).map((r) => r.invoice_amount)
+      result.pendingPayables = await sumPendingPayableBalances(
+        supabase,
+        payablesRes.data ?? [],
       );
       result.overduePayablesCount = overdueRes.count ?? 0;
     }

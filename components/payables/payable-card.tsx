@@ -15,6 +15,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  getPayablePaymentStatus,
+  payableStatusLabel,
+} from "@/lib/payable-balance";
 import type { PayableWithSupplier } from "@/app/dashboard/payables/actions";
 
 export type DuePriority = "overdue" | "today" | "ok";
@@ -28,9 +32,17 @@ export const cardVariants = {
   },
 };
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === "paid") {
+function StatusBadge({ row }: { row: PayableWithSupplier }) {
+  const paymentStatus = getPayablePaymentStatus(row);
+  if (paymentStatus === "paid") {
     return <Badge variant="success">Pagada</Badge>;
+  }
+  if (paymentStatus === "partial") {
+    return (
+      <Badge className="border-transparent bg-sky-600 text-white shadow hover:bg-sky-600/90">
+        Abono parcial
+      </Badge>
+    );
   }
   return <Badge variant="warning">Pendiente</Badge>;
 }
@@ -123,12 +135,14 @@ export function PayableCard({
               row.status === "paid" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
             )}
           >
-            {formatCop(row.invoice_amount)}
+            {formatCop(row.status === "paid" ? row.invoice_amount : row.balance_due)}
           </span>
         </div>
         <div className="mt-1 flex items-center gap-1.5">
           {row.status === "paid" ? (
             <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
+          ) : getPayablePaymentStatus(row) === "partial" ? (
+            <span className="size-1.5 rounded-full bg-sky-500" aria-hidden />
           ) : priority === "overdue" ? (
             <span className="size-1.5 rounded-full bg-destructive" aria-hidden />
           ) : priority === "today" ? (
@@ -137,7 +151,7 @@ export function PayableCard({
             <span className="size-1.5 rounded-full bg-primary/60" aria-hidden />
           )}
           <span className="text-[10px] text-muted-foreground capitalize">
-            {row.status === "paid" ? "Pagada" : "Pendiente"}
+            {payableStatusLabel(getPayablePaymentStatus(row))}
           </span>
         </div>
       </button>
@@ -175,14 +189,24 @@ export function PayableCard({
             </p>
           </div>
           <div className="absolute top-2.5 right-2.5">
-            <StatusBadge status={row.status} />
+            <StatusBadge row={row} />
           </div>
         </header>
 
         <div className="p-4 flex flex-col gap-3">
           <p className="text-2xl font-black tabular-nums text-foreground text-center leading-tight">
-            {formatCop(row.invoice_amount)}
+            {formatCop(
+              row.status === "paid" ? row.invoice_amount : row.balance_due,
+            )}
           </p>
+          {getPayablePaymentStatus(row) === "partial" ? (
+            <p className="text-center text-xs text-muted-foreground">
+              Saldo de {formatCop(row.invoice_amount)} · abonado{" "}
+              {formatCop(row.amount_paid_total)}
+            </p>
+          ) : row.status !== "paid" ? (
+            <p className="text-center text-xs text-muted-foreground">Por pagar</p>
+          ) : null}
           <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <Calendar className="w-3.5 h-3.5 shrink-0" />
@@ -218,7 +242,7 @@ export function PayableCard({
             onClick={onRegisterPayment}
           >
             <CreditCard className="size-3.5" />
-            Registrar Pago
+            {getPayablePaymentStatus(row) === "partial" ? "Abonar / Pagar" : "Registrar Pago"}
           </Button>
         )}
         <Button

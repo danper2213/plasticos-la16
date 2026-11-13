@@ -2,17 +2,32 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { ScanLine } from "lucide-react";
+import { Mic, ScanLine } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { BUSINESS_NAME } from "@/lib/business-location";
 import { PRODUCTS_LIST_SALE_UTILITY_PERCENT } from "@/lib/products-voice-announce";
+import { parseVoiceProductRequest } from "@/lib/products-voice-query";
 import { unitPriceFromCostAndUtilityPercent } from "@/lib/quotes/pricing";
 import {
   getProductByScanCode,
+  searchProductsForKioskVoice,
   type ProductWithRelations,
 } from "@/app/dashboard/products/actions";
 import { KIOSK_SCREENSAVER_IDLE_MS } from "@/app/kiosco/kiosk-banners";
 import { KioskScreensaver } from "@/app/kiosco/kiosk-screensaver";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import {
+  buildKioskDisambiguationPrompt,
+  buildKioskPriceSpeech,
+  resolveKioskVoiceChoice,
+} from "@/lib/kiosk-voice";
+import {
+  applyNaturalSpeechSettings,
+  pickBestSpanishVoice,
+  softenTextForSpeech,
+  utteranceLangForVoice,
+} from "@/lib/speech-voice";
 import { cn } from "@/lib/utils";
 
 /** Tras dejar de escribir (lector o teclado), busca sin Enter. */
@@ -23,6 +38,8 @@ const MIN_CHARS_AUTO_SEARCH = 3;
 const SUCCESS_RESET_MS = 7000;
 /** Vuelve a la espera si el código no está registrado. */
 const NOT_FOUND_RESET_MS = 4000;
+/** Tiempo para elegir entre opciones por voz/toque. */
+const CHOICE_RESET_MS = 22000;
 
 const copFormatter = new Intl.NumberFormat("es-CO", {
   style: "currency",
@@ -143,23 +160,6 @@ function getSpeechSynthesis(): SpeechSynthesis | null {
   return window.speechSynthesis;
 }
 
-function pickSpanishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  const norm = (voice: SpeechSynthesisVoice) => voice.lang.replace("_", "-").toLowerCase();
-  return (
-    voices.find((voice) => norm(voice) === "es-co" || norm(voice).startsWith("es-co")) ??
-    voices.find((voice) => norm(voice) === "es-es" || norm(voice).startsWith("es-es")) ??
-    voices.find((voice) => norm(voice).startsWith("es")) ??
-    null
-  );
-}
-
-function utteranceLangForVoice(voice: SpeechSynthesisVoice | null): "es-CO" | "es-ES" {
-  if (!voice) return "es-CO";
-  const lang = voice.lang.replace("_", "-");
-  if (/^es-CO/i.test(lang)) return "es-CO";
-  return "es-ES";
-}
-
 function cancelKioskSpeech() {
   if (speakTimeoutId != null) {
     window.clearTimeout(speakTimeoutId);
@@ -185,10 +185,13 @@ function primeSpeechSynthesis() {
   synth.speak(prime);
 }
 
-function speakKioskMessage(text: string) {
+function speakKioskMessage(text: string, onEnd?: () => void) {
   const synth = getSpeechSynthesis();
-  const phrase = text.trim();
-  if (!synth || !phrase) return;
+  const phrase = softenTextForSpeech(text);
+  if (!synth || !phrase) {
+    onEnd?.();
+    return;
+  }
 
   cancelKioskSpeech();
 
@@ -203,13 +206,13 @@ function speakKioskMessage(text: string) {
     }
 
     const voices = synth.getVoices();
-    const voice = pickSpanishVoice(voices);
+    const voice = pickBestSpanishVoice(voices);
     const utterance = new SpeechSynthesisUtterance(phrase);
     if (voice) utterance.voice = voice;
     utterance.lang = utteranceLangForVoice(voice);
-    utterance.rate = 0.95;
-    utterance.pitch = 1;
-    utterance.volume = 1;
+    applyNaturalSpeechSettings(utterance);
+    utterance.onend = () => onEnd?.();
+    utterance.onerror = () => onEnd?.();
     synth.speak(utterance);
   };
 
@@ -224,12 +227,16 @@ function speakKioskMessage(text: string) {
 }
 
 function kioskResultSpeech(product: ProductWithRelations | null, missing: boolean): string | null {
-  if (missing) return "Producto no encontrado";
+  if (missing) return "No encontré ese producto. Consultá con nuestro personal.";
   if (!product) return null;
-  const name = product.name.trim() || "Producto";
-  const price = resolveKioskSalePrice(product);
-  if (price == null) return `${name}, consultar precio en caja`;
-  return `${name}, ${price.toLocaleString("es-CO")} pesos`;
+  return buildKioskPriceSpeech(product.name, resolveKioskSalePrice(product));
+}
+
+function candidateMeta(product: ProductWithRelations): string {
+  return [product.supplier_name, product.presentation, product.packaging]
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter((v) => v && v !== "—")
+    .join(" · ");
 }
 
 export function PriceKioskClient() {
@@ -244,10 +251,37 @@ export function PriceKioskClient() {
 
   const [value, setValue] = React.useState("");
   const [product, setProduct] = React.useState<ProductWithRelations | null>(null);
+  const [candidates, setCandidates] = React.useState<ProductWithRelations[]>([]);
+  const [voiceHint, setVoiceHint] = React.useState("");
+  /** Último texto reconocido (para testeo en pantalla). */
+  const [lastHeard, setLastHeard] = React.useState("");
   const [notFound, setNotFound] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [resultNonce, setResultNonce] = React.useState(0);
   const [isIdle, setIsIdle] = React.useState(false);
+  const [awaitingChoice, setAwaitingChoice] = React.useState(false);
+  const [listenMode, setListenMode] = React.useState<"search" | "choice">("search");
+
+  const candidatesRef = React.useRef<ProductWithRelations[]>([]);
+  const awaitingChoiceRef = React.useRef(false);
+  const listenModeRef = React.useRef<"search" | "choice">("search");
+  const startListenAfterSpeakRef = React.useRef(false);
+  const recognitionRef = React.useRef<{
+    start: () => void;
+    stop: () => void;
+    abort: () => void;
+  }>({
+    start: () => undefined,
+    stop: () => undefined,
+    abort: () => undefined,
+  });
+  const handleVoiceFinalRef = React.useRef<((text: string) => void | Promise<void>) | null>(
+    null,
+  );
+
+  candidatesRef.current = candidates;
+  awaitingChoiceRef.current = awaitingChoice;
+  listenModeRef.current = listenMode;
 
   const focusInput = React.useCallback(() => {
     inputRef.current?.focus();
@@ -290,6 +324,16 @@ export function PriceKioskClient() {
     [focusInput, scheduleScreensaver],
   );
 
+  const clearResultState = React.useCallback(() => {
+    setProduct(null);
+    setCandidates([]);
+    setAwaitingChoice(false);
+    setNotFound(false);
+    setVoiceHint("");
+    setListenMode("search");
+    startListenAfterSpeakRef.current = false;
+  }, []);
+
   const scheduleIdleReset = React.useCallback(
     (delayMs: number) => {
       clearResultResetTimeout();
@@ -297,8 +341,8 @@ export function PriceKioskClient() {
       resultResetTimeoutRef.current = window.setTimeout(() => {
         resultResetTimeoutRef.current = null;
         cancelKioskSpeech();
-        setProduct(null);
-        setNotFound(false);
+        recognitionRef.current.abort();
+        clearResultState();
         setValue("");
         scanBufferRef.current = "";
         focusInput();
@@ -307,7 +351,28 @@ export function PriceKioskClient() {
         scheduleScreensaver();
       }, delayMs);
     },
-    [clearResultResetTimeout, clearScreensaverTimer, focusInput, scheduleScreensaver],
+    [
+      clearResultResetTimeout,
+      clearScreensaverTimer,
+      clearResultState,
+      focusInput,
+      scheduleScreensaver,
+    ],
+  );
+
+  const showProductResult = React.useCallback(
+    (row: ProductWithRelations) => {
+      setCandidates([]);
+      setAwaitingChoice(false);
+      setListenMode("search");
+      setProduct(row);
+      setNotFound(false);
+      setVoiceHint("");
+      setResultNonce((n) => n + 1);
+      playScanSuccess();
+      scheduleIdleReset(SUCCESS_RESET_MS);
+    },
+    [scheduleIdleReset],
   );
 
   const beginNewScanInput = React.useCallback(() => {
@@ -317,9 +382,146 @@ export function PriceKioskClient() {
     focusInput();
   }, [clearResultResetTimeout, dismissScreensaver, focusInput]);
 
+  const recognition = useSpeechRecognition({
+    lang: "es-CO",
+    onInterim: (text) => {
+      setVoiceHint(text);
+      setLastHeard(text);
+    },
+    onFinal: (text) => {
+      const trimmed = text.trim();
+      if (trimmed) {
+        setVoiceHint(trimmed);
+        setLastHeard(trimmed);
+      }
+      void handleVoiceFinalRef.current?.(text);
+    },
+    onError: (message) => {
+      setVoiceHint(message);
+      setLastHeard(message);
+      playScanNotFound();
+      scheduleIdleReset(NOT_FOUND_RESET_MS);
+    },
+  });
+  recognitionRef.current = recognition;
+
+  const askWhichOption = React.useCallback(
+    (rows: ProductWithRelations[]) => {
+      setProduct(null);
+      setNotFound(false);
+      setCandidates(rows);
+      setAwaitingChoice(true);
+      setListenMode("choice");
+      setResultNonce((n) => n + 1);
+      playScanSuccess();
+      scheduleIdleReset(CHOICE_RESET_MS);
+      const prompt = buildKioskDisambiguationPrompt(rows);
+      startListenAfterSpeakRef.current = true;
+      speakKioskMessage(prompt, () => {
+        if (!startListenAfterSpeakRef.current) return;
+        startListenAfterSpeakRef.current = false;
+        recognitionRef.current.start();
+      });
+    },
+    [scheduleIdleReset],
+  );
+
+  const resolveVoiceQuery = React.useCallback(
+    async (raw: string) => {
+      const parsed = parseVoiceProductRequest(raw);
+      const query = parsed.query.trim();
+      if (!query) {
+        speakKioskMessage("No entendí el producto. Decime el nombre otra vez.");
+        return;
+      }
+
+      unlockKioskAudio();
+      clearResultResetTimeout();
+      cancelKioskSpeech();
+      dismissScreensaver({ restartTimer: false });
+      loadingRef.current = true;
+      setLoading(true);
+      setVoiceHint(query);
+      clearResultState();
+
+      try {
+        const rows = await searchProductsForKioskVoice(query, 5);
+        if (rows.length === 0) {
+          setNotFound(true);
+          setResultNonce((n) => n + 1);
+          playScanNotFound();
+          scheduleIdleReset(NOT_FOUND_RESET_MS);
+          return;
+        }
+        if (rows.length === 1) {
+          showProductResult(rows[0]!);
+          return;
+        }
+        askWhichOption(rows);
+      } finally {
+        loadingRef.current = false;
+        setLoading(false);
+        focusInput();
+      }
+    },
+    [
+      askWhichOption,
+      clearResultResetTimeout,
+      clearResultState,
+      dismissScreensaver,
+      focusInput,
+      scheduleIdleReset,
+      showProductResult,
+    ],
+  );
+
+  const handleVoiceFinal = React.useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+
+      if (listenModeRef.current === "choice" && awaitingChoiceRef.current) {
+        const chosen = resolveKioskVoiceChoice(trimmed, candidatesRef.current);
+        if (chosen) {
+          const full =
+            candidatesRef.current.find((p) => p.id === chosen.id) ?? null;
+          if (full) {
+            showProductResult(full);
+            return;
+          }
+        }
+        speakKioskMessage(
+          "No entendí la opción. Decime el número, por ejemplo opción uno, o el proveedor.",
+          () => recognitionRef.current.start(),
+        );
+        scheduleIdleReset(CHOICE_RESET_MS);
+        return;
+      }
+
+      await resolveVoiceQuery(trimmed);
+    },
+    [resolveVoiceQuery, scheduleIdleReset, showProductResult],
+  );
+
+  handleVoiceFinalRef.current = handleVoiceFinal;
+
+  function startVoiceSearch() {
+    unlockKioskAudio();
+    cancelKioskSpeech();
+    clearResultResetTimeout();
+    dismissScreensaver({ restartTimer: false });
+    setListenMode("search");
+    setAwaitingChoice(false);
+    setCandidates([]);
+    setProduct(null);
+    setNotFound(false);
+    setVoiceHint("Escuchando…");
+    recognition.start();
+  }
+
   React.useEffect(() => {
     focusInput();
-  }, [focusInput, product, notFound, loading, isIdle]);
+  }, [focusInput, product, notFound, loading, isIdle, candidates.length]);
 
   React.useEffect(() => {
     const synth = getSpeechSynthesis();
@@ -348,23 +550,21 @@ export function PriceKioskClient() {
       unlockKioskAudio();
       clearResultResetTimeout();
       cancelKioskSpeech();
+      recognitionRef.current.abort();
       dismissScreensaver({ restartTimer: false });
       loadingRef.current = true;
       setLoading(true);
+      clearResultState();
       setValue("");
       scanBufferRef.current = "";
 
       try {
         const row = await getProductByScanCode(code);
-        setResultNonce((n) => n + 1);
         if (row) {
-          setProduct(row);
-          setNotFound(false);
-          playScanSuccess();
-          scheduleIdleReset(SUCCESS_RESET_MS);
+          showProductResult(row);
         } else {
-          setProduct(null);
           setNotFound(true);
+          setResultNonce((n) => n + 1);
           playScanNotFound();
           scheduleIdleReset(NOT_FOUND_RESET_MS);
         }
@@ -377,7 +577,14 @@ export function PriceKioskClient() {
         if (pending) void resolveScan(pending);
       }
     },
-    [clearResultResetTimeout, dismissScreensaver, focusInput, scheduleIdleReset],
+    [
+      clearResultResetTimeout,
+      clearResultState,
+      dismissScreensaver,
+      focusInput,
+      scheduleIdleReset,
+      showProductResult,
+    ],
   );
 
   React.useEffect(() => {
@@ -461,22 +668,25 @@ export function PriceKioskClient() {
       if (phrase) speakKioskMessage(phrase);
       return;
     }
-    if (notFound) {
-      speakKioskMessage("Producto no encontrado");
+      if (notFound) {
+      speakKioskMessage("No encontré ese producto. Consultá con nuestro personal.");
       return;
     }
+    // No cancelar: la desambiguación por voz ya habla en askWhichOption.
+    if (awaitingChoice || candidates.length > 0) return;
     cancelKioskSpeech();
-  }, [product, notFound, resultNonce]);
+  }, [product, notFound, resultNonce, awaitingChoice, candidates.length]);
 
   React.useEffect(() => {
     return () => {
       clearResultResetTimeout();
       clearScreensaverTimer();
       cancelKioskSpeech();
+      recognitionRef.current.stop();
     };
   }, [clearResultResetTimeout, clearScreensaverTimer]);
 
-  const showingResult = Boolean(product || notFound);
+  const showingResult = Boolean(product || notFound || candidates.length > 0);
   showingResultRef.current = showingResult;
 
   React.useEffect(() => {
@@ -506,9 +716,13 @@ export function PriceKioskClient() {
   const unit = product ? salesUnit(product) : null;
   const salePrice = product ? resolveKioskSalePrice(product) : null;
   const captureHidden = showingResult || isIdle;
+  const liveHeard =
+    recognition.status === "listening"
+      ? voiceHint || "…"
+      : lastHeard;
   return (
     <div
-      className="flex min-h-screen select-none items-center justify-center bg-background p-4 sm:p-8"
+      className="flex min-h-screen select-none items-center justify-center bg-background p-4 sm:p-8 pb-28"
       onClick={() => {
         unlockKioskAudio();
         focusInput();
@@ -562,6 +776,81 @@ export function PriceKioskClient() {
           </article>
         ) : null}
 
+        {!product && candidates.length > 0 ? (
+          <article className="w-full rounded-3xl border border-border bg-card px-5 py-8 text-center shadow-xl sm:px-10 sm:py-10">
+            <h2 className="text-2xl font-bold text-foreground sm:text-3xl">
+              ¿Cuál producto es?
+            </h2>
+            <p className="mt-2 text-base text-muted-foreground sm:text-lg">
+              Toca una opción o dilo en voz alta (número o proveedor)
+            </p>
+            <ul className="mt-6 space-y-3 text-left">
+              {candidates.map((row, index) => {
+                const meta = candidateMeta(row);
+                return (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-3 rounded-2xl border border-border bg-background/80 px-4 py-4 text-left transition hover:border-primary hover:bg-primary/10"
+                      onClick={() => {
+                        unlockKioskAudio();
+                        cancelKioskSpeech();
+                        recognitionRef.current.stop();
+                        showProductResult(row);
+                      }}
+                    >
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-lg font-black text-primary">
+                        {index + 1}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-lg font-semibold leading-snug text-foreground">
+                          {row.name}
+                        </span>
+                        {meta ? (
+                          <span className="mt-1 block text-sm text-muted-foreground">
+                            {meta}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {recognition.supported ? (
+              <Button
+                type="button"
+                size="lg"
+                variant="secondary"
+                className="mt-6 h-12 gap-2 rounded-2xl px-6"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  unlockKioskAudio();
+                  cancelKioskSpeech();
+                  setListenMode("choice");
+                  setAwaitingChoice(true);
+                  setVoiceHint("Escuchando…");
+                  scheduleIdleReset(CHOICE_RESET_MS);
+                  recognition.start();
+                }}
+              >
+                <Mic className="size-5" aria-hidden />
+                {recognition.status === "listening" ? "Escuchando…" : "Decir opción"}
+              </Button>
+            ) : null}
+            <div
+              className="mt-8 h-1.5 w-full overflow-hidden rounded-full bg-muted"
+              aria-hidden
+            >
+              <div
+                key={resultNonce}
+                className="kiosk-countdown-bar h-full rounded-full bg-primary"
+                style={{ animationDuration: `${CHOICE_RESET_MS}ms` }}
+              />
+            </div>
+          </article>
+        ) : null}
+
         {notFound ? (
           <article className="w-full rounded-3xl border border-border bg-card px-6 py-12 text-center shadow-xl sm:px-12">
             <p className="text-2xl font-bold leading-snug text-foreground">
@@ -586,12 +875,32 @@ export function PriceKioskClient() {
               Consulta de Precios
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-lg text-muted-foreground sm:text-2xl">
-              Acerca el código de barras del producto al lector
+              Escanea el código o di el nombre del producto
             </p>
             {loading ? (
               <p className="mt-8 text-base font-medium text-muted-foreground sm:text-lg">
                 Consultando…
               </p>
+            ) : null}
+            {recognition.supported ? (
+              <Button
+                type="button"
+                size="lg"
+                variant={recognition.status === "listening" ? "default" : "secondary"}
+                className="mt-8 h-14 gap-2 rounded-2xl px-8 text-lg"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (recognition.status === "listening") {
+                    recognition.abort();
+                    setVoiceHint("");
+                    return;
+                  }
+                  startVoiceSearch();
+                }}
+              >
+                <Mic className="size-5" aria-hidden />
+                {recognition.status === "listening" ? "Detener" : "Buscar por voz"}
+              </Button>
             ) : null}
           </div>
           <form
@@ -630,6 +939,43 @@ export function PriceKioskClient() {
           </form>
         </section>
       </div>
+
+      {/* Panel de testeo: qué escuchó el micrófono */}
+      {!isIdle ? (
+        <div
+          className="fixed inset-x-0 bottom-0 z-[60] border-t border-amber-500/40 bg-amber-950/95 px-4 py-3 text-amber-50 shadow-lg backdrop-blur-sm"
+          onClick={(e) => e.stopPropagation()}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="mx-auto flex max-w-3xl items-start gap-3">
+            <Mic
+              className={cn(
+                "mt-0.5 size-5 shrink-0",
+                recognition.status === "listening"
+                  ? "animate-pulse text-amber-300"
+                  : "text-amber-500/80",
+              )}
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold tracking-wider text-amber-400/90 uppercase">
+                {recognition.status === "listening"
+                  ? "Escuchando ahora"
+                  : lastHeard
+                    ? "Último escuchado"
+                    : "Micrófono (testeo)"}
+                {listenMode === "choice" && candidates.length > 0
+                  ? " · eligiendo opción"
+                  : null}
+              </p>
+              <p className="mt-0.5 break-words text-base font-medium leading-snug sm:text-lg">
+                {liveHeard || "Tocá «Buscar por voz» y hablá para ver el texto aquí."}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

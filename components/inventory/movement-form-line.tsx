@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useFormContext } from "react-hook-form";
 import {
-  Package,
   Trash2,
   Minus,
   Plus,
@@ -11,8 +10,7 @@ import {
   ArrowUpRight,
   RefreshCw,
   AlertTriangle,
-  ChevronDown,
-  ArrowRight,
+  ChevronRight,
   Search,
 } from "lucide-react";
 import {
@@ -70,6 +68,22 @@ function commitLineQuantity(value: number): number {
 
 function productMetaLabel(p: ProductSearchHit): string {
   return [p.supplier_name, formatPackagingDescriptor(p.packaging)].filter(Boolean).join(" · ");
+}
+
+function highlightMatch(text: string, query: string): React.ReactNode {
+  const needle = query.trim();
+  if (needle.length < 2) return text;
+  const index = text.toLowerCase().indexOf(needle.toLowerCase());
+  if (index < 0) return text;
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded-sm bg-primary/20 px-0.5 text-foreground">
+        {text.slice(index, index + needle.length)}
+      </mark>
+      {text.slice(index + needle.length)}
+    </>
+  );
 }
 
 export interface MovementFormLineProps {
@@ -319,12 +333,28 @@ export function MovementFormLine({
 
   const previewTone =
     movementType === "in"
-      ? "border-emerald-500/30 bg-emerald-500/5"
+      ? "border-emerald-500/25 bg-emerald-500/[0.06]"
       : movementType === "out"
         ? violatesStock
-          ? "border-destructive/40 bg-destructive/5"
-          : "border-border bg-muted/40"
-      : "border-amber-500/30 bg-amber-500/5";
+          ? "border-destructive/40 bg-destructive/10"
+          : "border-rose-500/20 bg-rose-500/[0.06]"
+        : "border-amber-500/25 bg-amber-500/[0.06]";
+
+  const movementDeltaClass =
+    movementType === "in"
+      ? "text-emerald-700 dark:text-emerald-300"
+      : movementType === "out"
+        ? violatesStock
+          ? "text-destructive"
+          : "text-rose-700 dark:text-rose-300"
+        : "text-amber-800 dark:text-amber-300";
+
+  const typeBadgeClass =
+    movementType === "in"
+      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+      : movementType === "out"
+        ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+        : "bg-amber-500/15 text-amber-800 dark:text-amber-300";
 
   const compactQuantityLabel = selectedProduct
     ? usesQuantityUnitSelector
@@ -344,8 +374,8 @@ export function MovementFormLine({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-card/50 transition-shadow",
-        compact ? "p-2" : "p-3 space-y-3",
+        "rounded-2xl border bg-card/60 transition-shadow",
+        compact ? "px-2 py-1.5" : "p-4 space-y-4",
         violatesStock || lineValidation?.severity === "error"
           ? "border-destructive/50"
           : "border-border",
@@ -353,34 +383,38 @@ export function MovementFormLine({
       onFocusCapture={!compact && showCollapseChrome ? () => onActivateLine() : undefined}
     >
       {compact ? (
-        <div className="flex items-stretch gap-2">
+        <div className="flex items-center gap-1">
           <button
             type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/80 bg-background px-2.5 py-2 text-left hover:bg-muted/50"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-muted/50"
             onClick={onActivateLine}
           >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] font-bold">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold tabular-nums">
               {index + 1}
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{selectedProduct?.name ?? "Producto"}</p>
               <p className="truncate text-xs text-muted-foreground">
-                {MOVEMENT_TYPE_LABELS[movementType]} · {compactQuantityLabel}
-                {showPreview && afterLabel ? ` → ${afterLabel}` : ""}
+                {compactQuantityLabel}
+                {showPreview && afterLabel ? ` · queda ${afterLabel}` : ""}
               </p>
             </div>
-            <ChevronDown className="size-4 shrink-0 -rotate-90 text-muted-foreground" />
+            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", typeBadgeClass)}>
+              {MOVEMENT_TYPE_LABELS[movementType]}
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </button>
           {canRemove ? (
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="size-9 shrink-0 text-destructive"
+              className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove();
               }}
+              aria-label={`Quitar línea ${index + 1}`}
             >
               <Trash2 className="size-4" />
             </Button>
@@ -389,22 +423,20 @@ export function MovementFormLine({
       ) : null}
 
       <div className={cn("space-y-3", compact && "hidden")} aria-hidden={compact}>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Línea {index + 1}
-          </span>
-          {canRemove ? (
+        {canRemove && !selectedProduct ? (
+          <div className="flex justify-end">
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              className="size-8 text-muted-foreground hover:text-destructive"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-destructive"
               onClick={onRemove}
             >
-              <Trash2 className="size-4" />
+              <Trash2 className="size-3.5" />
+              Quitar línea
             </Button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         <FormField
           control={form.control}
@@ -421,28 +453,47 @@ export function MovementFormLine({
                 />
               </FormControl>
               {selectedProduct ? (
-                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-2.5 py-2 min-h-10">
-                  <Package className="size-4 shrink-0 text-primary" aria-hidden />
+                <div className="flex items-start gap-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold tabular-nums">
+                    {index + 1}
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium leading-tight">
+                    <p className="truncate text-sm font-semibold leading-tight">
                       {selectedProduct.name}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {productMetaLabel(selectedProduct) || "Sin empaque configurado"}
                     </p>
+                    <button
+                      type="button"
+                      className="mt-1 text-xs font-medium text-primary hover:underline"
+                      onClick={handleClearProduct}
+                    >
+                      Cambiar producto
+                    </button>
                   </div>
-                  <span className="hidden shrink-0 text-xs font-medium text-primary sm:inline">
-                    {stockLoading ? "Actualizando stock…" : stockDisplay.primary}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 shrink-0 px-2 text-xs"
-                    onClick={handleClearProduct}
-                  >
-                    Cambiar
-                  </Button>
+                  <div className="flex shrink-0 items-start gap-1">
+                    <div className="text-right">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        En bodega
+                      </p>
+                      <p className="text-sm font-semibold tabular-nums">
+                        {stockLoading ? "…" : stockDisplay.primary}
+                      </p>
+                    </div>
+                    {canRemove ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground hover:text-destructive"
+                        onClick={onRemove}
+                        aria-label={`Quitar ${selectedProduct.name}`}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -463,30 +514,49 @@ export function MovementFormLine({
                     />
                   </div>
                   {searchQuery.trim().length >= 2 ? (
-                    <div className="max-h-36 overflow-y-auto rounded-lg border border-border bg-background">
+                    <div className="max-h-64 overflow-y-auto rounded-2xl border border-border bg-card/80">
                       {searching ? (
-                        <p className="py-3 text-center text-xs text-muted-foreground">Buscando…</p>
+                        <p className="px-3 py-6 text-center text-sm text-muted-foreground">Buscando…</p>
                       ) : searchResults.length === 0 ? (
-                        <p className="py-3 text-center text-xs text-muted-foreground">Sin resultados</p>
+                        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                          Ningún producto coincide con “{searchQuery.trim()}”.
+                        </p>
                       ) : (
-                        <ul>
-                          {searchResults.map((p) => (
-                            <li key={p.id}>
-                              <button
-                                type="button"
-                                className="w-full px-2.5 py-2 text-left hover:bg-muted/50 border-b border-border/50 last:border-0"
-                                onClick={() => handleSelectProduct(p)}
-                              >
-                                <p className="text-sm font-medium leading-snug">{p.name}</p>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {productMetaLabel(p)}
-                                  {p.stock_quantity != null
-                                    ? ` · ${getStockDisplayInfo(p.stock_quantity, p.packaging, p.presentation).primary}`
-                                    : ""}
-                                </p>
-                              </button>
-                            </li>
-                          ))}
+                        <ul className="divide-y divide-border/70">
+                          {searchResults.map((p) => {
+                            const stockLabel =
+                              p.stock_quantity == null
+                                ? "Sin saldo"
+                                : getStockDisplayInfo(
+                                    p.stock_quantity,
+                                    p.packaging,
+                                    p.presentation,
+                                  ).primary;
+                            return (
+                              <li key={p.id}>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+                                  onClick={() => handleSelectProduct(p)}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-semibold leading-tight">
+                                      {highlightMatch(p.name, searchQuery)}
+                                    </p>
+                                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                      {productMetaLabel(p) || "Sin empaque configurado"}
+                                    </p>
+                                  </div>
+                                  <div className="shrink-0 text-right">
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                      En bodega
+                                    </p>
+                                    <p className="text-sm font-semibold tabular-nums">{stockLabel}</p>
+                                  </div>
+                                </button>
+                              </li>
+                            );
+                          })}
                         </ul>
                       )}
                     </div>
@@ -520,8 +590,8 @@ export function MovementFormLine({
                         onChange={(e) => field.onChange(e.target.value as MovementType)}
                       />
                     </FormControl>
-                    <FormLabel className="text-xs text-muted-foreground">Movimiento</FormLabel>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <FormLabel className="text-xs font-medium text-muted-foreground">Tipo</FormLabel>
+                    <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted/70 p-1">
                       {MOVEMENT_TYPES.map((type) => {
                         const active = movementType === type;
                         const Icon =
@@ -534,14 +604,21 @@ export function MovementFormLine({
                           <Button
                             key={type + comboboxKey}
                             type="button"
-                            variant={active ? "default" : "outline"}
+                            variant="ghost"
                             size="sm"
                             className={cn(
-                              "h-9 gap-1 rounded-lg px-2 text-xs font-semibold",
-                              active && type === "in" && "bg-emerald-600 hover:bg-emerald-600/90",
-                              active && type === "out" && "bg-red-600 hover:bg-red-600/90",
-                              active && type === "adjustment" && "bg-amber-600 hover:bg-amber-600/90",
+                              "h-9 gap-1 rounded-lg px-2 text-xs font-semibold text-muted-foreground hover:bg-background/70 hover:text-foreground",
+                              active &&
+                                type === "in" &&
+                                "bg-emerald-500/15 text-emerald-700 shadow-sm hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-300 dark:hover:text-emerald-300",
+                              active &&
+                                type === "out" &&
+                                "bg-rose-500/15 text-rose-700 shadow-sm hover:bg-rose-500/20 hover:text-rose-700 dark:text-rose-300 dark:hover:text-rose-300",
+                              active &&
+                                type === "adjustment" &&
+                                "bg-amber-500/15 text-amber-800 shadow-sm hover:bg-amber-500/20 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-300",
                             )}
+                            aria-pressed={active}
                             onClick={() => handleMovementTypeChange(type, field.onChange)}
                           >
                             <Icon className="size-3.5 shrink-0" />
@@ -563,9 +640,9 @@ export function MovementFormLine({
                   const showEmpty = typeof field.value === "number" && field.value === 0;
                   return (
                   <FormItem className="space-y-1.5">
-                    <FormLabel className="text-xs text-muted-foreground">
+                    <FormLabel className="text-xs font-medium text-muted-foreground">
                       Cantidad
-                      <span className="font-normal"> ({entryUnitLabel})</span>
+                      <span className="font-normal"> · {entryUnitLabel}</span>
                     </FormLabel>
                     <div className="flex h-9 items-center gap-1.5">
                       <Button
@@ -624,44 +701,42 @@ export function MovementFormLine({
 
             {usesQuantityUnitSelector && quantityUnitOptions.length > 0 ? (
               <div className="space-y-1.5">
-                <p className="text-xs text-muted-foreground">
-                  {movementType === "in"
-                    ? "Presentación de entrada"
-                    : "Presentación de salida"}
+                <p className="text-xs font-medium text-muted-foreground">
+                  {movementType === "in" ? "Cómo entra" : "Cómo sale"}
                 </p>
                 <div
                   className={cn(
-                    "grid gap-1.5",
+                    "grid gap-2",
                     quantityUnitOptions.length > 1 ? "grid-cols-2" : "grid-cols-1",
                   )}
+                  role="radiogroup"
+                  aria-label={movementType === "in" ? "Presentación de entrada" : "Presentación de salida"}
                 >
                   {quantityUnitOptions.map((opt) => {
                     const active = quantityUnit === opt.value;
                     return (
-                      <Button
+                      <button
                         key={opt.value}
                         type="button"
-                        variant={active ? "default" : "outline"}
-                        size="sm"
-                        className="h-auto min-h-9 flex-col items-start gap-0.5 rounded-lg px-3 py-1.5 text-left"
+                        role="radio"
+                        aria-checked={active}
+                        className={cn(
+                          "flex min-h-11 flex-col items-start justify-center rounded-xl border px-3 py-2 text-left transition-colors",
+                          active
+                            ? "border-foreground/30 bg-background shadow-sm"
+                            : "border-border bg-muted/30 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                        )}
                         onClick={() => handleQuantityUnitChange(opt.value)}
                       >
-                        <span className="text-xs font-semibold leading-tight">
+                        <span className="text-sm font-semibold leading-tight text-foreground">
                           {opt.label}
                         </span>
                         {opt.hint ? (
-                          <span
-                            className={cn(
-                              "text-[10px] font-normal leading-tight",
-                              active
-                                ? "text-primary-foreground/80"
-                                : "text-muted-foreground",
-                            )}
-                          >
+                          <span className="text-[11px] font-normal leading-tight text-muted-foreground">
                             {opt.hint}
                           </span>
                         ) : null}
-                      </Button>
+                      </button>
                     );
                   })}
                 </div>
@@ -670,41 +745,39 @@ export function MovementFormLine({
 
             {showPreview && !stockLoading ? (
               <div
-                className={cn(
-                  "flex flex-col gap-1 rounded-lg border px-3 py-2.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-1",
-                  previewTone,
-                )}
+                className={cn("grid grid-cols-3 divide-x divide-border/70 overflow-hidden rounded-xl border", previewTone)}
                 role="status"
                 aria-live="polite"
               >
-                <span className="text-xs text-muted-foreground sm:sr-only">Vista previa</span>
-                <span className="font-medium tabular-nums">{stockDisplay.primary}</span>
-                <ArrowRight className="hidden size-3.5 text-muted-foreground sm:block" aria-hidden />
-                <span
-                  className={cn(
-                    "font-semibold tabular-nums",
-                    movementType === "in" && "text-emerald-700 dark:text-emerald-400",
-                    movementType === "out" &&
-                      (violatesStock
-                        ? "text-destructive"
-                        : "text-foreground"),
-                    movementType === "adjustment" && "text-amber-800 dark:text-amber-400",
-                  )}
-                >
-                  {movementType === "in" && qtyLabel ? `+${qtyLabel}` : null}
-                  {movementType === "out" && qtyLabel ? `−${qtyLabel}` : null}
-                  {movementType === "adjustment" && qtyLabel ? `→ ${qtyLabel}` : null}
-                </span>
-                <ArrowRight className="hidden size-3.5 text-muted-foreground sm:block" aria-hidden />
-                <span className="text-xs text-muted-foreground sm:mr-1">Quedan</span>
-                <span
-                  className={cn(
-                    "font-bold tabular-nums",
-                    violatesStock ? "text-destructive" : "text-foreground",
-                  )}
-                >
-                  {afterLabel}
-                </span>
+                <div className="px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Antes
+                  </p>
+                  <p className="mt-0.5 text-sm font-semibold tabular-nums">{stockDisplay.primary}</p>
+                </div>
+                <div className="px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Movimiento
+                  </p>
+                  <p className={cn("mt-0.5 text-sm font-semibold tabular-nums", movementDeltaClass)}>
+                    {movementType === "in" && qtyLabel ? `+ ${qtyLabel}` : null}
+                    {movementType === "out" && qtyLabel ? `− ${qtyLabel}` : null}
+                    {movementType === "adjustment" && qtyLabel ? qtyLabel : null}
+                  </p>
+                </div>
+                <div className="px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Quedará
+                  </p>
+                  <p
+                    className={cn(
+                      "mt-0.5 text-sm font-bold tabular-nums",
+                      violatesStock ? "text-destructive" : "text-foreground",
+                    )}
+                  >
+                    {afterLabel}
+                  </p>
+                </div>
               </div>
             ) : null}
 
@@ -720,29 +793,20 @@ export function MovementFormLine({
               </p>
             ) : null}
 
-            <p className="text-[11px] text-muted-foreground text-right">
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
               Costo ref. {formatCop(Number(unitCost ?? 0))}
-              {packagingLabel ? (
-                <span className="ml-2">· Empaque: {packagingLabel}</span>
-              ) : null}
+              {packagingLabel ? <span> · {packagingLabel}</span> : null}
               {usesQuantityUnitSelector &&
               packagingFactor != null &&
-              packagingFactor > 1 ? (
-                <span className="ml-2 block sm:inline">
-                  · {movementType === "in" ? "Entrada" : "Salida"} en{" "}
-                  {quantityUnitOptions.map((o) => o.label).join(" o ")}
-                  {quantityUnit === "unit"
-                    ? ` · ${packagingFactor} ${entryUnitLabel} = 1 ${getInventoryUnitLabel(selectedProduct?.packaging)}`
-                    : " · 1 paca/caja = 1 en stock"}
+              packagingFactor > 1 &&
+              quantityUnit === "unit" ? (
+                <span>
+                  {" "}
+                  · {packagingFactor} {entryUnitLabel} = 1{" "}
+                  {getInventoryUnitLabel(selectedProduct?.packaging)}
                 </span>
-              ) : usesQuantityUnitSelector ? (
-                <span className="ml-2 block sm:inline">
-                  · {movementType === "in" ? "Entrada" : "Salida"} por unidad (1 = 1 en stock)
-                </span>
-              ) : packagingFactor != null ? (
-                <span className="ml-2 block sm:inline">
-                  · 1 {getInventoryUnitLabel(selectedProduct?.packaging)} = 1 unidad de stock
-                </span>
+              ) : usesQuantityUnitSelector && quantityUnit === "pack" ? (
+                <span> · 1 {entryUnitLabel} = 1 en stock</span>
               ) : null}
             </p>
           </>

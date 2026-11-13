@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/utils/supabase/require-user";
 import {
+  isPayableFullyPaid,
+  payableBalanceDue,
+  roundMoney,
+  sumPaymentAmounts,
+} from "@/lib/payable-balance";
+import {
   dueDateSchema,
   payableIdSchema,
   payableSchema,
@@ -43,6 +49,10 @@ export interface PayableWithSupplier extends Omit<PayableRow, "suppliers"> {
   supplier_account_type: string | null;
   supplier_account_number: string | null;
   supplier_bank_agreement: string | null;
+  /** Suma de abonos registrados. */
+  amount_paid_total: number;
+  /** Lo que falta por pagar. Cero si la factura está marcada como pagada. */
+  balance_due: number;
 }
 
 export interface ActiveSupplierOption {
@@ -92,9 +102,42 @@ export async function getPayables(
   }
 
   const rows = (data ?? []) as PayableRow[];
+  const paidByPayable = new Map<string, number>();
+  const payableIds = rows.map((row) => row.id);
+  if (payableIds.length > 0) {
+    const { data: paymentRows, error: paymentsError } = await supabase
+      .from("payable_payments")
+      .select("account_payable_id, amount_paid")
+      .in("account_payable_id", payableIds);
+
+    if (paymentsError) {
+      console.error("getPayables payments error:", paymentsError);
+    } else {
+      for (const payment of paymentRows ?? []) {
+        const id = String(
+          (payment as { account_payable_id?: string }).account_payable_id ?? "",
+        );
+        if (!id) continue;
+        paidByPayable.set(
+          id,
+          roundMoney(
+            (paidByPayable.get(id) ?? 0) +
+              (Number((payment as { amount_paid?: number }).amount_paid) || 0),
+          ),
+        );
+      }
+    }
+  }
+
   const mapped = rows.map((row) => {
     const supplier = row.suppliers;
     const s = Array.isArray(supplier) ? supplier[0] : supplier;
+    const invoiceAmount = Number(row.invoice_amount) || 0;
+    const recordedPaid = paidByPayable.get(row.id) ?? 0;
+    const amount_paid_total =
+      row.status === "paid" && recordedPaid <= 0 ? invoiceAmount : recordedPaid;
+    const balance_due =
+      row.status === "paid" ? 0 : payableBalanceDue(invoiceAmount, amount_paid_total);
     return {
       id: row.id,
       supplier_id: row.supplier_id,
@@ -111,6 +154,8 @@ export async function getPayables(
       supplier_account_type: s?.account_type ?? null,
       supplier_account_number: s?.account_number ?? null,
       supplier_bank_agreement: s?.bank_agreement ?? null,
+      amount_paid_total,
+      balance_due,
     };
   });
 
@@ -326,9 +371,48 @@ export async function createPayment(input: unknown, payableId: string) {
   const data = parsed.data;
   const { supabase } = await requireAdmin();
 
+  const { data: payableRow, error: payableError } = await supabase
+    .from("accounts_payable")
+    .select("id, invoice_amount, status")
+    .eq("id", idParsed.data)
+    .maybeSingle();
+
+  if (payableError) {
+    return { success: false as const, error: payableError.message };
+  }
+  if (!payableRow) {
+    return { success: false as const, error: "No se encontró la factura" };
+  }
+  if (payableRow.status === "paid") {
+    return { success: false as const, error: "Esta factura ya está pagada" };
+  }
+
+  const { data: existingPayments, error: existingError } = await supabase
+    .from("payable_payments")
+    .select("amount_paid")
+    .eq("account_payable_id", idParsed.data);
+
+  if (existingError) {
+    return { success: false as const, error: existingError.message };
+  }
+
+  const invoiceAmount = Number(payableRow.invoice_amount) || 0;
+  const alreadyPaid = sumPaymentAmounts(
+    (existingPayments ?? []).map((row) => (row as { amount_paid?: number }).amount_paid),
+  );
+  const remaining = payableBalanceDue(invoiceAmount, alreadyPaid);
+  const amountPaid = roundMoney(data.amount_paid);
+
+  if (amountPaid > remaining + 0.01) {
+    return {
+      success: false as const,
+      error: `El abono no puede superar el saldo pendiente (${remaining.toLocaleString("es-CO")})`,
+    };
+  }
+
   const { error: insertError } = await supabase.from("payable_payments").insert({
     account_payable_id: idParsed.data,
-    amount_paid: data.amount_paid,
+    amount_paid: amountPaid,
     source_of_funds: data.source_of_funds.trim(),
     payment_date: data.payment_date,
     receipt_url: data.receipt_url?.trim() || null,
@@ -338,9 +422,12 @@ export async function createPayment(input: unknown, payableId: string) {
     return { success: false as const, error: insertError.message };
   }
 
+  const paidAfter = roundMoney(alreadyPaid + amountPaid);
+  const nextStatus = isPayableFullyPaid(invoiceAmount, paidAfter) ? "paid" : "pending";
+
   const { error: updateError } = await supabase
     .from("accounts_payable")
-    .update({ status: "paid", updated_at: new Date().toISOString() })
+    .update({ status: nextStatus, updated_at: new Date().toISOString() })
     .eq("id", idParsed.data);
 
   if (updateError) {
@@ -348,5 +435,6 @@ export async function createPayment(input: unknown, payableId: string) {
   }
 
   revalidatePath("/dashboard/payables");
-  return { success: true as const };
+  revalidatePath("/dashboard");
+  return { success: true as const, fullyPaid: nextStatus === "paid" };
 }

@@ -37,13 +37,22 @@ export const STOP_WORDS = new Set([
 ]);
 
 const MEASURE_UNITS =
-  "oz|ml|cc|lb|kg|g|lt|l|und|unidad|unidades|u|onza|onzas|gramo|gramos|litro|litros";
+  "oz|ml|cc|lb|kg|g|lt|l|und|unidad|unidades|u|onza|onzas|gramo|gramos|litro|litros|metro|metros|mts|mt|cm|mm|m";
 
-/** Une número + unidad: "12 oz" → "12oz", "500 cc" → "500cc" */
+/** Une número + unidad: "12 oz" → "12oz", "300 m" → "300m" */
 const MEASURE_JOIN_RE = new RegExp(
   `(\\d+(?:[.,]\\d+)?)\\s*(${MEASURE_UNITS})\\b`,
   "gi",
 );
+
+/** Une "x 300 m" / "x300 m" / "x 300m" → "x300m" */
+const X_MEASURE_JOIN_RE = new RegExp(
+  `\\bx\\s*(\\d+(?:[.,]\\d+)?)\\s*(${MEASURE_UNITS})\\b`,
+  "gi",
+);
+
+/** Une "x 300" → "x300" cuando no hay unidad. */
+const X_NUMBER_JOIN_RE = /\bx\s+(\d+(?:[.,]\d+)?)\b/g;
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -93,24 +102,25 @@ export function getSearchHighlightSegments(
   const lowerText = text.toLowerCase();
 
   for (const token of tokens) {
-    const lowerToken = token.toLowerCase();
-
-    if (isNumericToken(token)) {
-      const re = new RegExp(`\\b${escapeRegExp(token)}\\b`, "gi");
-      let match: RegExpExecArray | null;
-      while ((match = re.exec(text)) !== null) {
-        ranges.push({
-          start: match.index,
-          end: match.index + match[0].length,
-        });
+    for (const variant of expandSearchTermVariants(token)) {
+      if (isNumericToken(variant)) {
+        const re = new RegExp(`\\b${escapeRegExp(variant)}\\b`, "gi");
+        let match: RegExpExecArray | null;
+        while ((match = re.exec(text)) !== null) {
+          ranges.push({
+            start: match.index,
+            end: match.index + match[0].length,
+          });
+        }
+        continue;
       }
-      continue;
-    }
 
-    let index = 0;
-    while ((index = lowerText.indexOf(lowerToken, index)) !== -1) {
-      ranges.push({ start: index, end: index + token.length });
-      index += token.length || 1;
+      const lowerVariant = variant.toLowerCase();
+      let index = 0;
+      while ((index = lowerText.indexOf(lowerVariant, index)) !== -1) {
+        ranges.push({ start: index, end: index + variant.length });
+        index += variant.length || 1;
+      }
     }
   }
 
@@ -141,8 +151,24 @@ export function getSearchHighlightSegments(
   return segments;
 }
 
+function compactNumberUnit(num: string, unit: string): string {
+  return `${num.replace(",", ".")}${unit.toLowerCase()}`;
+}
+
+function joinMeasures(value: string): string {
+  let next = value.replace(
+    X_MEASURE_JOIN_RE,
+    (_: string, num: string, unit: string) => `x${compactNumberUnit(num, unit)}`,
+  );
+  next = next.replace(MEASURE_JOIN_RE, (_: string, num: string, unit: string) =>
+    compactNumberUnit(num, unit),
+  );
+  next = next.replace(X_NUMBER_JOIN_RE, "x$1");
+  return next;
+}
+
 /**
- * Minúsculas, sin tildes, puntuación como espacio y medidas compactadas (12oz, 1.5kg).
+ * Minúsculas, sin tildes, puntuación como espacio y medidas compactadas (12oz, x300m).
  * Preserva decimales (1.5) antes de eliminar puntuación.
  */
 export function normalizeText(value: string): string {
@@ -150,18 +176,20 @@ export function normalizeText(value: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/×/g, "x")
     .replace(/(\d),(\d)/g, "$1.$2");
 
-  // Unir medida antes de quitar puntuación: "1.5 kg" → "1.5kg"
-  base = base.replace(MEASURE_JOIN_RE, (_, num: string, unit: string) => {
-    const normalizedNum = num.replace(",", ".");
-    return `${normalizedNum}${unit.toLowerCase()}`;
-  });
+  // Unir medida antes de quitar puntuación: "1.5 kg" → "1.5kg", "x 300 m" → "x300m"
+  base = joinMeasures(base);
 
   // Proteger decimales restantes (ej. "1.5" sin unidad pegada)
   base = base.replace(/(\d)\.(\d)/g, "$1§$2");
   base = base.replace(/[^\p{L}\p{N}§]+/gu, " ");
   base = base.replace(/§/g, ".");
+  base = base.replace(/\s+/g, " ").trim();
+
+  // Segunda pasada por si la puntuación dejó "x 300 m" o "300-m"
+  base = joinMeasures(base);
 
   return base.replace(/\s+/g, " ").trim();
 }
@@ -196,19 +224,61 @@ const COMPACT_MEASURE_RE = new RegExp(
   "i",
 );
 
+const COMPACT_X_MEASURE_RE = new RegExp(
+  `^x(\\d+(?:[.,]\\d+)?)(${MEASURE_UNITS})$`,
+  "i",
+);
+
+const COMPACT_X_NUMBER_RE = /^x(\d+(?:[.,]\d+)?)$/i;
+
+function spacedMeasureVariants(
+  num: string,
+  unit: string | null,
+  prefixX: boolean,
+): string[] {
+  const n = num.replace(",", ".");
+  const variants: string[] = [];
+
+  if (prefixX && unit) {
+    const u = unit.toLowerCase();
+    variants.push(`x${n}${u}`, `x ${n} ${u}`, `x${n} ${u}`, `x ${n}${u}`);
+  } else if (prefixX) {
+    variants.push(`x${n}`, `x ${n}`);
+  } else if (unit) {
+    const u = unit.toLowerCase();
+    variants.push(`${n}${u}`, `${n} ${u}`);
+  }
+
+  return variants;
+}
+
 /**
  * Variantes de un token para ILIKE en Supabase.
- * Ej.: "3oz" → ["3oz", "3 oz"] porque en BD suele guardarse con espacio.
+ * Ej.: "3oz" → ["3oz", "3 oz"]; "x300m" → ["x300m", "x 300 m", ...].
  */
 export function expandSearchTermVariants(term: string): string[] {
   const variants = new Set<string>([term]);
-  const match = COMPACT_MEASURE_RE.exec(term);
+  const xMeasure = COMPACT_X_MEASURE_RE.exec(term);
+  if (xMeasure) {
+    for (const variant of spacedMeasureVariants(xMeasure[1], xMeasure[2], true)) {
+      variants.add(variant);
+    }
+    return [...variants];
+  }
 
+  const xNumber = COMPACT_X_NUMBER_RE.exec(term);
+  if (xNumber) {
+    for (const variant of spacedMeasureVariants(xNumber[1], null, true)) {
+      variants.add(variant);
+    }
+    return [...variants];
+  }
+
+  const match = COMPACT_MEASURE_RE.exec(term);
   if (match) {
-    const num = match[1].replace(",", ".");
-    const unit = match[2].toLowerCase();
-    variants.add(`${num}${unit}`);
-    variants.add(`${num} ${unit}`);
+    for (const variant of spacedMeasureVariants(match[1], match[2], false)) {
+      variants.add(variant);
+    }
   }
 
   return [...variants];
@@ -220,6 +290,22 @@ export function expandSearchTermVariants(term: string): string[] {
  */
 export function getIlikePatternsForSearchTerm(term: string): string[] {
   const escaped = escapeIlikePattern(term);
+
+  const xMeasure = COMPACT_X_MEASURE_RE.exec(term);
+  if (xMeasure) {
+    return spacedMeasureVariants(xMeasure[1], xMeasure[2], true).map(
+      (variant) => `%${escapeIlikePattern(variant)}%`,
+    );
+  }
+
+  if (COMPACT_X_NUMBER_RE.test(term)) {
+    const match = COMPACT_X_NUMBER_RE.exec(term);
+    if (match) {
+      return spacedMeasureVariants(match[1], null, true).map(
+        (variant) => `%${escapeIlikePattern(variant)}%`,
+      );
+    }
+  }
 
   if (COMPACT_MEASURE_RE.test(term)) {
     const match = COMPACT_MEASURE_RE.exec(term);
@@ -239,7 +325,22 @@ export function getIlikePatternsForSearchTerm(term: string): string[] {
       `%${escaped}%`,
     ]);
 
-    for (const unit of ["oz", "ml", "cc", "lt", "l", "und", "kg", "g", "lb"]) {
+    for (const unit of [
+      "oz",
+      "ml",
+      "cc",
+      "lt",
+      "l",
+      "und",
+      "kg",
+      "g",
+      "lb",
+      "m",
+      "mt",
+      "mts",
+      "cm",
+      "mm",
+    ]) {
       patterns.add(`% ${escaped} ${unit}%`);
       patterns.add(`% ${escaped}${unit}%`);
       patterns.add(`${escaped} ${unit}%`);
@@ -293,7 +394,7 @@ function tokenMatchesHaystack(haystack: string, token: string): boolean {
   if (isNumericToken(token)) {
     // "8" coincide con "8" y con la medida compactada "8oz", no con "18" ni "80".
     return new RegExp(
-      `(^|\\s)${escapeRegExp(token)}(?:${MEASURE_UNITS})?($|\\s)`,
+      `(^|\\s|x)${escapeRegExp(token)}(?:${MEASURE_UNITS})?($|\\s)`,
       "u",
     ).test(haystack);
   }

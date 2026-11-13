@@ -1,18 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  applyNaturalSpeechSettings,
+  pickBestSpanishVoice,
+  softenTextForSpeech,
+  utteranceLangForVoice,
+} from "@/lib/speech-voice";
 
 function pickSpanishVoice(): SpeechSynthesisVoice | null {
   if (typeof window === "undefined" || !window.speechSynthesis) return null;
-  const voices = window.speechSynthesis.getVoices();
-  const preferred = ["es-CO", "es-MX", "es-US", "es-AR", "es-ES"];
-  for (const lang of preferred) {
-    const match = voices.find(
-      (voice) => voice.lang.toLowerCase() === lang.toLowerCase(),
-    );
-    if (match) return match;
-  }
-  return voices.find((voice) => voice.lang.toLowerCase().startsWith("es")) ?? null;
+  return pickBestSpanishVoice(window.speechSynthesis.getVoices());
 }
 
 export function useSpeechAnnounce() {
@@ -48,11 +46,11 @@ export function useSpeechAnnounce() {
       }
 
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(phrase);
-      utterance.lang = "es-CO";
-      utterance.rate = 1;
+      const utterance = new SpeechSynthesisUtterance(softenTextForSpeech(phrase));
       const voice = pickSpanishVoice();
       if (voice) utterance.voice = voice;
+      utterance.lang = utteranceLangForVoice(voice);
+      applyNaturalSpeechSettings(utterance);
 
       utterance.onstart = () => setSpeaking(true);
       utterance.onend = () => {

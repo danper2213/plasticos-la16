@@ -28,6 +28,10 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { formatCop } from "@/lib/format";
 import { getDuePriority, type DuePriority } from "@/components/payables/payable-card";
+import {
+  getPayablePaymentStatus,
+  payableStatusLabel,
+} from "@/lib/payable-balance";
 import type { PayableWithSupplier } from "@/app/dashboard/payables/actions";
 
 export type DaySummary = {
@@ -61,8 +65,13 @@ function supplierInitial(name: string): string {
   return t ? t.charAt(0).toUpperCase() : "?";
 }
 
-function priorityAccent(priority: DuePriority, status: string) {
+function priorityAccent(
+  priority: DuePriority,
+  status: string,
+  isPartial: boolean,
+) {
   if (status === "paid") return "from-emerald-500/80 to-emerald-600/40";
+  if (isPartial) return "from-sky-500 to-sky-400/50";
   if (priority === "overdue") return "from-destructive to-destructive/50";
   if (priority === "today") return "from-amber-500 to-amber-400/50";
   return "from-primary/80 to-primary/40";
@@ -84,6 +93,8 @@ function InvoiceRow({
   onDelete: () => void;
 }) {
   const isPaid = row.status === "paid";
+  const paymentStatus = getPayablePaymentStatus(row);
+  const isPartial = paymentStatus === "partial";
 
   return (
     <motion.li variants={rowVariants} layout className="group">
@@ -91,13 +102,17 @@ function InvoiceRow({
         className={cn(
           "relative flex items-stretch gap-0 overflow-hidden rounded-2xl border bg-card/80 backdrop-blur-sm transition-all duration-300",
           "hover:border-primary/35 hover:shadow-lg hover:shadow-primary/5",
-          isPaid ? "border-emerald-500/25" : "border-border/80"
+          isPaid
+            ? "border-emerald-500/25"
+            : isPartial
+              ? "border-sky-500/30"
+              : "border-border/80"
         )}
       >
         <div
           className={cn(
             "w-1 shrink-0 bg-gradient-to-b",
-            priorityAccent(priority, row.status)
+            priorityAccent(priority, row.status, isPartial)
           )}
           aria-hidden
         />
@@ -112,6 +127,8 @@ function InvoiceRow({
               "flex size-11 shrink-0 items-center justify-center rounded-xl text-sm font-black shadow-inner sm:size-12",
               isPaid
                 ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                : isPartial
+                  ? "bg-sky-500/15 text-sky-800 dark:text-sky-300"
                 : priority === "overdue"
                   ? "bg-destructive/15 text-destructive"
                   : priority === "today"
@@ -132,6 +149,8 @@ function InvoiceRow({
                   "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
                   isPaid
                     ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                    : isPartial
+                      ? "bg-sky-500/15 text-sky-800 dark:text-sky-300"
                     : priority === "overdue"
                       ? "bg-destructive/15 text-destructive"
                       : priority === "today"
@@ -139,7 +158,15 @@ function InvoiceRow({
                         : "bg-primary/10 text-primary"
                 )}
               >
-                {isPaid ? "Pagada" : priority === "overdue" ? "Vencida" : priority === "today" ? "Hoy" : "Pendiente"}
+                {isPaid
+                  ? "Pagada"
+                  : isPartial
+                    ? payableStatusLabel("partial")
+                    : priority === "overdue"
+                      ? "Vencida"
+                      : priority === "today"
+                        ? "Hoy"
+                        : "Pendiente"}
               </span>
             </div>
             <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -150,8 +177,13 @@ function InvoiceRow({
 
           <div className="shrink-0 text-right">
             <p className="text-base font-black tabular-nums text-foreground sm:text-lg">
-              {formatCop(row.invoice_amount)}
+              {formatCop(isPaid ? row.invoice_amount : row.balance_due)}
             </p>
+            {isPartial ? (
+              <p className="text-[10px] text-muted-foreground tabular-nums">
+                de {formatCop(row.invoice_amount)}
+              </p>
+            ) : null}
             <span className="mt-0.5 inline-flex items-center gap-0.5 text-[10px] font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100 sm:text-xs">
               Ver detalle
               <ChevronRight className="size-3" />

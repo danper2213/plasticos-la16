@@ -432,6 +432,25 @@ export async function getProductByScanCode(rawCode: string): Promise<ProductWith
   return mapRowToProductWithRelations(data as unknown as Partial<ProductRow>);
 }
 
+/**
+ * Búsqueda por nombre para el kiosco de voz (varias opciones parecidas).
+ */
+export async function searchProductsForKioskVoice(
+  rawQuery: string,
+  limit = 5,
+): Promise<ProductWithRelations[]> {
+  const query = rawQuery.trim();
+  if (query.length < 2) return [];
+
+  const page = await getProductsPage({
+    page: 1,
+    search: query,
+    stockFilter: "all",
+  });
+
+  return page.products.slice(0, Math.min(Math.max(limit, 1), 8));
+}
+
 export async function getProductById(id: string): Promise<ProductWithRelations | null> {
   const { supabase } = await requireUser();
   const { data, error } = await supabase

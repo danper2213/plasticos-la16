@@ -25,6 +25,10 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { getPaymentsByPayable } from "@/app/dashboard/payables/actions";
+import {
+  getPayablePaymentStatus,
+  payableStatusLabel,
+} from "@/lib/payable-balance";
 import type { PayableWithSupplier } from "@/app/dashboard/payables/actions";
 
 const modalSpring = { type: "spring" as const, stiffness: 300, damping: 30 };
@@ -154,6 +158,7 @@ export function PayableDetailModal({
   ].filter(Boolean);
   const bankLine = bankParts.join(" · ") || "—";
   const convenio = payable.supplier_bank_agreement?.trim() || null;
+  const paymentStatus = getPayablePaymentStatus(payable);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -193,12 +198,14 @@ export function PayableDetailModal({
               <span
                 className={cn(
                   "inline-flex items-center rounded-full px-4 py-1.5 text-sm font-bold shadow-lg",
-                  payable.status === "paid"
+                  paymentStatus === "paid"
                     ? "bg-primary/20 text-primary ring-1 ring-primary/40 dark:bg-blue-500/20 dark:text-blue-400 dark:ring-blue-500/40"
+                    : paymentStatus === "partial"
+                      ? "bg-sky-500/20 text-sky-700 ring-1 ring-sky-500/40 dark:text-sky-300 dark:ring-sky-500/40"
                     : "bg-amber-500/20 text-amber-600 ring-1 ring-amber-500/40 dark:text-amber-400 dark:ring-amber-500/40"
                 )}
               >
-                {payable.status === "paid" ? "Pagada" : "Pendiente"}
+                {payableStatusLabel(paymentStatus)}
               </span>
             </div>
           </motion.div>
@@ -217,11 +224,25 @@ export function PayableDetailModal({
               {/* Monto & Vencimiento */}
               <div className="rounded-2xl border border-border bg-muted/50 p-5 text-center lg:col-span-1 min-w-0 overflow-visible dark:border-zinc-800 dark:bg-zinc-900/50">
                 <p className="text-xl sm:text-2xl font-black tabular-nums text-foreground whitespace-nowrap">
-                  {formatCop(payable.invoice_amount)}
+                  {formatCop(
+                    paymentStatus === "paid"
+                      ? payable.invoice_amount
+                      : payable.balance_due,
+                  )}
                 </p>
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-2">
-                  Monto
+                  {paymentStatus === "paid"
+                    ? "Pagada"
+                    : paymentStatus === "partial"
+                      ? "Saldo pendiente"
+                      : "Monto"}
                 </p>
+                {paymentStatus === "partial" ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Factura {formatCop(payable.invoice_amount)} · abonado{" "}
+                    {formatCop(payable.amount_paid_total)}
+                  </p>
+                ) : null}
                 <div className="flex items-center justify-center gap-2 mt-4 text-sm text-muted-foreground">
                   <Calendar className="size-4 shrink-0" />
                   <span>Vence: {formatDate(payable.due_date)}</span>
@@ -324,7 +345,7 @@ export function PayableDetailModal({
                   className="flex-1 min-w-[140px] gap-2 h-11 text-base"
                 >
                   <CreditCard className="size-4" />
-                  Registrar Pago
+                  {paymentStatus === "partial" ? "Registrar abono" : "Registrar Pago"}
                 </Button>
               )}
               {onPrintComprobante && (

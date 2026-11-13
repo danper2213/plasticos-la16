@@ -156,6 +156,10 @@ export function formatMovementQuantityLabel(
   packaging: string | null | undefined,
   presentation?: string | null,
 ): string {
+  const parsed = parsePackagingConversion(packaging);
+  if (parsed && Math.abs(quantity) < 0.001) {
+    return `0 ${pluralizePackagingUnit(parsed.unitName, 0)}`;
+  }
   const large = formatQuantityInLargePackaging(quantity, packaging, presentation);
   if (large) return large;
   const plural = Math.abs(quantity - 1) < 1e-9 ? "unidad" : "unidades";

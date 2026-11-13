@@ -92,7 +92,7 @@ export function PayablesClient({
     if (quickFilter === "pending") {
       result = result.filter((row) => row.status === "pending");
     } else if (quickFilter === "under3m") {
-      result = result.filter((row) => (Number(row.invoice_amount) || 0) < UNDER_3M);
+      result = result.filter((row) => (Number(row.balance_due) || 0) < UNDER_3M);
     }
 
     if (supplierFilter && supplierFilter !== "all") {
@@ -243,10 +243,15 @@ export function PayablesClient({
   const paidInMonth = localPayables.filter((p) => p.status === "paid").length;
   const totalPorPagar = localPayables
     .filter((p) => p.status === "pending")
-    .reduce((sum, p) => sum + (Number(p.invoice_amount) || 0), 0);
-  const totalPagado = localPayables
-    .filter((p) => p.status === "paid")
-    .reduce((sum, p) => sum + (Number(p.invoice_amount) || 0), 0);
+    .reduce((sum, p) => sum + (Number(p.balance_due) || 0), 0);
+  const totalPagado = localPayables.reduce(
+    (sum, p) =>
+      sum +
+      (p.status === "paid"
+        ? Number(p.invoice_amount) || 0
+        : Number(p.amount_paid_total) || 0),
+    0,
+  );
   const metaPercent = totalInMonth > 0 ? Math.round((paidInMonth / totalInMonth) * 100) : 0;
 
   const monthDate = new Date(year, month - 1, 1);

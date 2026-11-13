@@ -5,6 +5,7 @@ import { GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { setPayableDragData } from "@/lib/payables-drag";
 import { usePayablesDrag } from "@/components/payables/payables-drag-context";
+import { getPayablePaymentStatus } from "@/lib/payable-balance";
 import type { PayableWithSupplier } from "@/app/dashboard/payables/actions";
 
 export function PayableDragChip({
@@ -20,6 +21,7 @@ export function PayableDragChip({
     usePayablesDrag();
   const isDragging = draggingPayableId === row.id;
   const isPaid = row.status === "paid";
+  const isPartial = getPayablePaymentStatus(row) === "partial";
   const label = `${row.supplier_name} · #${row.invoice_number}`;
 
   return (
@@ -47,6 +49,8 @@ export function PayableDragChip({
         isRescheduling && "pointer-events-none opacity-50",
         isPaid
           ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+          : isPartial
+            ? "border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-300"
           : "border-primary/30 bg-primary/10 text-primary"
       )}
     >

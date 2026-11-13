@@ -87,15 +87,18 @@ function buildDaySummaries(
     }
 
     day.payables.push(row);
-    const amount = Number(row.invoice_amount) || 0;
+    const invoiceAmount = Number(row.invoice_amount) || 0;
+    const paidTotal = Number(row.amount_paid_total) || 0;
+    const balanceDue = Number(row.balance_due) || 0;
     if (row.status === "pending") {
       day.pendingCount += 1;
-      day.pendingTotal += amount;
+      day.pendingTotal += balanceDue;
+      day.paidTotal += paidTotal;
       if (key < todayStr) day.hasOverdue = true;
       if (key === todayStr) day.hasDueToday = true;
     } else {
       day.paidCount += 1;
-      day.paidTotal += amount;
+      day.paidTotal += invoiceAmount;
     }
   }
 

@@ -118,6 +118,10 @@ describe("formatMovementQuantityLabel", () => {
     expect(formatMovementQuantityLabel(38 / 43, "Paca x43", "Rollo")).toBe("38 Rollos");
   });
 
+  it("un saldo en cero conserva la unidad del empaque", () => {
+    expect(formatMovementQuantityLabel(0, "Cj x 200")).toBe("0 Cjs");
+  });
+
   it("mezcla pacas enteras y resto en rollos", () => {
     expect(formatMovementQuantityLabel(2.88, "Paca x43", "Rollo")).toBe(
       "2 Pacas y 38 Rollos",

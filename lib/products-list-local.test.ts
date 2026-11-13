@@ -44,6 +44,23 @@ describe("filterProductsCatalog", () => {
     expect(hits.map((p) => p.id)).toEqual(["1"]);
   });
 
+  it("encuentra x300m aunque el nombre tenga espacios", () => {
+    const catalog = [
+      product({ id: "compact", name: "Film stretch x300m" }),
+      product({ id: "spaced", name: "Film stretch x 300 m" }),
+      product({ id: "other", name: "Vaso 12 oz" }),
+    ];
+    for (const search of ["x300m", "x 300 m", "300 m"]) {
+      const hits = filterProductsCatalog(catalog, {
+        search,
+        stockFilter: "all",
+        categoryId: "all",
+        supplierId: "all",
+      });
+      expect(hits.map((p) => p.id).sort()).toEqual(["compact", "spaced"]);
+    }
+  });
+
   it("encuentra la medida cuando el número va suelto", () => {
     const catalog = [
       product({ id: "8oz", name: "Tarrina 8 oz" }),
